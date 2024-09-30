@@ -22,9 +22,9 @@ use datafusion::common::Statistics;
 use datafusion::error::{DataFusionError, Result};
 use datafusion::execution::context::TaskContext;
 use datafusion::physical_expr::expressions::UnKnownColumn;
-use datafusion::physical_expr::PhysicalSortExpr;
+use datafusion::physical_expr::EquivalenceProperties;
 use datafusion::physical_plan::{
-    DisplayAs, DisplayFormatType, ExecutionPlan, Partitioning, RecordBatchStream,
+    DisplayAs, DisplayFormatType, ExecutionPlan, Partitioning, PlanProperties, RecordBatchStream,
     SendableRecordBatchStream,
 };
 use futures::Stream;
@@ -44,10 +44,10 @@ pub struct RayShuffleReaderExec {
     pub stage_id: StageId,
     /// The output schema of the query stage being read from
     schema: SchemaRef,
-    /// Output partitioning
-    partitioning: Partitioning,
     /// Input streams from Ray object store
     input_partitions_map: RwLock<HashMap<PartitionId, Vec<RecordBatch>>>, // TODO(@lsf) can we not use Rwlock?
+
+    properties: PlanProperties,
 }
 
 impl RayShuffleReaderExec {
@@ -66,10 +66,16 @@ impl RayShuffleReaderExec {
             _ => partitioning,
         };
 
+        let properties = PlanProperties::new(
+            EquivalenceProperties::new(schema.clone()),
+            partitioning,
+            datafusion::physical_plan::ExecutionMode::Unbounded,
+        );
+
         Self {
             stage_id,
             schema,
-            partitioning,
+            properties,
             input_partitions_map: RwLock::new(HashMap::new()),
         }
     }
@@ -80,7 +86,7 @@ impl RayShuffleReaderExec {
         input_batch: RecordBatch,
     ) -> Result<(), DataFusionError> {
         let mut map = self.input_partitions_map.write().unwrap();
-        let input_partitions = map.entry(partition).or_insert(vec![]);
+        let input_partitions = map.entry(partition).or_default();
         input_partitions.push(input_batch);
         Ok(())
     }
@@ -95,16 +101,7 @@ impl ExecutionPlan for RayShuffleReaderExec {
         self.schema.clone()
     }
 
-    fn output_partitioning(&self) -> Partitioning {
-        self.partitioning.clone()
-    }
-
-    fn output_ordering(&self) -> Option<&[PhysicalSortExpr]> {
-        // TODO could be implemented in some cases
-        None
-    }
-
-    fn children(&self) -> Vec<Arc<dyn ExecutionPlan>> {
+    fn children(&self) -> Vec<&Arc<dyn ExecutionPlan>> {
         vec![]
     }
 
@@ -121,7 +118,7 @@ impl ExecutionPlan for RayShuffleReaderExec {
         _context: Arc<TaskContext>,
     ) -> datafusion::common::Result<SendableRecordBatchStream> {
         let mut map = self.input_partitions_map.write().expect("got lock");
-        let input_objects = map.remove(&partition).unwrap_or(vec![]);
+        let input_objects = map.remove(&partition).unwrap_or_default();
         println!(
             "RayShuffleReaderExec[stage={}].execute(input_partition={partition}) with {} shuffle inputs",
             self.stage_id,
@@ -142,6 +139,14 @@ impl ExecutionPlan for RayShuffleReaderExec {
     fn statistics(&self) -> Result<Statistics> {
         Ok(Statistics::new_unknown(&self.schema))
     }
+
+    fn name(&self) -> &str {
+        "ray suffle reader"
+    }
+
+    fn properties(&self) -> &datafusion::physical_plan::PlanProperties {
+        &self.properties
+    }
 }
 
 impl DisplayAs for RayShuffleReaderExec {
@@ -149,7 +154,8 @@ impl DisplayAs for RayShuffleReaderExec {
         write!(
             f,
             "RayShuffleReaderExec(stage_id={}, input_partitioning={:?})",
-            self.stage_id, self.partitioning
+            self.stage_id,
+            self.properties().partitioning
         )
     }
 }

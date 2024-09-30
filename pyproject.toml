@@ -29,3 +29,5 @@ classifiers = [
 ]
 
 
+[tool.maturin]
+module-name = "raysql._raysql_internal"

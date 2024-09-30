@@ -22,14 +22,14 @@ use datafusion::common::{Result, Statistics};
 use datafusion::error::DataFusionError;
 use datafusion::execution::context::TaskContext;
 use datafusion::physical_expr::expressions::UnKnownColumn;
-use datafusion::physical_expr::PhysicalSortExpr;
-use datafusion::physical_plan::common::batch_byte_size;
+use datafusion::physical_expr::EquivalenceProperties;
 use datafusion::physical_plan::memory::MemoryStream;
 use datafusion::physical_plan::metrics::{ExecutionPlanMetricsSet, MetricBuilder};
 use datafusion::physical_plan::repartition::BatchPartitioner;
 use datafusion::physical_plan::stream::RecordBatchStreamAdapter;
 use datafusion::physical_plan::{
-    DisplayAs, DisplayFormatType, ExecutionPlan, Partitioning, SendableRecordBatchStream,
+    DisplayAs, DisplayFormatType, ExecutionPlan, Partitioning, PlanProperties,
+    SendableRecordBatchStream,
 };
 use futures::StreamExt;
 use futures::TryStreamExt;
@@ -43,8 +43,8 @@ pub struct RayShuffleWriterExec {
     pub stage_id: usize,
     /// The child execution plan
     pub(crate) plan: Arc<dyn ExecutionPlan>,
-    /// Output partitioning
-    partitioning: Partitioning,
+
+    properties: PlanProperties,
     /// Metrics
     pub metrics: ExecutionPlanMetricsSet,
 }
@@ -65,10 +65,16 @@ impl RayShuffleWriterExec {
             _ => partitioning,
         };
 
+        let properties = PlanProperties::new(
+            EquivalenceProperties::new(plan.schema()),
+            partitioning,
+            datafusion::physical_plan::ExecutionMode::Unbounded,
+        );
+
         Self {
             stage_id,
             plan,
-            partitioning,
+            properties,
             metrics: ExecutionPlanMetricsSet::new(),
         }
     }
@@ -83,17 +89,8 @@ impl ExecutionPlan for RayShuffleWriterExec {
         self.plan.schema()
     }
 
-    fn output_partitioning(&self) -> Partitioning {
-        self.partitioning.clone()
-    }
-
-    fn output_ordering(&self) -> Option<&[PhysicalSortExpr]> {
-        // TODO in the case of a single partition of a sorted plan this could be implemented
-        None
-    }
-
-    fn children(&self) -> Vec<Arc<dyn ExecutionPlan>> {
-        vec![self.plan.clone()]
+    fn children(&self) -> Vec<&Arc<dyn ExecutionPlan>> {
+        vec![&self.plan]
     }
 
     fn with_new_children(
@@ -115,7 +112,7 @@ impl ExecutionPlan for RayShuffleWriterExec {
         let mut stream = self.plan.execute(input_partition, context)?;
 
         let stage_id = self.stage_id;
-        let partitioning = self.output_partitioning();
+        let partitioning = self.properties().output_partitioning().to_owned();
         let partition_count = partitioning.partition_count();
         let repart_time =
             MetricBuilder::new(&self.metrics).subset_time("repart_time", input_partition);
@@ -145,7 +142,7 @@ impl ExecutionPlan for RayShuffleWriterExec {
                     }
 
                     let mut partitioner =
-                        BatchPartitioner::try_new(partitioning, repart_time.clone())?;
+                        BatchPartitioner::try_new(partitioning.clone(), repart_time.clone())?;
 
                     let mut rows = 0;
 
@@ -186,6 +183,14 @@ impl ExecutionPlan for RayShuffleWriterExec {
     fn statistics(&self) -> Result<Statistics> {
         Ok(Statistics::new_unknown(&self.schema()))
     }
+
+    fn name(&self) -> &str {
+        "ray suffle writer"
+    }
+
+    fn properties(&self) -> &datafusion::physical_plan::PlanProperties {
+        &self.properties
+    }
 }
 
 impl DisplayAs for RayShuffleWriterExec {
@@ -193,7 +198,8 @@ impl DisplayAs for RayShuffleWriterExec {
         write!(
             f,
             "RayShuffleWriterExec(stage_id={}, output_partitioning={:?})",
-            self.stage_id, self.partitioning
+            self.stage_id,
+            self.properties().partitioning
         )
     }
 }
@@ -215,7 +221,7 @@ impl InMemoryWriter {
     fn new(schema: SchemaRef) -> Self {
         Self {
             batches: vec![],
-            schema: schema,
+            schema,
             num_batches: 0,
             num_rows: 0,
             num_bytes: 0,
@@ -225,7 +231,7 @@ impl InMemoryWriter {
     fn write(&mut self, batch: RecordBatch) -> Result<()> {
         self.num_batches += 1;
         self.num_rows += batch.num_rows() as u64;
-        self.num_bytes += batch_byte_size(&batch) as u64;
+        self.num_bytes += batch.get_array_memory_size() as u64;
         self.batches.push(batch);
         Ok(())
     }
@@ -233,6 +239,7 @@ impl InMemoryWriter {
     fn finish(&self) -> Result<RecordBatch> {
         // TODO(@lsf) Instead of concatenating the batches, return all RecordBatches from
         // all partitions in one stream, then return an array of batch offsets.
-        concat_batches(&self.schema, &self.batches).map_err(DataFusionError::ArrowError)
+        concat_batches(&self.schema, &self.batches)
+            .map_err(|e| DataFusionError::ArrowError(e, None))
     }
 }
