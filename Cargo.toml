@@ -16,8 +16,8 @@
 # under the License.
 
 [package]
-name = "raysql"
-description = "RaySQL: DataFusion on Ray"
+name = "datafusion_ray"
+description = "DataFusion on Ray"
 homepage = "https://github.com/datafusion-contrib/ray-sql"
 repository = "https://github.com/datafusion-contrib/ray-sql"
 authors = ["Andy Grove <andygrove73@gmail.com>", "Frank Luan <lsf@berkeley.edu>"]
@@ -38,7 +38,7 @@ log = "0.4"
 prost = "0.12"
 prost-types = "0.12"
 pyo3 = { version = "0.21", features = ["extension-module", "abi3", "abi3-py38"] }
-tokio = { version = "1.24", features = ["macros", "rt", "rt-multi-thread", "sync"] }
+tokio = { version = "1.40", features = ["macros", "rt", "rt-multi-thread", "sync"] }
 uuid = "1.2"
 
 [build-dependencies]
@@ -46,11 +46,11 @@ rustc_version = "0.4.0"
 tonic-build = { version = "0.8", default-features = false, features = ["transport", "prost"] }
 
 [lib]
-name = "raysql"
+name = "datafusion_ray"
 crate-type = ["cdylib", "rlib"]
 
 [package.metadata.maturin]
-name = "raysql._raysql_internal"
+name = "datafusion_ray._datafusion_ray_internal"
 
 [profile.release]
 codegen-units = 1

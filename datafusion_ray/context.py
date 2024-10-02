@@ -23,8 +23,8 @@ from typing import Iterable
 import pyarrow as pa
 import ray
 
-import raysql
-from raysql import Context, ExecutionGraph, QueryStage
+import datafusion_ray
+from datafusion_ray import Context, ExecutionGraph, QueryStage
 from typing import List
 
 def schedule_execution(
@@ -73,7 +73,7 @@ def schedule_execution(
         return ids, futures
 
     # schedule the actual execution workers
-    plan_bytes = raysql.serialize_execution_plan(stage.get_execution_plan())
+    plan_bytes = datafusion_ray.serialize_execution_plan(stage.get_execution_plan())
     futures = []
     opt = {}
     opt["resources"] = {"worker": 1e-3}
@@ -153,7 +153,7 @@ def execute_query_stage(
         ray.get([f for _, lst in child_outputs for f in lst])
 
     # schedule the actual execution workers
-    plan_bytes = raysql.serialize_execution_plan(stage.get_execution_plan())
+    plan_bytes = datafusion_ray.serialize_execution_plan(stage.get_execution_plan())
     futures = []
     opt = {}
     opt["resources"] = {"worker": 1e-3}
@@ -179,7 +179,7 @@ def execute_query_partition(
     *input_partitions: list[pa.RecordBatch],
 ) -> Iterable[pa.RecordBatch]:
     start_time = time.time()
-    plan = raysql.deserialize_execution_plan(plan_bytes)
+    plan = datafusion_ray.deserialize_execution_plan(plan_bytes)
     # print(
     #     "Worker executing plan {} partition #{} with shuffle inputs {}".format(
     #         plan.display(),
@@ -193,7 +193,7 @@ def execute_query_partition(
     # This is delegating to DataFusion for execution, but this would be a good place
     # to plug in other execution engines by translating the plan into another engine's plan
     # (perhaps via Substrait, once DataFusion supports converting a physical plan to Substrait)
-    ret = raysql.execute_partition(plan, part, partitions)
+    ret = datafusion_ray.execute_partition(plan, part, partitions)
     duration = time.time() - start_time
     event = {
         "cat": f"{stage_id}-{part}",
@@ -238,7 +238,7 @@ class RaySqlContext:
         else:
             # serialize the query stages and store in Ray object store
             query_stages = [
-                raysql.serialize_execution_plan(
+                datafusion_ray.serialize_execution_plan(
                     graph.get_query_stage(i).get_execution_plan()
                 )
                 for i in range(final_stage_id + 1)

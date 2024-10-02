@@ -17,10 +17,12 @@
   under the License.
 -->
 
-# datafusion-ray: DataFusion on Ray
+# DataFusion on Ray
 
-This is a research project to evaluate performing distributed SQL queries from Python, using
+> This was originally a research project donated from  [ray-sql](https://github.com/datafusion-contrib/ray-sql) to evaluate performing distributed SQL queries from Python, using
 [Ray](https://www.ray.io/) and [DataFusion](https://github.com/apache/arrow-datafusion).
+
+DataFusion Ray is a distributed SQL query engine powered by the Rust implementation of [Apache Arrow](https://arrow.apache.org/), [Apache DataFusion](https://datafusion.apache.org/) and [Ray](https://www.ray.io/).
 
 ## Goals
 
@@ -31,7 +33,9 @@ This is a research project to evaluate performing distributed SQL queries from P
 
 ## Non Goals
 
-- Build and support a production system.
+- Re-build the cluster scheduling systems like what [Ballista](https://datafusion.apache.org/ballista/) did. 
+  - Ballista is extremely complex and utilizing Ray feels like it abstracts some of that complexity away.
+  - Datafusion Ray is delegating cluster management to Ray.
 
 ## Example
 
@@ -42,7 +46,7 @@ import os
 import pandas as pd
 import ray
 
-from raysql import RaySqlContext
+from datafusion_ray import RaySqlContext
 
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 
@@ -64,7 +68,7 @@ for record_batch in result_set:
 
 ## Status
 
-- RaySQL can run all queries in the TPC-H benchmark
+- DataFusion Ray can run all queries in the TPC-H benchmark
 
 ## Features
 
@@ -73,29 +77,29 @@ for record_batch in result_set:
 
 ## Limitations
 
-- Requires a shared file system currently
+- Requires a shared file system currently. Check details [here](./docs/README.md#distributed-shuffle).
 
 ## Performance
 
-This chart shows the performance of RaySQL compared to Apache Spark for
+This chart shows the performance of DataFusion Ray compared to Apache Spark for
 [SQLBench-H](https://sqlbenchmarks.io/sqlbench-h/) at a very small data set (10GB), running on a desktop (Threadripper
-with 24 physical cores). Both RaySQL and Spark are configured with 24 executors.
+with 24 physical cores). Both DataFusion Ray and Spark are configured with 24 executors.
 
 ### Overall Time
 
-RaySQL is ~1.9x faster overall for this scale factor and environment with disk-based shuffle.
+DataFusion Ray is ~1.9x faster overall for this scale factor and environment with disk-based shuffle.
 
 ![SQLBench-H Total](./docs/sqlbench-h-total.png)
 
 ### Per Query Time
 
-Spark is much faster on some queries, likely due to broadcast exchanges, which RaySQL hasn't implemented yet.
+Spark is much faster on some queries, likely due to broadcast exchanges, which DataFusion Ray hasn't implemented yet.
 
 ![SQLBench-H Per Query](./docs/sqlbench-h-per-query.png)
 
 ### Performance Plan
 
-I'm planning on experimenting with the following changes to improve performance:
+Plans on experimenting with the following changes to improve performance:
 
 - Make better use of Ray futures to run more tasks in parallel
 - Use Ray object store for shuffle data transfer to reduce disk I/O cost

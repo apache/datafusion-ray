@@ -24,7 +24,7 @@ use datafusion_python::physical_plan::PyExecutionPlan;
 use pyo3::prelude::*;
 use std::sync::Arc;
 
-#[pyclass(name = "QueryStage", module = "raysql", subclass)]
+#[pyclass(name = "QueryStage", module = "datafusion_ray", subclass)]
 pub struct PyQueryStage {
     stage: Arc<QueryStage>,
 }

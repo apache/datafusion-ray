@@ -20,7 +20,7 @@ try:
 except ImportError:
     import importlib_metadata
 
-from ._raysql_internal import (
+from ._datafusion_ray_internal import (
     Context,
     ExecutionGraph,
     QueryStage,

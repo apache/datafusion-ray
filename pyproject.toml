@@ -16,11 +16,11 @@
 # under the License.
 
 [build-system]
-requires = ["maturin>=0.14,<0.15"]
+requires = ["maturin>=0.14,<1.7.4"]
 build-backend = "maturin"
 
 [project]
-name = "raysql"
+name = "datafusion-ray"
 requires-python = ">=3.7"
 classifiers = [
     "Programming Language :: Rust",
@@ -30,4 +30,4 @@ classifiers = [
 
 
 [tool.maturin]
-module-name = "raysql._raysql_internal"
+module-name = "datafusion_ray._datafusion_ray_internal"

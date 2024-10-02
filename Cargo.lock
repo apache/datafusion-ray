@@ -1112,6 +1112,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "datafusion_ray"
+version = "0.6.0"
+dependencies = [
+ "datafusion",
+ "datafusion-proto",
+ "datafusion-python",
+ "futures",
+ "glob",
+ "log",
+ "prost 0.12.6",
+ "prost-types 0.12.6",
+ "pyo3",
+ "rustc_version",
+ "tokio",
+ "tonic-build",
+ "uuid",
+]
+
+[[package]]
 name = "digest"
 version = "0.10.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2440,25 +2459,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ec0be4795e2f6a28069bec0b5ff3e2ac9bafc99e6a9a7dc3547996c5c816922c"
 dependencies = [
  "getrandom",
-]
-
-[[package]]
-name = "raysql"
-version = "0.6.0"
-dependencies = [
- "datafusion",
- "datafusion-proto",
- "datafusion-python",
- "futures",
- "glob",
- "log",
- "prost 0.12.6",
- "prost-types 0.12.6",
- "pyo3",
- "rustc_version",
- "tokio",
- "tonic-build",
- "uuid",
 ]
 
 [[package]]
