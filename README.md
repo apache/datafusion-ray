@@ -19,7 +19,7 @@
 
 # DataFusion on Ray
 
-> This is a originally a research project donated from  [ray-sql](https://github.com/datafusion-contrib/ray-sql) to evaluate performing distributed SQL queries from Python, using
+> This was originally a research project donated from  [ray-sql](https://github.com/datafusion-contrib/ray-sql) to evaluate performing distributed SQL queries from Python, using
 [Ray](https://www.ray.io/) and [DataFusion](https://github.com/apache/arrow-datafusion).
 
 DataFusion Ray is a distributed SQL query engine powered by the Rust implementation of [Apache Arrow](https://arrow.apache.org/), [Apache DataFusion](https://datafusion.apache.org/) and [Ray](https://www.ray.io/).
