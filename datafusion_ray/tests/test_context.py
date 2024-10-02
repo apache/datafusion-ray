@@ -16,7 +16,7 @@
 # under the License.
 
 import pytest
-from raysql import Context
+from datafusion_ray import Context
 
 def test():
     ctx = Context(1, False)

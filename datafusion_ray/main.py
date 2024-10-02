@@ -20,18 +20,15 @@ import os
 
 from pyarrow import csv as pacsv
 import ray
-from raysql import RaySqlContext
+from datafusion_ray import RaySqlContext
 
 NUM_CPUS_PER_WORKER = 8
 
-SF = 10
+SF = 1
 DATA_DIR = f"/mnt/data0/tpch/sf{SF}-parquet"
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 QUERIES_DIR = os.path.join(SCRIPT_DIR, f"../sqlbench-h/queries/sf={SF}")
 RESULTS_DIR = f"results-sf{SF}"
-TRUTH_DIR = (
-    "/home/ubuntu/raysort/ray-sql/sqlbench-runners/spark/{RESULTS_DIR}/{RESULTS_DIR}"
-)
 
 
 def setup_context(use_ray_shuffle: bool, num_workers: int = 2) -> RaySqlContext:
@@ -104,7 +101,7 @@ def compare(q: int):
 
 
 def tpch_bench():
-    ray.init("auto")
+    ray.init(resources={"worker": 1})
     num_workers = int(ray.cluster_resources().get("worker", 1)) * NUM_CPUS_PER_WORKER
     use_ray_shuffle = False
     ctx = setup_context(use_ray_shuffle, num_workers)
