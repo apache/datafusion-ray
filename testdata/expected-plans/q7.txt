@@ -30,153 +30,65 @@ Sort: shipping.supp_nation ASC NULLS LAST, shipping.cust_nation ASC NULLS LAST, 
 DataFusion Physical Plan
 ========================
 
-SortPreservingMergeExec: [supp_nation@0 ASC NULLS LAST,cust_nation@1 ASC NULLS LAST,l_year@2 ASC NULLS LAST]
-  SortExec: expr=[supp_nation@0 ASC NULLS LAST,cust_nation@1 ASC NULLS LAST,l_year@2 ASC NULLS LAST], preserve_partitioning=[true]
-    ProjectionExec: expr=[supp_nation@0 as supp_nation, cust_nation@1 as cust_nation, l_year@2 as l_year, sum(shipping.volume)@3 as revenue]
-      AggregateExec: mode=FinalPartitioned, gby=[supp_nation@0 as supp_nation, cust_nation@1 as cust_nation, l_year@2 as l_year], aggr=[sum(shipping.volume)]
+SortExec: expr=[supp_nation@0 ASC NULLS LAST,cust_nation@1 ASC NULLS LAST,l_year@2 ASC NULLS LAST], preserve_partitioning=[false]
+  ProjectionExec: expr=[supp_nation@0 as supp_nation, cust_nation@1 as cust_nation, l_year@2 as l_year, sum(shipping.volume)@3 as revenue]
+    AggregateExec: mode=Single, gby=[supp_nation@0 as supp_nation, cust_nation@1 as cust_nation, l_year@2 as l_year], aggr=[sum(shipping.volume)]
+      ProjectionExec: expr=[n_name@4 as supp_nation, n_name@0 as cust_nation, date_part(YEAR, l_shipdate@3) as l_year, l_extendedprice@1 * (Some(1),20,0 - l_discount@2) as volume]
         CoalesceBatchesExec: target_batch_size=8192
-          RepartitionExec: partitioning=Hash([supp_nation@0, cust_nation@1, l_year@2], 4), input_partitions=4
-            AggregateExec: mode=Partial, gby=[supp_nation@0 as supp_nation, cust_nation@1 as cust_nation, l_year@2 as l_year], aggr=[sum(shipping.volume)]
-              ProjectionExec: expr=[n_name@4 as supp_nation, n_name@0 as cust_nation, date_part(YEAR, l_shipdate@3) as l_year, l_extendedprice@1 * (Some(1),20,0 - l_discount@2) as volume]
-                CoalesceBatchesExec: target_batch_size=8192
-                  HashJoinExec: mode=Partitioned, join_type=Inner, on=[(n_nationkey@0, c_nationkey@3)], filter=n_name@0 = GERMANY AND n_name@1 = IRAQ OR n_name@0 = IRAQ AND n_name@1 = GERMANY, projection=[n_name@1, l_extendedprice@2, l_discount@3, l_shipdate@4, n_name@6]
+          HashJoinExec: mode=CollectLeft, join_type=Inner, on=[(n_nationkey@0, c_nationkey@3)], filter=n_name@0 = GERMANY AND n_name@1 = IRAQ OR n_name@0 = IRAQ AND n_name@1 = GERMANY, projection=[n_name@1, l_extendedprice@2, l_discount@3, l_shipdate@4, n_name@6]
+            CoalesceBatchesExec: target_batch_size=8192
+              FilterExec: n_name@1 = IRAQ OR n_name@1 = GERMANY
+                ParquetExec: file_groups={1 group: [[home/runner/work/datafusion-ray/datafusion-ray/data/nation.parquet]]}, projection=[n_nationkey, n_name], predicate=n_name@1 = IRAQ OR n_name@1 = GERMANY, pruning_predicate=CASE WHEN n_name_null_count@2 = n_name_row_count@3 THEN false ELSE n_name_min@0 <= IRAQ AND IRAQ <= n_name_max@1 END OR CASE WHEN n_name_null_count@2 = n_name_row_count@3 THEN false ELSE n_name_min@0 <= GERMANY AND GERMANY <= n_name_max@1 END, required_guarantees=[n_name in (GERMANY, IRAQ)]
+            ProjectionExec: expr=[l_extendedprice@1 as l_extendedprice, l_discount@2 as l_discount, l_shipdate@3 as l_shipdate, c_nationkey@4 as c_nationkey, n_name@0 as n_name]
+              CoalesceBatchesExec: target_batch_size=8192
+                HashJoinExec: mode=CollectLeft, join_type=Inner, on=[(n_nationkey@0, s_nationkey@0)], projection=[n_name@1, l_extendedprice@3, l_discount@4, l_shipdate@5, c_nationkey@6]
+                  CoalesceBatchesExec: target_batch_size=8192
+                    FilterExec: n_name@1 = GERMANY OR n_name@1 = IRAQ
+                      ParquetExec: file_groups={1 group: [[home/runner/work/datafusion-ray/datafusion-ray/data/nation.parquet]]}, projection=[n_nationkey, n_name], predicate=n_name@1 = GERMANY OR n_name@1 = IRAQ, pruning_predicate=CASE WHEN n_name_null_count@2 = n_name_row_count@3 THEN false ELSE n_name_min@0 <= GERMANY AND GERMANY <= n_name_max@1 END OR CASE WHEN n_name_null_count@2 = n_name_row_count@3 THEN false ELSE n_name_min@0 <= IRAQ AND IRAQ <= n_name_max@1 END, required_guarantees=[n_name in (IRAQ, GERMANY)]
+                  ProjectionExec: expr=[s_nationkey@1 as s_nationkey, l_extendedprice@2 as l_extendedprice, l_discount@3 as l_discount, l_shipdate@4 as l_shipdate, c_nationkey@0 as c_nationkey]
                     CoalesceBatchesExec: target_batch_size=8192
-                      RepartitionExec: partitioning=Hash([n_nationkey@0], 4), input_partitions=4
-                        RepartitionExec: partitioning=RoundRobinBatch(4), input_partitions=1
-                          CoalesceBatchesExec: target_batch_size=8192
-                            FilterExec: n_name@1 = IRAQ OR n_name@1 = GERMANY
-                              ParquetExec: file_groups={1 group: [[home/runner/work/datafusion-ray/datafusion-ray/data/nation.parquet/part1.parquet]]}, projection=[n_nationkey, n_name], predicate=n_name@1 = IRAQ OR n_name@1 = GERMANY, pruning_predicate=CASE WHEN n_name_null_count@2 = n_name_row_count@3 THEN false ELSE n_name_min@0 <= IRAQ AND IRAQ <= n_name_max@1 END OR CASE WHEN n_name_null_count@2 = n_name_row_count@3 THEN false ELSE n_name_min@0 <= GERMANY AND GERMANY <= n_name_max@1 END, required_guarantees=[n_name in (IRAQ, GERMANY)]
-                    CoalesceBatchesExec: target_batch_size=8192
-                      RepartitionExec: partitioning=Hash([c_nationkey@3], 4), input_partitions=4
-                        ProjectionExec: expr=[l_extendedprice@1 as l_extendedprice, l_discount@2 as l_discount, l_shipdate@3 as l_shipdate, c_nationkey@4 as c_nationkey, n_name@0 as n_name]
-                          CoalesceBatchesExec: target_batch_size=8192
-                            HashJoinExec: mode=Partitioned, join_type=Inner, on=[(n_nationkey@0, s_nationkey@0)], projection=[n_name@1, l_extendedprice@3, l_discount@4, l_shipdate@5, c_nationkey@6]
-                              CoalesceBatchesExec: target_batch_size=8192
-                                RepartitionExec: partitioning=Hash([n_nationkey@0], 4), input_partitions=4
-                                  RepartitionExec: partitioning=RoundRobinBatch(4), input_partitions=1
-                                    CoalesceBatchesExec: target_batch_size=8192
-                                      FilterExec: n_name@1 = GERMANY OR n_name@1 = IRAQ
-                                        ParquetExec: file_groups={1 group: [[home/runner/work/datafusion-ray/datafusion-ray/data/nation.parquet/part1.parquet]]}, projection=[n_nationkey, n_name], predicate=n_name@1 = GERMANY OR n_name@1 = IRAQ, pruning_predicate=CASE WHEN n_name_null_count@2 = n_name_row_count@3 THEN false ELSE n_name_min@0 <= GERMANY AND GERMANY <= n_name_max@1 END OR CASE WHEN n_name_null_count@2 = n_name_row_count@3 THEN false ELSE n_name_min@0 <= IRAQ AND IRAQ <= n_name_max@1 END, required_guarantees=[n_name in (GERMANY, IRAQ)]
-                              CoalesceBatchesExec: target_batch_size=8192
-                                RepartitionExec: partitioning=Hash([s_nationkey@0], 4), input_partitions=4
-                                  ProjectionExec: expr=[s_nationkey@1 as s_nationkey, l_extendedprice@2 as l_extendedprice, l_discount@3 as l_discount, l_shipdate@4 as l_shipdate, c_nationkey@0 as c_nationkey]
-                                    CoalesceBatchesExec: target_batch_size=8192
-                                      HashJoinExec: mode=Partitioned, join_type=Inner, on=[(c_custkey@0, o_custkey@4)], projection=[c_nationkey@1, s_nationkey@2, l_extendedprice@3, l_discount@4, l_shipdate@5]
-                                        CoalesceBatchesExec: target_batch_size=8192
-                                          RepartitionExec: partitioning=Hash([c_custkey@0], 4), input_partitions=4
-                                            ParquetExec: file_groups={4 groups: [[home/runner/work/datafusion-ray/datafusion-ray/data/customer.parquet/part1.parquet:0..3390424], [home/runner/work/datafusion-ray/datafusion-ray/data/customer.parquet/part1.parquet:3390424..6780848], [home/runner/work/datafusion-ray/datafusion-ray/data/customer.parquet/part1.parquet:6780848..6782476, home/runner/work/datafusion-ray/datafusion-ray/data/customer.parquet/part2.parquet:0..3388796], [home/runner/work/datafusion-ray/datafusion-ray/data/customer.parquet/part2.parquet:3388796..6779220]]}, projection=[c_custkey, c_nationkey]
-                                        CoalesceBatchesExec: target_batch_size=8192
-                                          RepartitionExec: partitioning=Hash([o_custkey@4], 4), input_partitions=4
-                                            CoalesceBatchesExec: target_batch_size=8192
-                                              HashJoinExec: mode=Partitioned, join_type=Inner, on=[(l_orderkey@1, o_orderkey@0)], projection=[s_nationkey@0, l_extendedprice@2, l_discount@3, l_shipdate@4, o_custkey@6]
-                                                CoalesceBatchesExec: target_batch_size=8192
-                                                  RepartitionExec: partitioning=Hash([l_orderkey@1], 4), input_partitions=4
-                                                    CoalesceBatchesExec: target_batch_size=8192
-                                                      HashJoinExec: mode=Partitioned, join_type=Inner, on=[(s_suppkey@0, l_suppkey@1)], projection=[s_nationkey@1, l_orderkey@2, l_extendedprice@4, l_discount@5, l_shipdate@6]
-                                                        CoalesceBatchesExec: target_batch_size=8192
-                                                          RepartitionExec: partitioning=Hash([s_suppkey@0], 4), input_partitions=4
-                                                            RepartitionExec: partitioning=RoundRobinBatch(4), input_partitions=2
-                                                              ParquetExec: file_groups={2 groups: [[home/runner/work/datafusion-ray/datafusion-ray/data/supplier.parquet/part1.parquet], [home/runner/work/datafusion-ray/datafusion-ray/data/supplier.parquet/part2.parquet]]}, projection=[s_suppkey, s_nationkey]
-                                                        CoalesceBatchesExec: target_batch_size=8192
-                                                          RepartitionExec: partitioning=Hash([l_suppkey@1], 4), input_partitions=4
-                                                            CoalesceBatchesExec: target_batch_size=8192
-                                                              FilterExec: l_shipdate@4 >= 1995-01-01 AND l_shipdate@4 <= 1996-12-31
-                                                                ParquetExec: file_groups={4 groups: [[home/runner/work/datafusion-ray/datafusion-ray/data/lineitem.parquet/part1.parquet:0..52081165], [home/runner/work/datafusion-ray/datafusion-ray/data/lineitem.parquet/part1.parquet:52081165..104133200, home/runner/work/datafusion-ray/datafusion-ray/data/lineitem.parquet/part2.parquet:0..29130], [home/runner/work/datafusion-ray/datafusion-ray/data/lineitem.parquet/part2.parquet:29130..52110295], [home/runner/work/datafusion-ray/datafusion-ray/data/lineitem.parquet/part2.parquet:52110295..104191458]]}, projection=[l_orderkey, l_suppkey, l_extendedprice, l_discount, l_shipdate], predicate=l_shipdate@10 >= 1995-01-01 AND l_shipdate@10 <= 1996-12-31, pruning_predicate=CASE WHEN l_shipdate_null_count@1 = l_shipdate_row_count@2 THEN false ELSE l_shipdate_max@0 >= 1995-01-01 END AND CASE WHEN l_shipdate_null_count@1 = l_shipdate_row_count@2 THEN false ELSE l_shipdate_min@3 <= 1996-12-31 END, required_guarantees=[]
-                                                CoalesceBatchesExec: target_batch_size=8192
-                                                  RepartitionExec: partitioning=Hash([o_orderkey@0], 4), input_partitions=4
-                                                    ParquetExec: file_groups={4 groups: [[home/runner/work/datafusion-ray/datafusion-ray/data/orders.parquet/part1.parquet:0..13634779], [home/runner/work/datafusion-ray/datafusion-ray/data/orders.parquet/part1.parquet:13634779..27269558], [home/runner/work/datafusion-ray/datafusion-ray/data/orders.parquet/part1.parquet:27269558..27275584, home/runner/work/datafusion-ray/datafusion-ray/data/orders.parquet/part2.parquet:0..13628753], [home/runner/work/datafusion-ray/datafusion-ray/data/orders.parquet/part2.parquet:13628753..27263530]]}, projection=[o_orderkey, o_custkey]
+                      HashJoinExec: mode=CollectLeft, join_type=Inner, on=[(c_custkey@0, o_custkey@4)], projection=[c_nationkey@1, s_nationkey@2, l_extendedprice@3, l_discount@4, l_shipdate@5]
+                        ParquetExec: file_groups={1 group: [[home/runner/work/datafusion-ray/datafusion-ray/data/customer.parquet:0..13211178]]}, projection=[c_custkey, c_nationkey]
+                        CoalesceBatchesExec: target_batch_size=8192
+                          HashJoinExec: mode=CollectLeft, join_type=Inner, on=[(l_orderkey@1, o_orderkey@0)], projection=[s_nationkey@0, l_extendedprice@2, l_discount@3, l_shipdate@4, o_custkey@6]
+                            CoalesceBatchesExec: target_batch_size=8192
+                              HashJoinExec: mode=CollectLeft, join_type=Inner, on=[(s_suppkey@0, l_suppkey@1)], projection=[s_nationkey@1, l_orderkey@2, l_extendedprice@4, l_discount@5, l_shipdate@6]
+                                ParquetExec: file_groups={1 group: [[home/runner/work/datafusion-ray/datafusion-ray/data/supplier.parquet]]}, projection=[s_suppkey, s_nationkey]
+                                CoalesceBatchesExec: target_batch_size=8192
+                                  FilterExec: l_shipdate@4 >= 1995-01-01 AND l_shipdate@4 <= 1996-12-31
+                                    ParquetExec: file_groups={1 group: [[home/runner/work/datafusion-ray/datafusion-ray/data/lineitem.parquet:0..208317955]]}, projection=[l_orderkey, l_suppkey, l_extendedprice, l_discount, l_shipdate], predicate=l_shipdate@10 >= 1995-01-01 AND l_shipdate@10 <= 1996-12-31, pruning_predicate=CASE WHEN l_shipdate_null_count@1 = l_shipdate_row_count@2 THEN false ELSE l_shipdate_max@0 >= 1995-01-01 END AND CASE WHEN l_shipdate_null_count@1 = l_shipdate_row_count@2 THEN false ELSE l_shipdate_min@3 <= 1996-12-31 END, required_guarantees=[]
+                            ParquetExec: file_groups={1 group: [[home/runner/work/datafusion-ray/datafusion-ray/data/orders.parquet:0..54530383]]}, projection=[o_orderkey, o_custkey]
 
 RaySQL Plan
 ===========
 
-Query Stage #0 (1 -> 4):
-ShuffleWriterExec(stage_id=0, output_partitioning=Hash([Column { name: "n_nationkey", index: 0 }], 4))
-  CoalesceBatchesExec: target_batch_size=8192
-    FilterExec: n_name@1 = IRAQ OR n_name@1 = GERMANY
-      ParquetExec: file_groups={1 group: [[home/runner/work/datafusion-ray/datafusion-ray/data/nation.parquet/part1.parquet]]}, projection=[n_nationkey, n_name], predicate=n_name@1 = IRAQ OR n_name@1 = GERMANY, pruning_predicate=CASE WHEN n_name_null_count@2 = n_name_row_count@3 THEN false ELSE n_name_min@0 <= IRAQ AND IRAQ <= n_name_max@1 END OR CASE WHEN n_name_null_count@2 = n_name_row_count@3 THEN false ELSE n_name_min@0 <= GERMANY AND GERMANY <= n_name_max@1 END, required_guarantees=[n_name in (IRAQ, GERMANY)]
-
-Query Stage #1 (1 -> 4):
-ShuffleWriterExec(stage_id=1, output_partitioning=Hash([Column { name: "n_nationkey", index: 0 }], 4))
-  CoalesceBatchesExec: target_batch_size=8192
-    FilterExec: n_name@1 = GERMANY OR n_name@1 = IRAQ
-      ParquetExec: file_groups={1 group: [[home/runner/work/datafusion-ray/datafusion-ray/data/nation.parquet/part1.parquet]]}, projection=[n_nationkey, n_name], predicate=n_name@1 = GERMANY OR n_name@1 = IRAQ, pruning_predicate=CASE WHEN n_name_null_count@2 = n_name_row_count@3 THEN false ELSE n_name_min@0 <= GERMANY AND GERMANY <= n_name_max@1 END OR CASE WHEN n_name_null_count@2 = n_name_row_count@3 THEN false ELSE n_name_min@0 <= IRAQ AND IRAQ <= n_name_max@1 END, required_guarantees=[n_name in (GERMANY, IRAQ)]
-
-Query Stage #2 (4 -> 4):
-ShuffleWriterExec(stage_id=2, output_partitioning=Hash([Column { name: "c_custkey", index: 0 }], 4))
-  ParquetExec: file_groups={4 groups: [[home/runner/work/datafusion-ray/datafusion-ray/data/customer.parquet/part1.parquet:0..3390424], [home/runner/work/datafusion-ray/datafusion-ray/data/customer.parquet/part1.parquet:3390424..6780848], [home/runner/work/datafusion-ray/datafusion-ray/data/customer.parquet/part1.parquet:6780848..6782476, home/runner/work/datafusion-ray/datafusion-ray/data/customer.parquet/part2.parquet:0..3388796], [home/runner/work/datafusion-ray/datafusion-ray/data/customer.parquet/part2.parquet:3388796..6779220]]}, projection=[c_custkey, c_nationkey]
-
-Query Stage #3 (2 -> 4):
-ShuffleWriterExec(stage_id=3, output_partitioning=Hash([Column { name: "s_suppkey", index: 0 }], 4))
-  ParquetExec: file_groups={2 groups: [[home/runner/work/datafusion-ray/datafusion-ray/data/supplier.parquet/part1.parquet], [home/runner/work/datafusion-ray/datafusion-ray/data/supplier.parquet/part2.parquet]]}, projection=[s_suppkey, s_nationkey]
-
-Query Stage #4 (4 -> 4):
-ShuffleWriterExec(stage_id=4, output_partitioning=Hash([Column { name: "l_suppkey", index: 1 }], 4))
-  CoalesceBatchesExec: target_batch_size=8192
-    FilterExec: l_shipdate@4 >= 1995-01-01 AND l_shipdate@4 <= 1996-12-31
-      ParquetExec: file_groups={4 groups: [[home/runner/work/datafusion-ray/datafusion-ray/data/lineitem.parquet/part1.parquet:0..52081165], [home/runner/work/datafusion-ray/datafusion-ray/data/lineitem.parquet/part1.parquet:52081165..104133200, home/runner/work/datafusion-ray/datafusion-ray/data/lineitem.parquet/part2.parquet:0..29130], [home/runner/work/datafusion-ray/datafusion-ray/data/lineitem.parquet/part2.parquet:29130..52110295], [home/runner/work/datafusion-ray/datafusion-ray/data/lineitem.parquet/part2.parquet:52110295..104191458]]}, projection=[l_orderkey, l_suppkey, l_extendedprice, l_discount, l_shipdate], predicate=l_shipdate@10 >= 1995-01-01 AND l_shipdate@10 <= 1996-12-31, pruning_predicate=CASE WHEN l_shipdate_null_count@1 = l_shipdate_row_count@2 THEN false ELSE l_shipdate_max@0 >= 1995-01-01 END AND CASE WHEN l_shipdate_null_count@1 = l_shipdate_row_count@2 THEN false ELSE l_shipdate_min@3 <= 1996-12-31 END, required_guarantees=[]
-
-Query Stage #5 (4 -> 4):
-ShuffleWriterExec(stage_id=5, output_partitioning=Hash([Column { name: "l_orderkey", index: 1 }], 4))
-  CoalesceBatchesExec: target_batch_size=8192
-    HashJoinExec: mode=Partitioned, join_type=Inner, on=[(s_suppkey@0, l_suppkey@1)], projection=[s_nationkey@1, l_orderkey@2, l_extendedprice@4, l_discount@5, l_shipdate@6]
-      CoalesceBatchesExec: target_batch_size=8192
-        ShuffleReaderExec(stage_id=3, input_partitioning=Hash([Column { name: "s_suppkey", index: 0 }], 4))
-      CoalesceBatchesExec: target_batch_size=8192
-        ShuffleReaderExec(stage_id=4, input_partitioning=Hash([Column { name: "l_suppkey", index: 1 }], 4))
-
-Query Stage #6 (4 -> 4):
-ShuffleWriterExec(stage_id=6, output_partitioning=Hash([Column { name: "o_orderkey", index: 0 }], 4))
-  ParquetExec: file_groups={4 groups: [[home/runner/work/datafusion-ray/datafusion-ray/data/orders.parquet/part1.parquet:0..13634779], [home/runner/work/datafusion-ray/datafusion-ray/data/orders.parquet/part1.parquet:13634779..27269558], [home/runner/work/datafusion-ray/datafusion-ray/data/orders.parquet/part1.parquet:27269558..27275584, home/runner/work/datafusion-ray/datafusion-ray/data/orders.parquet/part2.parquet:0..13628753], [home/runner/work/datafusion-ray/datafusion-ray/data/orders.parquet/part2.parquet:13628753..27263530]]}, projection=[o_orderkey, o_custkey]
-
-Query Stage #7 (4 -> 4):
-ShuffleWriterExec(stage_id=7, output_partitioning=Hash([Column { name: "o_custkey", index: 4 }], 4))
-  CoalesceBatchesExec: target_batch_size=8192
-    HashJoinExec: mode=Partitioned, join_type=Inner, on=[(l_orderkey@1, o_orderkey@0)], projection=[s_nationkey@0, l_extendedprice@2, l_discount@3, l_shipdate@4, o_custkey@6]
-      CoalesceBatchesExec: target_batch_size=8192
-        ShuffleReaderExec(stage_id=5, input_partitioning=Hash([Column { name: "l_orderkey", index: 1 }], 4))
-      CoalesceBatchesExec: target_batch_size=8192
-        ShuffleReaderExec(stage_id=6, input_partitioning=Hash([Column { name: "o_orderkey", index: 0 }], 4))
-
-Query Stage #8 (4 -> 4):
-ShuffleWriterExec(stage_id=8, output_partitioning=Hash([Column { name: "s_nationkey", index: 0 }], 4))
-  ProjectionExec: expr=[s_nationkey@1 as s_nationkey, l_extendedprice@2 as l_extendedprice, l_discount@3 as l_discount, l_shipdate@4 as l_shipdate, c_nationkey@0 as c_nationkey]
-    CoalesceBatchesExec: target_batch_size=8192
-      HashJoinExec: mode=Partitioned, join_type=Inner, on=[(c_custkey@0, o_custkey@4)], projection=[c_nationkey@1, s_nationkey@2, l_extendedprice@3, l_discount@4, l_shipdate@5]
+Query Stage #0 (1 -> 1):
+SortExec: expr=[supp_nation@0 ASC NULLS LAST,cust_nation@1 ASC NULLS LAST,l_year@2 ASC NULLS LAST], preserve_partitioning=[false]
+  ProjectionExec: expr=[supp_nation@0 as supp_nation, cust_nation@1 as cust_nation, l_year@2 as l_year, sum(shipping.volume)@3 as revenue]
+    AggregateExec: mode=Single, gby=[supp_nation@0 as supp_nation, cust_nation@1 as cust_nation, l_year@2 as l_year], aggr=[sum(shipping.volume)]
+      ProjectionExec: expr=[n_name@4 as supp_nation, n_name@0 as cust_nation, date_part(YEAR, l_shipdate@3) as l_year, l_extendedprice@1 * (Some(1),20,0 - l_discount@2) as volume]
         CoalesceBatchesExec: target_batch_size=8192
-          ShuffleReaderExec(stage_id=2, input_partitioning=Hash([Column { name: "c_custkey", index: 0 }], 4))
-        CoalesceBatchesExec: target_batch_size=8192
-          ShuffleReaderExec(stage_id=7, input_partitioning=Hash([Column { name: "o_custkey", index: 4 }], 4))
-
-Query Stage #9 (4 -> 4):
-ShuffleWriterExec(stage_id=9, output_partitioning=Hash([Column { name: "c_nationkey", index: 3 }], 4))
-  ProjectionExec: expr=[l_extendedprice@1 as l_extendedprice, l_discount@2 as l_discount, l_shipdate@3 as l_shipdate, c_nationkey@4 as c_nationkey, n_name@0 as n_name]
-    CoalesceBatchesExec: target_batch_size=8192
-      HashJoinExec: mode=Partitioned, join_type=Inner, on=[(n_nationkey@0, s_nationkey@0)], projection=[n_name@1, l_extendedprice@3, l_discount@4, l_shipdate@5, c_nationkey@6]
-        CoalesceBatchesExec: target_batch_size=8192
-          ShuffleReaderExec(stage_id=1, input_partitioning=Hash([Column { name: "n_nationkey", index: 0 }], 4))
-        CoalesceBatchesExec: target_batch_size=8192
-          ShuffleReaderExec(stage_id=8, input_partitioning=Hash([Column { name: "s_nationkey", index: 0 }], 4))
-
-Query Stage #10 (4 -> 4):
-ShuffleWriterExec(stage_id=10, output_partitioning=Hash([Column { name: "supp_nation", index: 0 }, Column { name: "cust_nation", index: 1 }, Column { name: "l_year", index: 2 }], 4))
-  AggregateExec: mode=Partial, gby=[supp_nation@0 as supp_nation, cust_nation@1 as cust_nation, l_year@2 as l_year], aggr=[sum(shipping.volume)]
-    ProjectionExec: expr=[n_name@4 as supp_nation, n_name@0 as cust_nation, date_part(YEAR, l_shipdate@3) as l_year, l_extendedprice@1 * (Some(1),20,0 - l_discount@2) as volume]
-      CoalesceBatchesExec: target_batch_size=8192
-        HashJoinExec: mode=Partitioned, join_type=Inner, on=[(n_nationkey@0, c_nationkey@3)], filter=n_name@0 = GERMANY AND n_name@1 = IRAQ OR n_name@0 = IRAQ AND n_name@1 = GERMANY, projection=[n_name@1, l_extendedprice@2, l_discount@3, l_shipdate@4, n_name@6]
-          CoalesceBatchesExec: target_batch_size=8192
-            ShuffleReaderExec(stage_id=0, input_partitioning=Hash([Column { name: "n_nationkey", index: 0 }], 4))
-          CoalesceBatchesExec: target_batch_size=8192
-            ShuffleReaderExec(stage_id=9, input_partitioning=Hash([Column { name: "c_nationkey", index: 3 }], 4))
-
-Query Stage #11 (4 -> 4):
-ShuffleWriterExec(stage_id=11, output_partitioning=Hash([Column { name: "supp_nation", index: 0 }, Column { name: "cust_nation", index: 1 }, Column { name: "l_year", index: 2 }], 4))
-  SortExec: expr=[supp_nation@0 ASC NULLS LAST,cust_nation@1 ASC NULLS LAST,l_year@2 ASC NULLS LAST], preserve_partitioning=[true]
-    ProjectionExec: expr=[supp_nation@0 as supp_nation, cust_nation@1 as cust_nation, l_year@2 as l_year, sum(shipping.volume)@3 as revenue]
-      AggregateExec: mode=FinalPartitioned, gby=[supp_nation@0 as supp_nation, cust_nation@1 as cust_nation, l_year@2 as l_year], aggr=[sum(shipping.volume)]
-        CoalesceBatchesExec: target_batch_size=8192
-          ShuffleReaderExec(stage_id=10, input_partitioning=Hash([Column { name: "supp_nation", index: 0 }, Column { name: "cust_nation", index: 1 }, Column { name: "l_year", index: 2 }], 4))
-
-Query Stage #12 (4 -> 1):
-SortPreservingMergeExec: [supp_nation@0 ASC NULLS LAST,cust_nation@1 ASC NULLS LAST,l_year@2 ASC NULLS LAST]
-  ShuffleReaderExec(stage_id=11, input_partitioning=Hash([Column { name: "supp_nation", index: 0 }, Column { name: "cust_nation", index: 1 }, Column { name: "l_year", index: 2 }], 4))
+          HashJoinExec: mode=CollectLeft, join_type=Inner, on=[(n_nationkey@0, c_nationkey@3)], filter=n_name@0 = GERMANY AND n_name@1 = IRAQ OR n_name@0 = IRAQ AND n_name@1 = GERMANY, projection=[n_name@1, l_extendedprice@2, l_discount@3, l_shipdate@4, n_name@6]
+            CoalesceBatchesExec: target_batch_size=8192
+              FilterExec: n_name@1 = IRAQ OR n_name@1 = GERMANY
+                ParquetExec: file_groups={1 group: [[home/runner/work/datafusion-ray/datafusion-ray/data/nation.parquet]]}, projection=[n_nationkey, n_name], predicate=n_name@1 = IRAQ OR n_name@1 = GERMANY, pruning_predicate=CASE WHEN n_name_null_count@2 = n_name_row_count@3 THEN false ELSE n_name_min@0 <= IRAQ AND IRAQ <= n_name_max@1 END OR CASE WHEN n_name_null_count@2 = n_name_row_count@3 THEN false ELSE n_name_min@0 <= GERMANY AND GERMANY <= n_name_max@1 END, required_guarantees=[n_name in (GERMANY, IRAQ)]
+            ProjectionExec: expr=[l_extendedprice@1 as l_extendedprice, l_discount@2 as l_discount, l_shipdate@3 as l_shipdate, c_nationkey@4 as c_nationkey, n_name@0 as n_name]
+              CoalesceBatchesExec: target_batch_size=8192
+                HashJoinExec: mode=CollectLeft, join_type=Inner, on=[(n_nationkey@0, s_nationkey@0)], projection=[n_name@1, l_extendedprice@3, l_discount@4, l_shipdate@5, c_nationkey@6]
+                  CoalesceBatchesExec: target_batch_size=8192
+                    FilterExec: n_name@1 = GERMANY OR n_name@1 = IRAQ
+                      ParquetExec: file_groups={1 group: [[home/runner/work/datafusion-ray/datafusion-ray/data/nation.parquet]]}, projection=[n_nationkey, n_name], predicate=n_name@1 = GERMANY OR n_name@1 = IRAQ, pruning_predicate=CASE WHEN n_name_null_count@2 = n_name_row_count@3 THEN false ELSE n_name_min@0 <= GERMANY AND GERMANY <= n_name_max@1 END OR CASE WHEN n_name_null_count@2 = n_name_row_count@3 THEN false ELSE n_name_min@0 <= IRAQ AND IRAQ <= n_name_max@1 END, required_guarantees=[n_name in (IRAQ, GERMANY)]
+                  ProjectionExec: expr=[s_nationkey@1 as s_nationkey, l_extendedprice@2 as l_extendedprice, l_discount@3 as l_discount, l_shipdate@4 as l_shipdate, c_nationkey@0 as c_nationkey]
+                    CoalesceBatchesExec: target_batch_size=8192
+                      HashJoinExec: mode=CollectLeft, join_type=Inner, on=[(c_custkey@0, o_custkey@4)], projection=[c_nationkey@1, s_nationkey@2, l_extendedprice@3, l_discount@4, l_shipdate@5]
+                        ParquetExec: file_groups={1 group: [[home/runner/work/datafusion-ray/datafusion-ray/data/customer.parquet:0..13211178]]}, projection=[c_custkey, c_nationkey]
+                        CoalesceBatchesExec: target_batch_size=8192
+                          HashJoinExec: mode=CollectLeft, join_type=Inner, on=[(l_orderkey@1, o_orderkey@0)], projection=[s_nationkey@0, l_extendedprice@2, l_discount@3, l_shipdate@4, o_custkey@6]
+                            CoalesceBatchesExec: target_batch_size=8192
+                              HashJoinExec: mode=CollectLeft, join_type=Inner, on=[(s_suppkey@0, l_suppkey@1)], projection=[s_nationkey@1, l_orderkey@2, l_extendedprice@4, l_discount@5, l_shipdate@6]
+                                ParquetExec: file_groups={1 group: [[home/runner/work/datafusion-ray/datafusion-ray/data/supplier.parquet]]}, projection=[s_suppkey, s_nationkey]
+                                CoalesceBatchesExec: target_batch_size=8192
+                                  FilterExec: l_shipdate@4 >= 1995-01-01 AND l_shipdate@4 <= 1996-12-31
+                                    ParquetExec: file_groups={1 group: [[home/runner/work/datafusion-ray/datafusion-ray/data/lineitem.parquet:0..208317955]]}, projection=[l_orderkey, l_suppkey, l_extendedprice, l_discount, l_shipdate], predicate=l_shipdate@10 >= 1995-01-01 AND l_shipdate@10 <= 1996-12-31, pruning_predicate=CASE WHEN l_shipdate_null_count@1 = l_shipdate_row_count@2 THEN false ELSE l_shipdate_max@0 >= 1995-01-01 END AND CASE WHEN l_shipdate_null_count@1 = l_shipdate_row_count@2 THEN false ELSE l_shipdate_min@3 <= 1996-12-31 END, required_guarantees=[]
+                            ParquetExec: file_groups={1 group: [[home/runner/work/datafusion-ray/datafusion-ray/data/orders.parquet:0..54530383]]}, projection=[o_orderkey, o_custkey]
 
