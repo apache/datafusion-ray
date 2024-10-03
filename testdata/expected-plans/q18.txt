@@ -1,0 +1,61 @@
+DataFusion Logical Plan
+=======================
+
+Limit: skip=0, fetch=100
+  Sort: orders.o_totalprice DESC NULLS FIRST, orders.o_orderdate ASC NULLS LAST, fetch=100
+    Aggregate: groupBy=[[customer.c_name, customer.c_custkey, orders.o_orderkey, orders.o_orderdate, orders.o_totalprice]], aggr=[[sum(lineitem.l_quantity)]]
+      LeftSemi Join: orders.o_orderkey = __correlated_sq_1.l_orderkey
+        Projection: customer.c_custkey, customer.c_name, orders.o_orderkey, orders.o_totalprice, orders.o_orderdate, lineitem.l_quantity
+          Inner Join: orders.o_orderkey = lineitem.l_orderkey
+            Projection: customer.c_custkey, customer.c_name, orders.o_orderkey, orders.o_totalprice, orders.o_orderdate
+              Inner Join: customer.c_custkey = orders.o_custkey
+                TableScan: customer projection=[c_custkey, c_name]
+                TableScan: orders projection=[o_orderkey, o_custkey, o_totalprice, o_orderdate]
+            TableScan: lineitem projection=[l_orderkey, l_quantity]
+        SubqueryAlias: __correlated_sq_1
+          Projection: lineitem.l_orderkey
+            Filter: sum(lineitem.l_quantity) > Decimal128(Some(31300),21,2)
+              Aggregate: groupBy=[[lineitem.l_orderkey]], aggr=[[sum(lineitem.l_quantity)]]
+                TableScan: lineitem projection=[l_orderkey, l_quantity]
+
+DataFusion Physical Plan
+========================
+
+SortExec: TopK(fetch=100), expr=[o_totalprice@4 DESC,o_orderdate@3 ASC NULLS LAST], preserve_partitioning=[false]
+  AggregateExec: mode=Single, gby=[c_name@1 as c_name, c_custkey@0 as c_custkey, o_orderkey@2 as o_orderkey, o_orderdate@4 as o_orderdate, o_totalprice@3 as o_totalprice], aggr=[sum(lineitem.l_quantity)]
+    CoalesceBatchesExec: target_batch_size=8192
+      HashJoinExec: mode=CollectLeft, join_type=RightSemi, on=[(l_orderkey@0, o_orderkey@2)]
+        ProjectionExec: expr=[l_orderkey@0 as l_orderkey]
+          CoalesceBatchesExec: target_batch_size=8192
+            FilterExec: sum(lineitem.l_quantity)@1 > Some(31300),21,2
+              AggregateExec: mode=Single, gby=[l_orderkey@0 as l_orderkey], aggr=[sum(lineitem.l_quantity)]
+                ParquetExec: file_groups={1 group: [[home/runner/work/datafusion-ray/datafusion-ray/data/lineitem.parquet:0..208325896]]}, projection=[l_orderkey, l_quantity]
+        CoalesceBatchesExec: target_batch_size=8192
+          HashJoinExec: mode=CollectLeft, join_type=Inner, on=[(o_orderkey@2, l_orderkey@0)], projection=[c_custkey@0, c_name@1, o_orderkey@2, o_totalprice@3, o_orderdate@4, l_quantity@6]
+            CoalesceBatchesExec: target_batch_size=8192
+              HashJoinExec: mode=CollectLeft, join_type=Inner, on=[(c_custkey@0, o_custkey@1)], projection=[c_custkey@0, c_name@1, o_orderkey@2, o_totalprice@4, o_orderdate@5]
+                ParquetExec: file_groups={1 group: [[home/runner/work/datafusion-ray/datafusion-ray/data/customer.parquet:0..13210681]]}, projection=[c_custkey, c_name]
+                ParquetExec: file_groups={1 group: [[home/runner/work/datafusion-ray/datafusion-ray/data/orders.parquet:0..54533415]]}, projection=[o_orderkey, o_custkey, o_totalprice, o_orderdate]
+            ParquetExec: file_groups={1 group: [[home/runner/work/datafusion-ray/datafusion-ray/data/lineitem.parquet:0..208325896]]}, projection=[l_orderkey, l_quantity]
+
+RaySQL Plan
+===========
+
+Query Stage #0 (1 -> 1):
+SortExec: TopK(fetch=100), expr=[o_totalprice@4 DESC,o_orderdate@3 ASC NULLS LAST], preserve_partitioning=[false]
+  AggregateExec: mode=Single, gby=[c_name@1 as c_name, c_custkey@0 as c_custkey, o_orderkey@2 as o_orderkey, o_orderdate@4 as o_orderdate, o_totalprice@3 as o_totalprice], aggr=[sum(lineitem.l_quantity)]
+    CoalesceBatchesExec: target_batch_size=8192
+      HashJoinExec: mode=CollectLeft, join_type=RightSemi, on=[(l_orderkey@0, o_orderkey@2)]
+        ProjectionExec: expr=[l_orderkey@0 as l_orderkey]
+          CoalesceBatchesExec: target_batch_size=8192
+            FilterExec: sum(lineitem.l_quantity)@1 > Some(31300),21,2
+              AggregateExec: mode=Single, gby=[l_orderkey@0 as l_orderkey], aggr=[sum(lineitem.l_quantity)]
+                ParquetExec: file_groups={1 group: [[home/runner/work/datafusion-ray/datafusion-ray/data/lineitem.parquet:0..208325896]]}, projection=[l_orderkey, l_quantity]
+        CoalesceBatchesExec: target_batch_size=8192
+          HashJoinExec: mode=CollectLeft, join_type=Inner, on=[(o_orderkey@2, l_orderkey@0)], projection=[c_custkey@0, c_name@1, o_orderkey@2, o_totalprice@3, o_orderdate@4, l_quantity@6]
+            CoalesceBatchesExec: target_batch_size=8192
+              HashJoinExec: mode=CollectLeft, join_type=Inner, on=[(c_custkey@0, o_custkey@1)], projection=[c_custkey@0, c_name@1, o_orderkey@2, o_totalprice@4, o_orderdate@5]
+                ParquetExec: file_groups={1 group: [[home/runner/work/datafusion-ray/datafusion-ray/data/customer.parquet:0..13210681]]}, projection=[c_custkey, c_name]
+                ParquetExec: file_groups={1 group: [[home/runner/work/datafusion-ray/datafusion-ray/data/orders.parquet:0..54533415]]}, projection=[o_orderkey, o_custkey, o_totalprice, o_orderdate]
+            ParquetExec: file_groups={1 group: [[home/runner/work/datafusion-ray/datafusion-ray/data/lineitem.parquet:0..208325896]]}, projection=[l_orderkey, l_quantity]
+
