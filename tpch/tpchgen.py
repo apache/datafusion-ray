@@ -174,7 +174,7 @@ def generate_tpch(scale_factor: int, partitions: int):
     start_time = time.time()
     docker_cmd = os.getenv("DOCKER_CMD", "docker")
     if partitions == 1:
-        command = f"{docker_cmd} run -v `pwd`/data:/data -t --rm ghcr.io/scalytics/tpch-docker:main -vf -s {scale_factor}"
+        command = f"{docker_cmd} run -v `pwd`/data:/data -t --rm ghcr.io/scalytics/tpch-docker:main -vf -s {scale_factor} -r 1"
         run_and_log_output(command, "/tmp/tpchgen.log")
     else:
         max_threads = os.cpu_count()
@@ -182,7 +182,7 @@ def generate_tpch(scale_factor: int, partitions: int):
         # List of commands to run
         commands = [
             (
-                f"{docker_cmd} run -v `pwd`/data:/data -t --rm ghcr.io/scalytics/tpch-docker:main -vf -s {scale_factor} -C {partitions} -S {part}",
+                f"{docker_cmd} run -v `pwd`/data:/data -t --rm ghcr.io/scalytics/tpch-docker:main -vf -s {scale_factor} -C {partitions} -S {part} -r 1",
                 f"/tmp/tpchgen-part{part}.log",
             )
             for part in range(1, partitions + 1)

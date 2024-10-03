@@ -6,3 +6,4 @@ venv
 *.log
 results-sf*
 data
+tpch/tpch-dbgen

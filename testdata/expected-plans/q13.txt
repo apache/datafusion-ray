@@ -24,11 +24,11 @@ SortExec: expr=[custdist@1 DESC,c_count@0 DESC], preserve_partitioning=[false]
         AggregateExec: mode=Single, gby=[c_custkey@0 as c_custkey], aggr=[count(orders.o_orderkey)]
           CoalesceBatchesExec: target_batch_size=8192
             HashJoinExec: mode=CollectLeft, join_type=Left, on=[(c_custkey@0, o_custkey@1)], projection=[c_custkey@0, o_orderkey@1]
-              ParquetExec: file_groups={1 group: [[home/runner/work/datafusion-ray/datafusion-ray/data/customer.parquet:0..13210681]]}, projection=[c_custkey]
+              ParquetExec: file_groups={1 group: [[home/edmondo/Development/datafusion-ray/data/customer.parquet:0..13212491]]}, projection=[c_custkey]
               ProjectionExec: expr=[o_orderkey@0 as o_orderkey, o_custkey@1 as o_custkey]
                 CoalesceBatchesExec: target_batch_size=8192
                   FilterExec: o_comment@2 NOT LIKE %express%requests%
-                    ParquetExec: file_groups={1 group: [[home/runner/work/datafusion-ray/datafusion-ray/data/orders.parquet:0..54533415]]}, projection=[o_orderkey, o_custkey, o_comment], predicate=o_comment@8 NOT LIKE %express%requests%
+                    ParquetExec: file_groups={1 group: [[home/edmondo/Development/datafusion-ray/data/orders.parquet:0..54531250]]}, projection=[o_orderkey, o_custkey, o_comment], predicate=o_comment@8 NOT LIKE %express%requests%
 
 RaySQL Plan
 ===========
@@ -41,9 +41,9 @@ SortExec: expr=[custdist@1 DESC,c_count@0 DESC], preserve_partitioning=[false]
         AggregateExec: mode=Single, gby=[c_custkey@0 as c_custkey], aggr=[count(orders.o_orderkey)]
           CoalesceBatchesExec: target_batch_size=8192
             HashJoinExec: mode=CollectLeft, join_type=Left, on=[(c_custkey@0, o_custkey@1)], projection=[c_custkey@0, o_orderkey@1]
-              ParquetExec: file_groups={1 group: [[home/runner/work/datafusion-ray/datafusion-ray/data/customer.parquet:0..13210681]]}, projection=[c_custkey]
+              ParquetExec: file_groups={1 group: [[home/edmondo/Development/datafusion-ray/data/customer.parquet:0..13212491]]}, projection=[c_custkey]
               ProjectionExec: expr=[o_orderkey@0 as o_orderkey, o_custkey@1 as o_custkey]
                 CoalesceBatchesExec: target_batch_size=8192
                   FilterExec: o_comment@2 NOT LIKE %express%requests%
-                    ParquetExec: file_groups={1 group: [[home/runner/work/datafusion-ray/datafusion-ray/data/orders.parquet:0..54533415]]}, projection=[o_orderkey, o_custkey, o_comment], predicate=o_comment@8 NOT LIKE %express%requests%
+                    ParquetExec: file_groups={1 group: [[home/edmondo/Development/datafusion-ray/data/orders.parquet:0..54531250]]}, projection=[o_orderkey, o_custkey, o_comment], predicate=o_comment@8 NOT LIKE %express%requests%
 
