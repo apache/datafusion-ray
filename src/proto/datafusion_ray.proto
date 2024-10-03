@@ -1,9 +1,9 @@
 syntax = "proto3";
 
-package raysql.protobuf;
+package datafusion_ray.protobuf;
 
 option java_multiple_files = true;
-option java_package = "raysql.protobuf";
+option java_package = "datafusion_ray.protobuf";
 option java_outer_classname = "RaySqlProto";
 
 import "datafusion.proto";

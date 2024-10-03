@@ -32,7 +32,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use uuid::Uuid;
 
-#[pyclass(name = "ExecutionGraph", module = "raysql", subclass)]
+#[pyclass(name = "ExecutionGraph", module = "datafusion_ray", subclass)]
 pub struct PyExecutionGraph {
     pub graph: ExecutionGraph,
 }

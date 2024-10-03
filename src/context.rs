@@ -44,7 +44,7 @@ use tokio::task::JoinHandle;
 
 type PyResultSet = Vec<PyObject>;
 
-#[pyclass(name = "Context", module = "raysql", subclass)]
+#[pyclass(name = "Context", module = "datafusion_ray", subclass)]
 pub struct PyContext {
     pub(crate) ctx: SessionContext,
     use_ray_shuffle: bool,

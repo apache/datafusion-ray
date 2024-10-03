@@ -20,7 +20,7 @@ import os
 
 from pyarrow import csv as pacsv
 import ray
-from datafusion_ray import RaySqlContext
+from datafusion_ray import DatafusionRayContext
 
 NUM_CPUS_PER_WORKER = 8
 
@@ -31,9 +31,9 @@ QUERIES_DIR = os.path.join(SCRIPT_DIR, f"../sqlbench-h/queries/sf={SF}")
 RESULTS_DIR = f"results-sf{SF}"
 
 
-def setup_context(use_ray_shuffle: bool, num_workers: int = 2) -> RaySqlContext:
+def setup_context(use_ray_shuffle: bool, num_workers: int = 2) -> DatafusionRayContext:
     print(f"Using {num_workers} workers")
-    ctx = RaySqlContext(num_workers, use_ray_shuffle)
+    ctx = DatafusionRayContext(num_workers, use_ray_shuffle)
     for table in [
         "customer",
         "lineitem",
@@ -53,14 +53,14 @@ def load_query(n: int) -> str:
         return fin.read()
 
 
-def tpch_query(ctx: RaySqlContext, q: int = 1):
+def tpch_query(ctx: DatafusionRayContext, q: int = 1):
     sql = load_query(q)
     result_set = ctx.sql(sql)
     return result_set
 
 
 def tpch_timing(
-    ctx: RaySqlContext,
+    ctx: DatafusionRayContext,
     q: int = 1,
     print_result: bool = False,
     write_result: bool = False,

@@ -19,7 +19,7 @@ import os
 import pandas as pd
 import ray
 
-from raysql import RaySqlContext
+from datafusion_ray import DatafusionRayContext
 
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 
@@ -27,7 +27,7 @@ SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 ray.init(resources={"worker": 1})
 
 # Create a context and register a table
-ctx = RaySqlContext(2, use_ray_shuffle=True)
+ctx = DatafusionRayContext(2, use_ray_shuffle=True)
 # Register either a CSV or Parquet file
 # ctx.register_csv("tips", f"{SCRIPT_DIR}/tips.csv", True)
 ctx.register_parquet("tips", f"{SCRIPT_DIR}/tips.parquet")

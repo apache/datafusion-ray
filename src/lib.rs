@@ -31,7 +31,7 @@ pub mod utils;
 
 /// A Python module implemented in Rust.
 #[pymodule]
-fn _datafusion_ray_internal(_py: Python, m: &PyModule) -> PyResult<()> {
+fn _datafusion_ray_internal(m: &Bound<'_, PyModule>) -> PyResult<()> {
     // register classes that can be created directly from Python code
     m.add_class::<context::PyContext>()?;
     m.add_class::<planner::PyExecutionGraph>()?;

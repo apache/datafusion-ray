@@ -32,14 +32,14 @@ fn main() -> Result<(), String> {
 
     // We don't include the proto files in releases so that downstreams
     // do not need to have PROTOC included
-    if Path::new("src/proto/raysql.proto").exists() {
+    if Path::new("src/proto/datafusion-ray.proto").exists() {
         println!("cargo:rerun-if-changed=src/proto/datafusion.proto");
-        println!("cargo:rerun-if-changed=src/proto/raysql.proto");
+        println!("cargo:rerun-if-changed=src/proto/datafusion-ray.proto");
         tonic_build::configure()
             .extern_path(".datafusion", "::datafusion_proto::protobuf")
-            .compile(&["src/proto/raysql.proto"], &["src/proto"])
+            .compile(&["src/proto/datafusion-ray.proto"], &["src/proto"])
             .map_err(|e| format!("protobuf compilation failed: {e}"))?;
-        let generated_source_path = out.join("raysql.protobuf.rs");
+        let generated_source_path = out.join("datafusion-ray.protobuf.rs");
         let code = std::fs::read_to_string(generated_source_path).unwrap();
         let mut file = std::fs::OpenOptions::new()
             .write(true)
