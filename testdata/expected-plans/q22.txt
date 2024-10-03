@@ -22,41 +22,78 @@ Sort: custsale.cntrycode ASC NULLS LAST
 DataFusion Physical Plan
 ========================
 
-SortExec: expr=[cntrycode@0 ASC NULLS LAST], preserve_partitioning=[false]
-  ProjectionExec: expr=[cntrycode@0 as cntrycode, count(*)@1 as numcust, sum(custsale.c_acctbal)@2 as totacctbal]
-    AggregateExec: mode=Single, gby=[cntrycode@0 as cntrycode], aggr=[count(*), sum(custsale.c_acctbal)]
-      ProjectionExec: expr=[substr(c_phone@1, 1, 2) as cntrycode, c_acctbal@2 as c_acctbal]
-        NestedLoopJoinExec: join_type=Inner, filter=CAST(c_acctbal@0 AS Decimal128(15, 6)) > avg(customer.c_acctbal)@1
-          AggregateExec: mode=Single, gby=[], aggr=[avg(customer.c_acctbal)]
-            ProjectionExec: expr=[c_acctbal@1 as c_acctbal]
-              CoalesceBatchesExec: target_batch_size=8192
-                FilterExec: c_acctbal@1 > Some(0),11,2 AND Use substr(c_phone@0, 1, 2) IN (SET) ([Literal { value: Utf8("24") }, Literal { value: Utf8("34") }, Literal { value: Utf8("16") }, Literal { value: Utf8("30") }, Literal { value: Utf8("33") }, Literal { value: Utf8("14") }, Literal { value: Utf8("13") }])
-                  ParquetExec: file_groups={1 group: [[home/runner/work/datafusion-ray/datafusion-ray/data/customer.parquet:0..13212491]]}, projection=[c_phone, c_acctbal], predicate=c_acctbal@5 > Some(0),11,2 AND Use substr(c_phone@4, 1, 2) IN (SET) ([Literal { value: Utf8("24") }, Literal { value: Utf8("34") }, Literal { value: Utf8("16") }, Literal { value: Utf8("30") }, Literal { value: Utf8("33") }, Literal { value: Utf8("14") }, Literal { value: Utf8("13") }]) AND c_acctbal@5 > Some(0),11,2, pruning_predicate=CASE WHEN c_acctbal_null_count@1 = c_acctbal_row_count@2 THEN false ELSE c_acctbal_max@0 > Some(0),11,2 END AND CASE WHEN c_acctbal_null_count@1 = c_acctbal_row_count@2 THEN false ELSE c_acctbal_max@0 > Some(0),11,2 END, required_guarantees=[]
-          CoalesceBatchesExec: target_batch_size=8192
-            HashJoinExec: mode=CollectLeft, join_type=LeftAnti, on=[(c_custkey@0, o_custkey@0)], projection=[c_phone@1, c_acctbal@2]
-              CoalesceBatchesExec: target_batch_size=8192
-                FilterExec: Use substr(c_phone@1, 1, 2) IN (SET) ([Literal { value: Utf8("24") }, Literal { value: Utf8("34") }, Literal { value: Utf8("16") }, Literal { value: Utf8("30") }, Literal { value: Utf8("33") }, Literal { value: Utf8("14") }, Literal { value: Utf8("13") }])
-                  ParquetExec: file_groups={1 group: [[home/runner/work/datafusion-ray/datafusion-ray/data/customer.parquet:0..13212491]]}, projection=[c_custkey, c_phone, c_acctbal], predicate=Use substr(c_phone@4, 1, 2) IN (SET) ([Literal { value: Utf8("24") }, Literal { value: Utf8("34") }, Literal { value: Utf8("16") }, Literal { value: Utf8("30") }, Literal { value: Utf8("33") }, Literal { value: Utf8("14") }, Literal { value: Utf8("13") }])
-              ParquetExec: file_groups={1 group: [[home/runner/work/datafusion-ray/datafusion-ray/data/orders.parquet:0..54531250]]}, projection=[o_custkey]
+SortPreservingMergeExec: [cntrycode@0 ASC NULLS LAST]
+  SortExec: expr=[cntrycode@0 ASC NULLS LAST], preserve_partitioning=[true]
+    ProjectionExec: expr=[cntrycode@0 as cntrycode, count(*)@1 as numcust, sum(custsale.c_acctbal)@2 as totacctbal]
+      AggregateExec: mode=FinalPartitioned, gby=[cntrycode@0 as cntrycode], aggr=[count(*), sum(custsale.c_acctbal)]
+        CoalesceBatchesExec: target_batch_size=8192
+          RepartitionExec: partitioning=Hash([cntrycode@0], 4), input_partitions=4
+            AggregateExec: mode=Partial, gby=[cntrycode@0 as cntrycode], aggr=[count(*), sum(custsale.c_acctbal)]
+              ProjectionExec: expr=[substr(c_phone@1, 1, 2) as cntrycode, c_acctbal@2 as c_acctbal]
+                NestedLoopJoinExec: join_type=Inner, filter=CAST(c_acctbal@0 AS Decimal128(15, 6)) > avg(customer.c_acctbal)@1
+                  AggregateExec: mode=Final, gby=[], aggr=[avg(customer.c_acctbal)]
+                    CoalescePartitionsExec
+                      AggregateExec: mode=Partial, gby=[], aggr=[avg(customer.c_acctbal)]
+                        ProjectionExec: expr=[c_acctbal@1 as c_acctbal]
+                          CoalesceBatchesExec: target_batch_size=8192
+                            FilterExec: c_acctbal@1 > Some(0),11,2 AND Use substr(c_phone@0, 1, 2) IN (SET) ([Literal { value: Utf8("24") }, Literal { value: Utf8("34") }, Literal { value: Utf8("16") }, Literal { value: Utf8("30") }, Literal { value: Utf8("33") }, Literal { value: Utf8("14") }, Literal { value: Utf8("13") }])
+                              ParquetExec: file_groups={4 groups: [[home/runner/work/datafusion-ray/datafusion-ray/data/customer.parquet/part1.parquet:0..3390424], [home/runner/work/datafusion-ray/datafusion-ray/data/customer.parquet/part1.parquet:3390424..6780848], [home/runner/work/datafusion-ray/datafusion-ray/data/customer.parquet/part1.parquet:6780848..6782476, home/runner/work/datafusion-ray/datafusion-ray/data/customer.parquet/part2.parquet:0..3388796], [home/runner/work/datafusion-ray/datafusion-ray/data/customer.parquet/part2.parquet:3388796..6779220]]}, projection=[c_phone, c_acctbal], predicate=c_acctbal@5 > Some(0),11,2 AND Use substr(c_phone@4, 1, 2) IN (SET) ([Literal { value: Utf8("24") }, Literal { value: Utf8("34") }, Literal { value: Utf8("16") }, Literal { value: Utf8("30") }, Literal { value: Utf8("33") }, Literal { value: Utf8("14") }, Literal { value: Utf8("13") }]) AND c_acctbal@5 > Some(0),11,2, pruning_predicate=CASE WHEN c_acctbal_null_count@1 = c_acctbal_row_count@2 THEN false ELSE c_acctbal_max@0 > Some(0),11,2 END AND CASE WHEN c_acctbal_null_count@1 = c_acctbal_row_count@2 THEN false ELSE c_acctbal_max@0 > Some(0),11,2 END, required_guarantees=[]
+                  CoalesceBatchesExec: target_batch_size=8192
+                    HashJoinExec: mode=Partitioned, join_type=LeftAnti, on=[(c_custkey@0, o_custkey@0)], projection=[c_phone@1, c_acctbal@2]
+                      CoalesceBatchesExec: target_batch_size=8192
+                        RepartitionExec: partitioning=Hash([c_custkey@0], 4), input_partitions=4
+                          CoalesceBatchesExec: target_batch_size=8192
+                            FilterExec: Use substr(c_phone@1, 1, 2) IN (SET) ([Literal { value: Utf8("24") }, Literal { value: Utf8("34") }, Literal { value: Utf8("16") }, Literal { value: Utf8("30") }, Literal { value: Utf8("33") }, Literal { value: Utf8("14") }, Literal { value: Utf8("13") }])
+                              ParquetExec: file_groups={4 groups: [[home/runner/work/datafusion-ray/datafusion-ray/data/customer.parquet/part1.parquet:0..3390424], [home/runner/work/datafusion-ray/datafusion-ray/data/customer.parquet/part1.parquet:3390424..6780848], [home/runner/work/datafusion-ray/datafusion-ray/data/customer.parquet/part1.parquet:6780848..6782476, home/runner/work/datafusion-ray/datafusion-ray/data/customer.parquet/part2.parquet:0..3388796], [home/runner/work/datafusion-ray/datafusion-ray/data/customer.parquet/part2.parquet:3388796..6779220]]}, projection=[c_custkey, c_phone, c_acctbal], predicate=Use substr(c_phone@4, 1, 2) IN (SET) ([Literal { value: Utf8("24") }, Literal { value: Utf8("34") }, Literal { value: Utf8("16") }, Literal { value: Utf8("30") }, Literal { value: Utf8("33") }, Literal { value: Utf8("14") }, Literal { value: Utf8("13") }])
+                      CoalesceBatchesExec: target_batch_size=8192
+                        RepartitionExec: partitioning=Hash([o_custkey@0], 4), input_partitions=4
+                          ParquetExec: file_groups={4 groups: [[home/runner/work/datafusion-ray/datafusion-ray/data/orders.parquet/part1.parquet:0..13634779], [home/runner/work/datafusion-ray/datafusion-ray/data/orders.parquet/part1.parquet:13634779..27269558], [home/runner/work/datafusion-ray/datafusion-ray/data/orders.parquet/part1.parquet:27269558..27275584, home/runner/work/datafusion-ray/datafusion-ray/data/orders.parquet/part2.parquet:0..13628753], [home/runner/work/datafusion-ray/datafusion-ray/data/orders.parquet/part2.parquet:13628753..27263530]]}, projection=[o_custkey]
 
 RaySQL Plan
 ===========
 
-Query Stage #0 (1 -> 1):
-SortExec: expr=[cntrycode@0 ASC NULLS LAST], preserve_partitioning=[false]
-  ProjectionExec: expr=[cntrycode@0 as cntrycode, count(*)@1 as numcust, sum(custsale.c_acctbal)@2 as totacctbal]
-    AggregateExec: mode=Single, gby=[cntrycode@0 as cntrycode], aggr=[count(*), sum(custsale.c_acctbal)]
-      ProjectionExec: expr=[substr(c_phone@1, 1, 2) as cntrycode, c_acctbal@2 as c_acctbal]
-        NestedLoopJoinExec: join_type=Inner, filter=CAST(c_acctbal@0 AS Decimal128(15, 6)) > avg(customer.c_acctbal)@1
-          AggregateExec: mode=Single, gby=[], aggr=[avg(customer.c_acctbal)]
-            ProjectionExec: expr=[c_acctbal@1 as c_acctbal]
-              CoalesceBatchesExec: target_batch_size=8192
-                FilterExec: c_acctbal@1 > Some(0),11,2 AND Use substr(c_phone@0, 1, 2) IN (SET) ([Literal { value: Utf8("24") }, Literal { value: Utf8("34") }, Literal { value: Utf8("16") }, Literal { value: Utf8("30") }, Literal { value: Utf8("33") }, Literal { value: Utf8("14") }, Literal { value: Utf8("13") }])
-                  ParquetExec: file_groups={1 group: [[home/runner/work/datafusion-ray/datafusion-ray/data/customer.parquet:0..13212491]]}, projection=[c_phone, c_acctbal], predicate=c_acctbal@5 > Some(0),11,2 AND Use substr(c_phone@4, 1, 2) IN (SET) ([Literal { value: Utf8("24") }, Literal { value: Utf8("34") }, Literal { value: Utf8("16") }, Literal { value: Utf8("30") }, Literal { value: Utf8("33") }, Literal { value: Utf8("14") }, Literal { value: Utf8("13") }]) AND c_acctbal@5 > Some(0),11,2, pruning_predicate=CASE WHEN c_acctbal_null_count@1 = c_acctbal_row_count@2 THEN false ELSE c_acctbal_max@0 > Some(0),11,2 END AND CASE WHEN c_acctbal_null_count@1 = c_acctbal_row_count@2 THEN false ELSE c_acctbal_max@0 > Some(0),11,2 END, required_guarantees=[]
-          CoalesceBatchesExec: target_batch_size=8192
-            HashJoinExec: mode=CollectLeft, join_type=LeftAnti, on=[(c_custkey@0, o_custkey@0)], projection=[c_phone@1, c_acctbal@2]
-              CoalesceBatchesExec: target_batch_size=8192
-                FilterExec: Use substr(c_phone@1, 1, 2) IN (SET) ([Literal { value: Utf8("24") }, Literal { value: Utf8("34") }, Literal { value: Utf8("16") }, Literal { value: Utf8("30") }, Literal { value: Utf8("33") }, Literal { value: Utf8("14") }, Literal { value: Utf8("13") }])
-                  ParquetExec: file_groups={1 group: [[home/runner/work/datafusion-ray/datafusion-ray/data/customer.parquet:0..13212491]]}, projection=[c_custkey, c_phone, c_acctbal], predicate=Use substr(c_phone@4, 1, 2) IN (SET) ([Literal { value: Utf8("24") }, Literal { value: Utf8("34") }, Literal { value: Utf8("16") }, Literal { value: Utf8("30") }, Literal { value: Utf8("33") }, Literal { value: Utf8("14") }, Literal { value: Utf8("13") }])
-              ParquetExec: file_groups={1 group: [[home/runner/work/datafusion-ray/datafusion-ray/data/orders.parquet:0..54531250]]}, projection=[o_custkey]
+Query Stage #0 (4 -> 1):
+ShuffleWriterExec(stage_id=0, output_partitioning=UnknownPartitioning(4))
+  AggregateExec: mode=Partial, gby=[], aggr=[avg(customer.c_acctbal)]
+    ProjectionExec: expr=[c_acctbal@1 as c_acctbal]
+      CoalesceBatchesExec: target_batch_size=8192
+        FilterExec: c_acctbal@1 > Some(0),11,2 AND Use substr(c_phone@0, 1, 2) IN (SET) ([Literal { value: Utf8("24") }, Literal { value: Utf8("34") }, Literal { value: Utf8("16") }, Literal { value: Utf8("30") }, Literal { value: Utf8("33") }, Literal { value: Utf8("14") }, Literal { value: Utf8("13") }])
+          ParquetExec: file_groups={4 groups: [[home/runner/work/datafusion-ray/datafusion-ray/data/customer.parquet/part1.parquet:0..3390424], [home/runner/work/datafusion-ray/datafusion-ray/data/customer.parquet/part1.parquet:3390424..6780848], [home/runner/work/datafusion-ray/datafusion-ray/data/customer.parquet/part1.parquet:6780848..6782476, home/runner/work/datafusion-ray/datafusion-ray/data/customer.parquet/part2.parquet:0..3388796], [home/runner/work/datafusion-ray/datafusion-ray/data/customer.parquet/part2.parquet:3388796..6779220]]}, projection=[c_phone, c_acctbal], predicate=c_acctbal@5 > Some(0),11,2 AND Use substr(c_phone@4, 1, 2) IN (SET) ([Literal { value: Utf8("24") }, Literal { value: Utf8("34") }, Literal { value: Utf8("16") }, Literal { value: Utf8("30") }, Literal { value: Utf8("33") }, Literal { value: Utf8("14") }, Literal { value: Utf8("13") }]) AND c_acctbal@5 > Some(0),11,2, pruning_predicate=CASE WHEN c_acctbal_null_count@1 = c_acctbal_row_count@2 THEN false ELSE c_acctbal_max@0 > Some(0),11,2 END AND CASE WHEN c_acctbal_null_count@1 = c_acctbal_row_count@2 THEN false ELSE c_acctbal_max@0 > Some(0),11,2 END, required_guarantees=[]
+
+Query Stage #1 (4 -> 4):
+ShuffleWriterExec(stage_id=1, output_partitioning=Hash([Column { name: "c_custkey", index: 0 }], 4))
+  CoalesceBatchesExec: target_batch_size=8192
+    FilterExec: Use substr(c_phone@1, 1, 2) IN (SET) ([Literal { value: Utf8("24") }, Literal { value: Utf8("34") }, Literal { value: Utf8("16") }, Literal { value: Utf8("30") }, Literal { value: Utf8("33") }, Literal { value: Utf8("14") }, Literal { value: Utf8("13") }])
+      ParquetExec: file_groups={4 groups: [[home/runner/work/datafusion-ray/datafusion-ray/data/customer.parquet/part1.parquet:0..3390424], [home/runner/work/datafusion-ray/datafusion-ray/data/customer.parquet/part1.parquet:3390424..6780848], [home/runner/work/datafusion-ray/datafusion-ray/data/customer.parquet/part1.parquet:6780848..6782476, home/runner/work/datafusion-ray/datafusion-ray/data/customer.parquet/part2.parquet:0..3388796], [home/runner/work/datafusion-ray/datafusion-ray/data/customer.parquet/part2.parquet:3388796..6779220]]}, projection=[c_custkey, c_phone, c_acctbal], predicate=Use substr(c_phone@4, 1, 2) IN (SET) ([Literal { value: Utf8("24") }, Literal { value: Utf8("34") }, Literal { value: Utf8("16") }, Literal { value: Utf8("30") }, Literal { value: Utf8("33") }, Literal { value: Utf8("14") }, Literal { value: Utf8("13") }])
+
+Query Stage #2 (4 -> 4):
+ShuffleWriterExec(stage_id=2, output_partitioning=Hash([Column { name: "o_custkey", index: 0 }], 4))
+  ParquetExec: file_groups={4 groups: [[home/runner/work/datafusion-ray/datafusion-ray/data/orders.parquet/part1.parquet:0..13634779], [home/runner/work/datafusion-ray/datafusion-ray/data/orders.parquet/part1.parquet:13634779..27269558], [home/runner/work/datafusion-ray/datafusion-ray/data/orders.parquet/part1.parquet:27269558..27275584, home/runner/work/datafusion-ray/datafusion-ray/data/orders.parquet/part2.parquet:0..13628753], [home/runner/work/datafusion-ray/datafusion-ray/data/orders.parquet/part2.parquet:13628753..27263530]]}, projection=[o_custkey]
+
+Query Stage #3 (4 -> 4):
+ShuffleWriterExec(stage_id=3, output_partitioning=Hash([Column { name: "cntrycode", index: 0 }], 4))
+  AggregateExec: mode=Partial, gby=[cntrycode@0 as cntrycode], aggr=[count(*), sum(custsale.c_acctbal)]
+    ProjectionExec: expr=[substr(c_phone@1, 1, 2) as cntrycode, c_acctbal@2 as c_acctbal]
+      NestedLoopJoinExec: join_type=Inner, filter=CAST(c_acctbal@0 AS Decimal128(15, 6)) > avg(customer.c_acctbal)@1
+        AggregateExec: mode=Final, gby=[], aggr=[avg(customer.c_acctbal)]
+          CoalescePartitionsExec
+            ShuffleReaderExec(stage_id=0, input_partitioning=UnknownPartitioning(4))
+        CoalesceBatchesExec: target_batch_size=8192
+          HashJoinExec: mode=Partitioned, join_type=LeftAnti, on=[(c_custkey@0, o_custkey@0)], projection=[c_phone@1, c_acctbal@2]
+            CoalesceBatchesExec: target_batch_size=8192
+              ShuffleReaderExec(stage_id=1, input_partitioning=Hash([Column { name: "c_custkey", index: 0 }], 4))
+            CoalesceBatchesExec: target_batch_size=8192
+              ShuffleReaderExec(stage_id=2, input_partitioning=Hash([Column { name: "o_custkey", index: 0 }], 4))
+
+Query Stage #4 (4 -> 4):
+ShuffleWriterExec(stage_id=4, output_partitioning=Hash([Column { name: "cntrycode", index: 0 }], 4))
+  SortExec: expr=[cntrycode@0 ASC NULLS LAST], preserve_partitioning=[true]
+    ProjectionExec: expr=[cntrycode@0 as cntrycode, count(*)@1 as numcust, sum(custsale.c_acctbal)@2 as totacctbal]
+      AggregateExec: mode=FinalPartitioned, gby=[cntrycode@0 as cntrycode], aggr=[count(*), sum(custsale.c_acctbal)]
+        CoalesceBatchesExec: target_batch_size=8192
+          ShuffleReaderExec(stage_id=3, input_partitioning=Hash([Column { name: "cntrycode", index: 0 }], 4))
+
+Query Stage #5 (4 -> 1):
+SortPreservingMergeExec: [cntrycode@0 ASC NULLS LAST]
+  ShuffleReaderExec(stage_id=4, input_partitioning=Hash([Column { name: "cntrycode", index: 0 }], 4))
 

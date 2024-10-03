@@ -14,28 +14,51 @@ DataFusion Physical Plan
 ========================
 
 ProjectionExec: expr=[100 * CAST(sum(CASE WHEN part.p_type LIKE Utf8("PROMO%") THEN lineitem.l_extendedprice * Int64(1) - lineitem.l_discount ELSE Int64(0) END)@0 AS Float64) / CAST(sum(lineitem.l_extendedprice * Int64(1) - lineitem.l_discount)@1 AS Float64) as promo_revenue]
-  AggregateExec: mode=Single, gby=[], aggr=[sum(CASE WHEN part.p_type LIKE Utf8("PROMO%") THEN lineitem.l_extendedprice * Int64(1) - lineitem.l_discount ELSE Int64(0) END), sum(lineitem.l_extendedprice * Int64(1) - lineitem.l_discount)]
-    ProjectionExec: expr=[l_extendedprice@1 * (Some(1),20,0 - l_discount@2) as __common_expr_2, p_type@0 as p_type]
-      CoalesceBatchesExec: target_batch_size=8192
-        HashJoinExec: mode=CollectLeft, join_type=Inner, on=[(p_partkey@0, l_partkey@0)], projection=[p_type@1, l_extendedprice@3, l_discount@4]
-          ParquetExec: file_groups={1 group: [[home/runner/work/datafusion-ray/datafusion-ray/data/part.parquet]]}, projection=[p_partkey, p_type]
-          ProjectionExec: expr=[l_partkey@0 as l_partkey, l_extendedprice@1 as l_extendedprice, l_discount@2 as l_discount]
-            CoalesceBatchesExec: target_batch_size=8192
-              FilterExec: l_shipdate@3 >= 1995-02-01 AND l_shipdate@3 < 1995-03-01
-                ParquetExec: file_groups={1 group: [[home/runner/work/datafusion-ray/datafusion-ray/data/lineitem.parquet:0..208341192]]}, projection=[l_partkey, l_extendedprice, l_discount, l_shipdate], predicate=l_shipdate@10 >= 1995-02-01 AND l_shipdate@10 < 1995-03-01, pruning_predicate=CASE WHEN l_shipdate_null_count@1 = l_shipdate_row_count@2 THEN false ELSE l_shipdate_max@0 >= 1995-02-01 END AND CASE WHEN l_shipdate_null_count@1 = l_shipdate_row_count@2 THEN false ELSE l_shipdate_min@3 < 1995-03-01 END, required_guarantees=[]
+  AggregateExec: mode=Final, gby=[], aggr=[sum(CASE WHEN part.p_type LIKE Utf8("PROMO%") THEN lineitem.l_extendedprice * Int64(1) - lineitem.l_discount ELSE Int64(0) END), sum(lineitem.l_extendedprice * Int64(1) - lineitem.l_discount)]
+    CoalescePartitionsExec
+      AggregateExec: mode=Partial, gby=[], aggr=[sum(CASE WHEN part.p_type LIKE Utf8("PROMO%") THEN lineitem.l_extendedprice * Int64(1) - lineitem.l_discount ELSE Int64(0) END), sum(lineitem.l_extendedprice * Int64(1) - lineitem.l_discount)]
+        ProjectionExec: expr=[l_extendedprice@1 * (Some(1),20,0 - l_discount@2) as __common_expr_2, p_type@0 as p_type]
+          CoalesceBatchesExec: target_batch_size=8192
+            HashJoinExec: mode=Partitioned, join_type=Inner, on=[(p_partkey@0, l_partkey@0)], projection=[p_type@1, l_extendedprice@3, l_discount@4]
+              CoalesceBatchesExec: target_batch_size=8192
+                RepartitionExec: partitioning=Hash([p_partkey@0], 4), input_partitions=4
+                  RepartitionExec: partitioning=RoundRobinBatch(4), input_partitions=2
+                    ParquetExec: file_groups={2 groups: [[home/runner/work/datafusion-ray/datafusion-ray/data/part.parquet/part1.parquet], [home/runner/work/datafusion-ray/datafusion-ray/data/part.parquet/part2.parquet]]}, projection=[p_partkey, p_type]
+              CoalesceBatchesExec: target_batch_size=8192
+                RepartitionExec: partitioning=Hash([l_partkey@0], 4), input_partitions=4
+                  ProjectionExec: expr=[l_partkey@0 as l_partkey, l_extendedprice@1 as l_extendedprice, l_discount@2 as l_discount]
+                    CoalesceBatchesExec: target_batch_size=8192
+                      FilterExec: l_shipdate@3 >= 1995-02-01 AND l_shipdate@3 < 1995-03-01
+                        ParquetExec: file_groups={4 groups: [[home/runner/work/datafusion-ray/datafusion-ray/data/lineitem.parquet/part1.parquet:0..52081165], [home/runner/work/datafusion-ray/datafusion-ray/data/lineitem.parquet/part1.parquet:52081165..104133200, home/runner/work/datafusion-ray/datafusion-ray/data/lineitem.parquet/part2.parquet:0..29130], [home/runner/work/datafusion-ray/datafusion-ray/data/lineitem.parquet/part2.parquet:29130..52110295], [home/runner/work/datafusion-ray/datafusion-ray/data/lineitem.parquet/part2.parquet:52110295..104191458]]}, projection=[l_partkey, l_extendedprice, l_discount, l_shipdate], predicate=l_shipdate@10 >= 1995-02-01 AND l_shipdate@10 < 1995-03-01, pruning_predicate=CASE WHEN l_shipdate_null_count@1 = l_shipdate_row_count@2 THEN false ELSE l_shipdate_max@0 >= 1995-02-01 END AND CASE WHEN l_shipdate_null_count@1 = l_shipdate_row_count@2 THEN false ELSE l_shipdate_min@3 < 1995-03-01 END, required_guarantees=[]
 
 RaySQL Plan
 ===========
 
-Query Stage #0 (1 -> 1):
-ProjectionExec: expr=[100 * CAST(sum(CASE WHEN part.p_type LIKE Utf8("PROMO%") THEN lineitem.l_extendedprice * Int64(1) - lineitem.l_discount ELSE Int64(0) END)@0 AS Float64) / CAST(sum(lineitem.l_extendedprice * Int64(1) - lineitem.l_discount)@1 AS Float64) as promo_revenue]
-  AggregateExec: mode=Single, gby=[], aggr=[sum(CASE WHEN part.p_type LIKE Utf8("PROMO%") THEN lineitem.l_extendedprice * Int64(1) - lineitem.l_discount ELSE Int64(0) END), sum(lineitem.l_extendedprice * Int64(1) - lineitem.l_discount)]
+Query Stage #0 (2 -> 4):
+ShuffleWriterExec(stage_id=0, output_partitioning=Hash([Column { name: "p_partkey", index: 0 }], 4))
+  ParquetExec: file_groups={2 groups: [[home/runner/work/datafusion-ray/datafusion-ray/data/part.parquet/part1.parquet], [home/runner/work/datafusion-ray/datafusion-ray/data/part.parquet/part2.parquet]]}, projection=[p_partkey, p_type]
+
+Query Stage #1 (4 -> 4):
+ShuffleWriterExec(stage_id=1, output_partitioning=Hash([Column { name: "l_partkey", index: 0 }], 4))
+  ProjectionExec: expr=[l_partkey@0 as l_partkey, l_extendedprice@1 as l_extendedprice, l_discount@2 as l_discount]
+    CoalesceBatchesExec: target_batch_size=8192
+      FilterExec: l_shipdate@3 >= 1995-02-01 AND l_shipdate@3 < 1995-03-01
+        ParquetExec: file_groups={4 groups: [[home/runner/work/datafusion-ray/datafusion-ray/data/lineitem.parquet/part1.parquet:0..52081165], [home/runner/work/datafusion-ray/datafusion-ray/data/lineitem.parquet/part1.parquet:52081165..104133200, home/runner/work/datafusion-ray/datafusion-ray/data/lineitem.parquet/part2.parquet:0..29130], [home/runner/work/datafusion-ray/datafusion-ray/data/lineitem.parquet/part2.parquet:29130..52110295], [home/runner/work/datafusion-ray/datafusion-ray/data/lineitem.parquet/part2.parquet:52110295..104191458]]}, projection=[l_partkey, l_extendedprice, l_discount, l_shipdate], predicate=l_shipdate@10 >= 1995-02-01 AND l_shipdate@10 < 1995-03-01, pruning_predicate=CASE WHEN l_shipdate_null_count@1 = l_shipdate_row_count@2 THEN false ELSE l_shipdate_max@0 >= 1995-02-01 END AND CASE WHEN l_shipdate_null_count@1 = l_shipdate_row_count@2 THEN false ELSE l_shipdate_min@3 < 1995-03-01 END, required_guarantees=[]
+
+Query Stage #2 (4 -> 1):
+ShuffleWriterExec(stage_id=2, output_partitioning=Hash([], 4))
+  AggregateExec: mode=Partial, gby=[], aggr=[sum(CASE WHEN part.p_type LIKE Utf8("PROMO%") THEN lineitem.l_extendedprice * Int64(1) - lineitem.l_discount ELSE Int64(0) END), sum(lineitem.l_extendedprice * Int64(1) - lineitem.l_discount)]
     ProjectionExec: expr=[l_extendedprice@1 * (Some(1),20,0 - l_discount@2) as __common_expr_2, p_type@0 as p_type]
       CoalesceBatchesExec: target_batch_size=8192
-        HashJoinExec: mode=CollectLeft, join_type=Inner, on=[(p_partkey@0, l_partkey@0)], projection=[p_type@1, l_extendedprice@3, l_discount@4]
-          ParquetExec: file_groups={1 group: [[home/runner/work/datafusion-ray/datafusion-ray/data/part.parquet]]}, projection=[p_partkey, p_type]
-          ProjectionExec: expr=[l_partkey@0 as l_partkey, l_extendedprice@1 as l_extendedprice, l_discount@2 as l_discount]
-            CoalesceBatchesExec: target_batch_size=8192
-              FilterExec: l_shipdate@3 >= 1995-02-01 AND l_shipdate@3 < 1995-03-01
-                ParquetExec: file_groups={1 group: [[home/runner/work/datafusion-ray/datafusion-ray/data/lineitem.parquet:0..208341192]]}, projection=[l_partkey, l_extendedprice, l_discount, l_shipdate], predicate=l_shipdate@10 >= 1995-02-01 AND l_shipdate@10 < 1995-03-01, pruning_predicate=CASE WHEN l_shipdate_null_count@1 = l_shipdate_row_count@2 THEN false ELSE l_shipdate_max@0 >= 1995-02-01 END AND CASE WHEN l_shipdate_null_count@1 = l_shipdate_row_count@2 THEN false ELSE l_shipdate_min@3 < 1995-03-01 END, required_guarantees=[]
+        HashJoinExec: mode=Partitioned, join_type=Inner, on=[(p_partkey@0, l_partkey@0)], projection=[p_type@1, l_extendedprice@3, l_discount@4]
+          CoalesceBatchesExec: target_batch_size=8192
+            ShuffleReaderExec(stage_id=0, input_partitioning=Hash([Column { name: "p_partkey", index: 0 }], 4))
+          CoalesceBatchesExec: target_batch_size=8192
+            ShuffleReaderExec(stage_id=1, input_partitioning=Hash([Column { name: "l_partkey", index: 0 }], 4))
+
+Query Stage #3 (1 -> 1):
+ProjectionExec: expr=[100 * CAST(sum(CASE WHEN part.p_type LIKE Utf8("PROMO%") THEN lineitem.l_extendedprice * Int64(1) - lineitem.l_discount ELSE Int64(0) END)@0 AS Float64) / CAST(sum(lineitem.l_extendedprice * Int64(1) - lineitem.l_discount)@1 AS Float64) as promo_revenue]
+  AggregateExec: mode=Final, gby=[], aggr=[sum(CASE WHEN part.p_type LIKE Utf8("PROMO%") THEN lineitem.l_extendedprice * Int64(1) - lineitem.l_discount ELSE Int64(0) END), sum(lineitem.l_extendedprice * Int64(1) - lineitem.l_discount)]
+    CoalescePartitionsExec
+      ShuffleReaderExec(stage_id=2, input_partitioning=Hash([], 4))
 

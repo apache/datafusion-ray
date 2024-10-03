@@ -14,31 +14,60 @@ Sort: lineitem.l_shipmode ASC NULLS LAST
 DataFusion Physical Plan
 ========================
 
-SortExec: expr=[l_shipmode@0 ASC NULLS LAST], preserve_partitioning=[false]
-  ProjectionExec: expr=[l_shipmode@0 as l_shipmode, sum(CASE WHEN orders.o_orderpriority = Utf8("1-URGENT") OR orders.o_orderpriority = Utf8("2-HIGH") THEN Int64(1) ELSE Int64(0) END)@1 as high_line_count, sum(CASE WHEN orders.o_orderpriority != Utf8("1-URGENT") AND orders.o_orderpriority != Utf8("2-HIGH") THEN Int64(1) ELSE Int64(0) END)@2 as low_line_count]
-    AggregateExec: mode=Single, gby=[l_shipmode@1 as l_shipmode], aggr=[sum(CASE WHEN orders.o_orderpriority = Utf8("1-URGENT") OR orders.o_orderpriority = Utf8("2-HIGH") THEN Int64(1) ELSE Int64(0) END), sum(CASE WHEN orders.o_orderpriority != Utf8("1-URGENT") AND orders.o_orderpriority != Utf8("2-HIGH") THEN Int64(1) ELSE Int64(0) END)]
-      ProjectionExec: expr=[o_orderpriority@1 as o_orderpriority, l_shipmode@0 as l_shipmode]
+SortPreservingMergeExec: [l_shipmode@0 ASC NULLS LAST]
+  SortExec: expr=[l_shipmode@0 ASC NULLS LAST], preserve_partitioning=[true]
+    ProjectionExec: expr=[l_shipmode@0 as l_shipmode, sum(CASE WHEN orders.o_orderpriority = Utf8("1-URGENT") OR orders.o_orderpriority = Utf8("2-HIGH") THEN Int64(1) ELSE Int64(0) END)@1 as high_line_count, sum(CASE WHEN orders.o_orderpriority != Utf8("1-URGENT") AND orders.o_orderpriority != Utf8("2-HIGH") THEN Int64(1) ELSE Int64(0) END)@2 as low_line_count]
+      AggregateExec: mode=FinalPartitioned, gby=[l_shipmode@0 as l_shipmode], aggr=[sum(CASE WHEN orders.o_orderpriority = Utf8("1-URGENT") OR orders.o_orderpriority = Utf8("2-HIGH") THEN Int64(1) ELSE Int64(0) END), sum(CASE WHEN orders.o_orderpriority != Utf8("1-URGENT") AND orders.o_orderpriority != Utf8("2-HIGH") THEN Int64(1) ELSE Int64(0) END)]
         CoalesceBatchesExec: target_batch_size=8192
-          HashJoinExec: mode=CollectLeft, join_type=Inner, on=[(l_orderkey@0, o_orderkey@0)], projection=[l_shipmode@1, o_orderpriority@3]
-            ProjectionExec: expr=[l_orderkey@0 as l_orderkey, l_shipmode@4 as l_shipmode]
-              CoalesceBatchesExec: target_batch_size=8192
-                FilterExec: (l_shipmode@4 = FOB OR l_shipmode@4 = SHIP) AND l_receiptdate@3 > l_commitdate@2 AND l_shipdate@1 < l_commitdate@2 AND l_receiptdate@3 >= 1995-01-01 AND l_receiptdate@3 < 1996-01-01
-                  ParquetExec: file_groups={1 group: [[home/runner/work/datafusion-ray/datafusion-ray/data/lineitem.parquet:0..208341192]]}, projection=[l_orderkey, l_shipdate, l_commitdate, l_receiptdate, l_shipmode], predicate=(l_shipmode@14 = FOB OR l_shipmode@14 = SHIP) AND l_receiptdate@12 > l_commitdate@11 AND l_shipdate@10 < l_commitdate@11 AND l_receiptdate@12 >= 1995-01-01 AND l_receiptdate@12 < 1996-01-01, pruning_predicate=(CASE WHEN l_shipmode_null_count@2 = l_shipmode_row_count@3 THEN false ELSE l_shipmode_min@0 <= FOB AND FOB <= l_shipmode_max@1 END OR CASE WHEN l_shipmode_null_count@2 = l_shipmode_row_count@3 THEN false ELSE l_shipmode_min@0 <= SHIP AND SHIP <= l_shipmode_max@1 END) AND CASE WHEN l_receiptdate_null_count@5 = l_receiptdate_row_count@6 THEN false ELSE l_receiptdate_max@4 >= 1995-01-01 END AND CASE WHEN l_receiptdate_null_count@5 = l_receiptdate_row_count@6 THEN false ELSE l_receiptdate_min@7 < 1996-01-01 END, required_guarantees=[l_shipmode in (SHIP, FOB)]
-            ParquetExec: file_groups={1 group: [[home/runner/work/datafusion-ray/datafusion-ray/data/orders.parquet:0..54531250]]}, projection=[o_orderkey, o_orderpriority]
+          RepartitionExec: partitioning=Hash([l_shipmode@0], 4), input_partitions=4
+            AggregateExec: mode=Partial, gby=[l_shipmode@1 as l_shipmode], aggr=[sum(CASE WHEN orders.o_orderpriority = Utf8("1-URGENT") OR orders.o_orderpriority = Utf8("2-HIGH") THEN Int64(1) ELSE Int64(0) END), sum(CASE WHEN orders.o_orderpriority != Utf8("1-URGENT") AND orders.o_orderpriority != Utf8("2-HIGH") THEN Int64(1) ELSE Int64(0) END)]
+              ProjectionExec: expr=[o_orderpriority@1 as o_orderpriority, l_shipmode@0 as l_shipmode]
+                CoalesceBatchesExec: target_batch_size=8192
+                  HashJoinExec: mode=Partitioned, join_type=Inner, on=[(l_orderkey@0, o_orderkey@0)], projection=[l_shipmode@1, o_orderpriority@3]
+                    CoalesceBatchesExec: target_batch_size=8192
+                      RepartitionExec: partitioning=Hash([l_orderkey@0], 4), input_partitions=4
+                        ProjectionExec: expr=[l_orderkey@0 as l_orderkey, l_shipmode@4 as l_shipmode]
+                          CoalesceBatchesExec: target_batch_size=8192
+                            FilterExec: (l_shipmode@4 = FOB OR l_shipmode@4 = SHIP) AND l_receiptdate@3 > l_commitdate@2 AND l_shipdate@1 < l_commitdate@2 AND l_receiptdate@3 >= 1995-01-01 AND l_receiptdate@3 < 1996-01-01
+                              ParquetExec: file_groups={4 groups: [[home/runner/work/datafusion-ray/datafusion-ray/data/lineitem.parquet/part1.parquet:0..52081165], [home/runner/work/datafusion-ray/datafusion-ray/data/lineitem.parquet/part1.parquet:52081165..104133200, home/runner/work/datafusion-ray/datafusion-ray/data/lineitem.parquet/part2.parquet:0..29130], [home/runner/work/datafusion-ray/datafusion-ray/data/lineitem.parquet/part2.parquet:29130..52110295], [home/runner/work/datafusion-ray/datafusion-ray/data/lineitem.parquet/part2.parquet:52110295..104191458]]}, projection=[l_orderkey, l_shipdate, l_commitdate, l_receiptdate, l_shipmode], predicate=(l_shipmode@14 = FOB OR l_shipmode@14 = SHIP) AND l_receiptdate@12 > l_commitdate@11 AND l_shipdate@10 < l_commitdate@11 AND l_receiptdate@12 >= 1995-01-01 AND l_receiptdate@12 < 1996-01-01, pruning_predicate=(CASE WHEN l_shipmode_null_count@2 = l_shipmode_row_count@3 THEN false ELSE l_shipmode_min@0 <= FOB AND FOB <= l_shipmode_max@1 END OR CASE WHEN l_shipmode_null_count@2 = l_shipmode_row_count@3 THEN false ELSE l_shipmode_min@0 <= SHIP AND SHIP <= l_shipmode_max@1 END) AND CASE WHEN l_receiptdate_null_count@5 = l_receiptdate_row_count@6 THEN false ELSE l_receiptdate_max@4 >= 1995-01-01 END AND CASE WHEN l_receiptdate_null_count@5 = l_receiptdate_row_count@6 THEN false ELSE l_receiptdate_min@7 < 1996-01-01 END, required_guarantees=[l_shipmode in (SHIP, FOB)]
+                    CoalesceBatchesExec: target_batch_size=8192
+                      RepartitionExec: partitioning=Hash([o_orderkey@0], 4), input_partitions=4
+                        ParquetExec: file_groups={4 groups: [[home/runner/work/datafusion-ray/datafusion-ray/data/orders.parquet/part1.parquet:0..13634779], [home/runner/work/datafusion-ray/datafusion-ray/data/orders.parquet/part1.parquet:13634779..27269558], [home/runner/work/datafusion-ray/datafusion-ray/data/orders.parquet/part1.parquet:27269558..27275584, home/runner/work/datafusion-ray/datafusion-ray/data/orders.parquet/part2.parquet:0..13628753], [home/runner/work/datafusion-ray/datafusion-ray/data/orders.parquet/part2.parquet:13628753..27263530]]}, projection=[o_orderkey, o_orderpriority]
 
 RaySQL Plan
 ===========
 
-Query Stage #0 (1 -> 1):
-SortExec: expr=[l_shipmode@0 ASC NULLS LAST], preserve_partitioning=[false]
-  ProjectionExec: expr=[l_shipmode@0 as l_shipmode, sum(CASE WHEN orders.o_orderpriority = Utf8("1-URGENT") OR orders.o_orderpriority = Utf8("2-HIGH") THEN Int64(1) ELSE Int64(0) END)@1 as high_line_count, sum(CASE WHEN orders.o_orderpriority != Utf8("1-URGENT") AND orders.o_orderpriority != Utf8("2-HIGH") THEN Int64(1) ELSE Int64(0) END)@2 as low_line_count]
-    AggregateExec: mode=Single, gby=[l_shipmode@1 as l_shipmode], aggr=[sum(CASE WHEN orders.o_orderpriority = Utf8("1-URGENT") OR orders.o_orderpriority = Utf8("2-HIGH") THEN Int64(1) ELSE Int64(0) END), sum(CASE WHEN orders.o_orderpriority != Utf8("1-URGENT") AND orders.o_orderpriority != Utf8("2-HIGH") THEN Int64(1) ELSE Int64(0) END)]
-      ProjectionExec: expr=[o_orderpriority@1 as o_orderpriority, l_shipmode@0 as l_shipmode]
+Query Stage #0 (4 -> 4):
+ShuffleWriterExec(stage_id=0, output_partitioning=Hash([Column { name: "l_orderkey", index: 0 }], 4))
+  ProjectionExec: expr=[l_orderkey@0 as l_orderkey, l_shipmode@4 as l_shipmode]
+    CoalesceBatchesExec: target_batch_size=8192
+      FilterExec: (l_shipmode@4 = FOB OR l_shipmode@4 = SHIP) AND l_receiptdate@3 > l_commitdate@2 AND l_shipdate@1 < l_commitdate@2 AND l_receiptdate@3 >= 1995-01-01 AND l_receiptdate@3 < 1996-01-01
+        ParquetExec: file_groups={4 groups: [[home/runner/work/datafusion-ray/datafusion-ray/data/lineitem.parquet/part1.parquet:0..52081165], [home/runner/work/datafusion-ray/datafusion-ray/data/lineitem.parquet/part1.parquet:52081165..104133200, home/runner/work/datafusion-ray/datafusion-ray/data/lineitem.parquet/part2.parquet:0..29130], [home/runner/work/datafusion-ray/datafusion-ray/data/lineitem.parquet/part2.parquet:29130..52110295], [home/runner/work/datafusion-ray/datafusion-ray/data/lineitem.parquet/part2.parquet:52110295..104191458]]}, projection=[l_orderkey, l_shipdate, l_commitdate, l_receiptdate, l_shipmode], predicate=(l_shipmode@14 = FOB OR l_shipmode@14 = SHIP) AND l_receiptdate@12 > l_commitdate@11 AND l_shipdate@10 < l_commitdate@11 AND l_receiptdate@12 >= 1995-01-01 AND l_receiptdate@12 < 1996-01-01, pruning_predicate=(CASE WHEN l_shipmode_null_count@2 = l_shipmode_row_count@3 THEN false ELSE l_shipmode_min@0 <= FOB AND FOB <= l_shipmode_max@1 END OR CASE WHEN l_shipmode_null_count@2 = l_shipmode_row_count@3 THEN false ELSE l_shipmode_min@0 <= SHIP AND SHIP <= l_shipmode_max@1 END) AND CASE WHEN l_receiptdate_null_count@5 = l_receiptdate_row_count@6 THEN false ELSE l_receiptdate_max@4 >= 1995-01-01 END AND CASE WHEN l_receiptdate_null_count@5 = l_receiptdate_row_count@6 THEN false ELSE l_receiptdate_min@7 < 1996-01-01 END, required_guarantees=[l_shipmode in (SHIP, FOB)]
+
+Query Stage #1 (4 -> 4):
+ShuffleWriterExec(stage_id=1, output_partitioning=Hash([Column { name: "o_orderkey", index: 0 }], 4))
+  ParquetExec: file_groups={4 groups: [[home/runner/work/datafusion-ray/datafusion-ray/data/orders.parquet/part1.parquet:0..13634779], [home/runner/work/datafusion-ray/datafusion-ray/data/orders.parquet/part1.parquet:13634779..27269558], [home/runner/work/datafusion-ray/datafusion-ray/data/orders.parquet/part1.parquet:27269558..27275584, home/runner/work/datafusion-ray/datafusion-ray/data/orders.parquet/part2.parquet:0..13628753], [home/runner/work/datafusion-ray/datafusion-ray/data/orders.parquet/part2.parquet:13628753..27263530]]}, projection=[o_orderkey, o_orderpriority]
+
+Query Stage #2 (4 -> 4):
+ShuffleWriterExec(stage_id=2, output_partitioning=Hash([Column { name: "l_shipmode", index: 0 }], 4))
+  AggregateExec: mode=Partial, gby=[l_shipmode@1 as l_shipmode], aggr=[sum(CASE WHEN orders.o_orderpriority = Utf8("1-URGENT") OR orders.o_orderpriority = Utf8("2-HIGH") THEN Int64(1) ELSE Int64(0) END), sum(CASE WHEN orders.o_orderpriority != Utf8("1-URGENT") AND orders.o_orderpriority != Utf8("2-HIGH") THEN Int64(1) ELSE Int64(0) END)]
+    ProjectionExec: expr=[o_orderpriority@1 as o_orderpriority, l_shipmode@0 as l_shipmode]
+      CoalesceBatchesExec: target_batch_size=8192
+        HashJoinExec: mode=Partitioned, join_type=Inner, on=[(l_orderkey@0, o_orderkey@0)], projection=[l_shipmode@1, o_orderpriority@3]
+          CoalesceBatchesExec: target_batch_size=8192
+            ShuffleReaderExec(stage_id=0, input_partitioning=Hash([Column { name: "l_orderkey", index: 0 }], 4))
+          CoalesceBatchesExec: target_batch_size=8192
+            ShuffleReaderExec(stage_id=1, input_partitioning=Hash([Column { name: "o_orderkey", index: 0 }], 4))
+
+Query Stage #3 (4 -> 4):
+ShuffleWriterExec(stage_id=3, output_partitioning=Hash([Column { name: "l_shipmode", index: 0 }], 4))
+  SortExec: expr=[l_shipmode@0 ASC NULLS LAST], preserve_partitioning=[true]
+    ProjectionExec: expr=[l_shipmode@0 as l_shipmode, sum(CASE WHEN orders.o_orderpriority = Utf8("1-URGENT") OR orders.o_orderpriority = Utf8("2-HIGH") THEN Int64(1) ELSE Int64(0) END)@1 as high_line_count, sum(CASE WHEN orders.o_orderpriority != Utf8("1-URGENT") AND orders.o_orderpriority != Utf8("2-HIGH") THEN Int64(1) ELSE Int64(0) END)@2 as low_line_count]
+      AggregateExec: mode=FinalPartitioned, gby=[l_shipmode@0 as l_shipmode], aggr=[sum(CASE WHEN orders.o_orderpriority = Utf8("1-URGENT") OR orders.o_orderpriority = Utf8("2-HIGH") THEN Int64(1) ELSE Int64(0) END), sum(CASE WHEN orders.o_orderpriority != Utf8("1-URGENT") AND orders.o_orderpriority != Utf8("2-HIGH") THEN Int64(1) ELSE Int64(0) END)]
         CoalesceBatchesExec: target_batch_size=8192
-          HashJoinExec: mode=CollectLeft, join_type=Inner, on=[(l_orderkey@0, o_orderkey@0)], projection=[l_shipmode@1, o_orderpriority@3]
-            ProjectionExec: expr=[l_orderkey@0 as l_orderkey, l_shipmode@4 as l_shipmode]
-              CoalesceBatchesExec: target_batch_size=8192
-                FilterExec: (l_shipmode@4 = FOB OR l_shipmode@4 = SHIP) AND l_receiptdate@3 > l_commitdate@2 AND l_shipdate@1 < l_commitdate@2 AND l_receiptdate@3 >= 1995-01-01 AND l_receiptdate@3 < 1996-01-01
-                  ParquetExec: file_groups={1 group: [[home/runner/work/datafusion-ray/datafusion-ray/data/lineitem.parquet:0..208341192]]}, projection=[l_orderkey, l_shipdate, l_commitdate, l_receiptdate, l_shipmode], predicate=(l_shipmode@14 = FOB OR l_shipmode@14 = SHIP) AND l_receiptdate@12 > l_commitdate@11 AND l_shipdate@10 < l_commitdate@11 AND l_receiptdate@12 >= 1995-01-01 AND l_receiptdate@12 < 1996-01-01, pruning_predicate=(CASE WHEN l_shipmode_null_count@2 = l_shipmode_row_count@3 THEN false ELSE l_shipmode_min@0 <= FOB AND FOB <= l_shipmode_max@1 END OR CASE WHEN l_shipmode_null_count@2 = l_shipmode_row_count@3 THEN false ELSE l_shipmode_min@0 <= SHIP AND SHIP <= l_shipmode_max@1 END) AND CASE WHEN l_receiptdate_null_count@5 = l_receiptdate_row_count@6 THEN false ELSE l_receiptdate_max@4 >= 1995-01-01 END AND CASE WHEN l_receiptdate_null_count@5 = l_receiptdate_row_count@6 THEN false ELSE l_receiptdate_min@7 < 1996-01-01 END, required_guarantees=[l_shipmode in (SHIP, FOB)]
-            ParquetExec: file_groups={1 group: [[home/runner/work/datafusion-ray/datafusion-ray/data/orders.parquet:0..54531250]]}, projection=[o_orderkey, o_orderpriority]
+          ShuffleReaderExec(stage_id=2, input_partitioning=Hash([Column { name: "l_shipmode", index: 0 }], 4))
+
+Query Stage #4 (4 -> 1):
+SortPreservingMergeExec: [l_shipmode@0 ASC NULLS LAST]
+  ShuffleReaderExec(stage_id=3, input_partitioning=Hash([Column { name: "l_shipmode", index: 0 }], 4))
 
