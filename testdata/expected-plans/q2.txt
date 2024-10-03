@@ -53,19 +53,19 @@ GlobalLimitExec: skip=0, fetch=100
                   HashJoinExec: mode=Partitioned, join_type=Inner, on=[(r_regionkey@0, n_regionkey@9)], projection=[p_partkey@1, p_mfgr@2, s_name@3, s_address@4, s_phone@5, s_acctbal@6, s_comment@7, ps_supplycost@8, n_name@9]
                     CoalesceBatchesExec: target_batch_size=8192
                       RepartitionExec: partitioning=Hash([r_regionkey@0], 4), input_partitions=4
-                        RepartitionExec: partitioning=RoundRobinBatch(4), input_partitions=1
+                        RepartitionExec: partitioning=RoundRobinBatch(4), input_partitions=2
                           ProjectionExec: expr=[r_regionkey@0 as r_regionkey]
                             CoalesceBatchesExec: target_batch_size=8192
                               FilterExec: r_name@1 = ASIA
-                                ParquetExec: file_groups={1 group: [[home/runner/work/datafusion-ray/datafusion-ray/data/region.parquet/part1.parquet]]}, projection=[r_regionkey, r_name], predicate=r_name@1 = ASIA, pruning_predicate=CASE WHEN r_name_null_count@2 = r_name_row_count@3 THEN false ELSE r_name_min@0 <= ASIA AND ASIA <= r_name_max@1 END, required_guarantees=[r_name in (ASIA)]
+                                ParquetExec: file_groups={2 groups: [[home/runner/work/datafusion-ray/datafusion-ray/data/region.parquet/8NlZWnksIQjnYDPs_0.parquet], [home/runner/work/datafusion-ray/datafusion-ray/data/region.parquet/part1.parquet]]}, projection=[r_regionkey, r_name], predicate=r_name@1 = ASIA, pruning_predicate=CASE WHEN r_name_null_count@2 = r_name_row_count@3 THEN false ELSE r_name_min@0 <= ASIA AND ASIA <= r_name_max@1 END, required_guarantees=[r_name in (ASIA)]
                     CoalesceBatchesExec: target_batch_size=8192
                       RepartitionExec: partitioning=Hash([n_regionkey@9], 4), input_partitions=4
                         ProjectionExec: expr=[p_partkey@2 as p_partkey, p_mfgr@3 as p_mfgr, s_name@4 as s_name, s_address@5 as s_address, s_phone@6 as s_phone, s_acctbal@7 as s_acctbal, s_comment@8 as s_comment, ps_supplycost@9 as ps_supplycost, n_name@0 as n_name, n_regionkey@1 as n_regionkey]
                           CoalesceBatchesExec: target_batch_size=8192
                             HashJoinExec: mode=Partitioned, join_type=Inner, on=[(n_nationkey@0, s_nationkey@4)], projection=[n_name@1, n_regionkey@2, p_partkey@3, p_mfgr@4, s_name@5, s_address@6, s_phone@8, s_acctbal@9, s_comment@10, ps_supplycost@11]
                               CoalesceBatchesExec: target_batch_size=8192
-                                RepartitionExec: partitioning=Hash([n_nationkey@0], 4), input_partitions=1
-                                  ParquetExec: file_groups={1 group: [[home/runner/work/datafusion-ray/datafusion-ray/data/nation.parquet/part1.parquet]]}, projection=[n_nationkey, n_name, n_regionkey]
+                                RepartitionExec: partitioning=Hash([n_nationkey@0], 4), input_partitions=2
+                                  ParquetExec: file_groups={2 groups: [[home/runner/work/datafusion-ray/datafusion-ray/data/nation.parquet/IftthSxZMytggJzA_0.parquet], [home/runner/work/datafusion-ray/datafusion-ray/data/nation.parquet/part1.parquet]]}, projection=[n_nationkey, n_name, n_regionkey]
                               CoalesceBatchesExec: target_batch_size=8192
                                 RepartitionExec: partitioning=Hash([s_nationkey@4], 4), input_partitions=4
                                   ProjectionExec: expr=[p_partkey@6 as p_partkey, p_mfgr@7 as p_mfgr, s_name@0 as s_name, s_address@1 as s_address, s_nationkey@2 as s_nationkey, s_phone@3 as s_phone, s_acctbal@4 as s_acctbal, s_comment@5 as s_comment, ps_supplycost@8 as ps_supplycost]
@@ -73,8 +73,7 @@ GlobalLimitExec: skip=0, fetch=100
                                       HashJoinExec: mode=Partitioned, join_type=Inner, on=[(s_suppkey@0, ps_suppkey@2)], projection=[s_name@1, s_address@2, s_nationkey@3, s_phone@4, s_acctbal@5, s_comment@6, p_partkey@7, p_mfgr@8, ps_supplycost@10]
                                         CoalesceBatchesExec: target_batch_size=8192
                                           RepartitionExec: partitioning=Hash([s_suppkey@0], 4), input_partitions=4
-                                            RepartitionExec: partitioning=RoundRobinBatch(4), input_partitions=2
-                                              ParquetExec: file_groups={2 groups: [[home/runner/work/datafusion-ray/datafusion-ray/data/supplier.parquet/part1.parquet], [home/runner/work/datafusion-ray/datafusion-ray/data/supplier.parquet/part2.parquet]]}, projection=[s_suppkey, s_name, s_address, s_nationkey, s_phone, s_acctbal, s_comment]
+                                            ParquetExec: file_groups={4 groups: [[home/runner/work/datafusion-ray/datafusion-ray/data/supplier.parquet/8qdC2hv8M5cVyFo2_0.parquet], [home/runner/work/datafusion-ray/datafusion-ray/data/supplier.parquet/8qdC2hv8M5cVyFo2_1.parquet], [home/runner/work/datafusion-ray/datafusion-ray/data/supplier.parquet/part1.parquet], [home/runner/work/datafusion-ray/datafusion-ray/data/supplier.parquet/part2.parquet]]}, projection=[s_suppkey, s_name, s_address, s_nationkey, s_phone, s_acctbal, s_comment]
                                         CoalesceBatchesExec: target_batch_size=8192
                                           RepartitionExec: partitioning=Hash([ps_suppkey@2], 4), input_partitions=4
                                             CoalesceBatchesExec: target_batch_size=8192
@@ -84,11 +83,10 @@ GlobalLimitExec: skip=0, fetch=100
                                                     ProjectionExec: expr=[p_partkey@0 as p_partkey, p_mfgr@1 as p_mfgr]
                                                       CoalesceBatchesExec: target_batch_size=8192
                                                         FilterExec: p_size@3 = 48 AND p_type@2 LIKE %TIN
-                                                          RepartitionExec: partitioning=RoundRobinBatch(4), input_partitions=2
-                                                            ParquetExec: file_groups={2 groups: [[home/runner/work/datafusion-ray/datafusion-ray/data/part.parquet/part1.parquet], [home/runner/work/datafusion-ray/datafusion-ray/data/part.parquet/part2.parquet]]}, projection=[p_partkey, p_mfgr, p_type, p_size], predicate=p_size@5 = 48 AND p_type@4 LIKE %TIN, pruning_predicate=CASE WHEN p_size_null_count@2 = p_size_row_count@3 THEN false ELSE p_size_min@0 <= 48 AND 48 <= p_size_max@1 END, required_guarantees=[p_size in (48)]
+                                                          ParquetExec: file_groups={4 groups: [[home/runner/work/datafusion-ray/datafusion-ray/data/part.parquet/part1.parquet:0..3454243, home/runner/work/datafusion-ray/datafusion-ray/data/part.parquet/part2.parquet:0..61547], [home/runner/work/datafusion-ray/datafusion-ray/data/part.parquet/part2.parquet:61547..3452413, home/runner/work/datafusion-ray/datafusion-ray/data/part.parquet/zqREsW7hAwjnDl0s_0.parquet:0..124924], [home/runner/work/datafusion-ray/datafusion-ray/data/part.parquet/zqREsW7hAwjnDl0s_0.parquet:124924..2056321, home/runner/work/datafusion-ray/datafusion-ray/data/part.parquet/zqREsW7hAwjnDl0s_1.parquet:0..1526046, home/runner/work/datafusion-ray/datafusion-ray/data/part.parquet/zqREsW7hAwjnDl0s_2.parquet:0..58347], [home/runner/work/datafusion-ray/datafusion-ray/data/part.parquet/zqREsW7hAwjnDl0s_2.parquet:58347..1788444, home/runner/work/datafusion-ray/datafusion-ray/data/part.parquet/zqREsW7hAwjnDl0s_3.parquet:0..1785690]]}, projection=[p_partkey, p_mfgr, p_type, p_size], predicate=p_size@5 = 48 AND p_type@4 LIKE %TIN, pruning_predicate=CASE WHEN p_size_null_count@2 = p_size_row_count@3 THEN false ELSE p_size_min@0 <= 48 AND 48 <= p_size_max@1 END, required_guarantees=[p_size in (48)]
                                                 CoalesceBatchesExec: target_batch_size=8192
                                                   RepartitionExec: partitioning=Hash([ps_partkey@0], 4), input_partitions=4
-                                                    ParquetExec: file_groups={4 groups: [[home/runner/work/datafusion-ray/datafusion-ray/data/partsupp.parquet/part1.parquet:0..10449977], [home/runner/work/datafusion-ray/datafusion-ray/data/partsupp.parquet/part1.parquet:10449977..20896603, home/runner/work/datafusion-ray/datafusion-ray/data/partsupp.parquet/part2.parquet:0..3351], [home/runner/work/datafusion-ray/datafusion-ray/data/partsupp.parquet/part2.parquet:3351..10453328], [home/runner/work/datafusion-ray/datafusion-ray/data/partsupp.parquet/part2.parquet:10453328..20903305]]}, projection=[ps_partkey, ps_suppkey, ps_supplycost]
+                                                    ParquetExec: file_groups={4 groups: [[home/runner/work/datafusion-ray/datafusion-ray/data/partsupp.parquet/i4vwrw2iQLnJna7E_0.parquet:0..11328263, home/runner/work/datafusion-ray/datafusion-ray/data/partsupp.parquet/i4vwrw2iQLnJna7E_1.parquet:0..9740046], [home/runner/work/datafusion-ray/datafusion-ray/data/partsupp.parquet/i4vwrw2iQLnJna7E_1.parquet:9740046..10585781, home/runner/work/datafusion-ray/datafusion-ray/data/partsupp.parquet/i4vwrw2iQLnJna7E_2.parquet:0..9946761, home/runner/work/datafusion-ray/datafusion-ray/data/partsupp.parquet/i4vwrw2iQLnJna7E_3.parquet:0..10275813], [home/runner/work/datafusion-ray/datafusion-ray/data/partsupp.parquet/i4vwrw2iQLnJna7E_3.parquet:10275813..10620507, home/runner/work/datafusion-ray/datafusion-ray/data/partsupp.parquet/part1.parquet:0..20723615], [home/runner/work/datafusion-ray/datafusion-ray/data/partsupp.parquet/part1.parquet:20723615..20895812, home/runner/work/datafusion-ray/datafusion-ray/data/partsupp.parquet/part2.parquet:0..20896109]]}, projection=[ps_partkey, ps_suppkey, ps_supplycost]
             CoalesceBatchesExec: target_batch_size=8192
               RepartitionExec: partitioning=Hash([ps_partkey@1, min(partsupp.ps_supplycost)@0], 4), input_partitions=4
                 ProjectionExec: expr=[min(partsupp.ps_supplycost)@1 as min(partsupp.ps_supplycost), ps_partkey@0 as ps_partkey]
@@ -100,19 +98,19 @@ GlobalLimitExec: skip=0, fetch=100
                             HashJoinExec: mode=Partitioned, join_type=Inner, on=[(r_regionkey@0, n_regionkey@2)], projection=[ps_partkey@1, ps_supplycost@2]
                               CoalesceBatchesExec: target_batch_size=8192
                                 RepartitionExec: partitioning=Hash([r_regionkey@0], 4), input_partitions=4
-                                  RepartitionExec: partitioning=RoundRobinBatch(4), input_partitions=1
+                                  RepartitionExec: partitioning=RoundRobinBatch(4), input_partitions=2
                                     ProjectionExec: expr=[r_regionkey@0 as r_regionkey]
                                       CoalesceBatchesExec: target_batch_size=8192
                                         FilterExec: r_name@1 = ASIA
-                                          ParquetExec: file_groups={1 group: [[home/runner/work/datafusion-ray/datafusion-ray/data/region.parquet/part1.parquet]]}, projection=[r_regionkey, r_name], predicate=r_name@1 = ASIA, pruning_predicate=CASE WHEN r_name_null_count@2 = r_name_row_count@3 THEN false ELSE r_name_min@0 <= ASIA AND ASIA <= r_name_max@1 END, required_guarantees=[r_name in (ASIA)]
+                                          ParquetExec: file_groups={2 groups: [[home/runner/work/datafusion-ray/datafusion-ray/data/region.parquet/8NlZWnksIQjnYDPs_0.parquet], [home/runner/work/datafusion-ray/datafusion-ray/data/region.parquet/part1.parquet]]}, projection=[r_regionkey, r_name], predicate=r_name@1 = ASIA, pruning_predicate=CASE WHEN r_name_null_count@2 = r_name_row_count@3 THEN false ELSE r_name_min@0 <= ASIA AND ASIA <= r_name_max@1 END, required_guarantees=[r_name in (ASIA)]
                               CoalesceBatchesExec: target_batch_size=8192
                                 RepartitionExec: partitioning=Hash([n_regionkey@2], 4), input_partitions=4
                                   ProjectionExec: expr=[ps_partkey@1 as ps_partkey, ps_supplycost@2 as ps_supplycost, n_regionkey@0 as n_regionkey]
                                     CoalesceBatchesExec: target_batch_size=8192
                                       HashJoinExec: mode=Partitioned, join_type=Inner, on=[(n_nationkey@0, s_nationkey@2)], projection=[n_regionkey@1, ps_partkey@2, ps_supplycost@3]
                                         CoalesceBatchesExec: target_batch_size=8192
-                                          RepartitionExec: partitioning=Hash([n_nationkey@0], 4), input_partitions=1
-                                            ParquetExec: file_groups={1 group: [[home/runner/work/datafusion-ray/datafusion-ray/data/nation.parquet/part1.parquet]]}, projection=[n_nationkey, n_regionkey]
+                                          RepartitionExec: partitioning=Hash([n_nationkey@0], 4), input_partitions=2
+                                            ParquetExec: file_groups={2 groups: [[home/runner/work/datafusion-ray/datafusion-ray/data/nation.parquet/IftthSxZMytggJzA_0.parquet], [home/runner/work/datafusion-ray/datafusion-ray/data/nation.parquet/part1.parquet]]}, projection=[n_nationkey, n_regionkey]
                                         CoalesceBatchesExec: target_batch_size=8192
                                           RepartitionExec: partitioning=Hash([s_nationkey@2], 4), input_partitions=4
                                             ProjectionExec: expr=[ps_partkey@1 as ps_partkey, ps_supplycost@2 as ps_supplycost, s_nationkey@0 as s_nationkey]
@@ -120,40 +118,39 @@ GlobalLimitExec: skip=0, fetch=100
                                                 HashJoinExec: mode=Partitioned, join_type=Inner, on=[(s_suppkey@0, ps_suppkey@1)], projection=[s_nationkey@1, ps_partkey@2, ps_supplycost@4]
                                                   CoalesceBatchesExec: target_batch_size=8192
                                                     RepartitionExec: partitioning=Hash([s_suppkey@0], 4), input_partitions=4
-                                                      RepartitionExec: partitioning=RoundRobinBatch(4), input_partitions=2
-                                                        ParquetExec: file_groups={2 groups: [[home/runner/work/datafusion-ray/datafusion-ray/data/supplier.parquet/part1.parquet], [home/runner/work/datafusion-ray/datafusion-ray/data/supplier.parquet/part2.parquet]]}, projection=[s_suppkey, s_nationkey]
+                                                      ParquetExec: file_groups={4 groups: [[home/runner/work/datafusion-ray/datafusion-ray/data/supplier.parquet/8qdC2hv8M5cVyFo2_0.parquet], [home/runner/work/datafusion-ray/datafusion-ray/data/supplier.parquet/8qdC2hv8M5cVyFo2_1.parquet], [home/runner/work/datafusion-ray/datafusion-ray/data/supplier.parquet/part1.parquet], [home/runner/work/datafusion-ray/datafusion-ray/data/supplier.parquet/part2.parquet]]}, projection=[s_suppkey, s_nationkey]
                                                   CoalesceBatchesExec: target_batch_size=8192
                                                     RepartitionExec: partitioning=Hash([ps_suppkey@1], 4), input_partitions=4
-                                                      ParquetExec: file_groups={4 groups: [[home/runner/work/datafusion-ray/datafusion-ray/data/partsupp.parquet/part1.parquet:0..10449977], [home/runner/work/datafusion-ray/datafusion-ray/data/partsupp.parquet/part1.parquet:10449977..20896603, home/runner/work/datafusion-ray/datafusion-ray/data/partsupp.parquet/part2.parquet:0..3351], [home/runner/work/datafusion-ray/datafusion-ray/data/partsupp.parquet/part2.parquet:3351..10453328], [home/runner/work/datafusion-ray/datafusion-ray/data/partsupp.parquet/part2.parquet:10453328..20903305]]}, projection=[ps_partkey, ps_suppkey, ps_supplycost]
+                                                      ParquetExec: file_groups={4 groups: [[home/runner/work/datafusion-ray/datafusion-ray/data/partsupp.parquet/i4vwrw2iQLnJna7E_0.parquet:0..11328263, home/runner/work/datafusion-ray/datafusion-ray/data/partsupp.parquet/i4vwrw2iQLnJna7E_1.parquet:0..9740046], [home/runner/work/datafusion-ray/datafusion-ray/data/partsupp.parquet/i4vwrw2iQLnJna7E_1.parquet:9740046..10585781, home/runner/work/datafusion-ray/datafusion-ray/data/partsupp.parquet/i4vwrw2iQLnJna7E_2.parquet:0..9946761, home/runner/work/datafusion-ray/datafusion-ray/data/partsupp.parquet/i4vwrw2iQLnJna7E_3.parquet:0..10275813], [home/runner/work/datafusion-ray/datafusion-ray/data/partsupp.parquet/i4vwrw2iQLnJna7E_3.parquet:10275813..10620507, home/runner/work/datafusion-ray/datafusion-ray/data/partsupp.parquet/part1.parquet:0..20723615], [home/runner/work/datafusion-ray/datafusion-ray/data/partsupp.parquet/part1.parquet:20723615..20895812, home/runner/work/datafusion-ray/datafusion-ray/data/partsupp.parquet/part2.parquet:0..20896109]]}, projection=[ps_partkey, ps_suppkey, ps_supplycost]
 
 RaySQL Plan
 ===========
 
-Query Stage #0 (1 -> 4):
+Query Stage #0 (2 -> 4):
 ShuffleWriterExec(stage_id=0, output_partitioning=Hash([Column { name: "r_regionkey", index: 0 }], 4))
   ProjectionExec: expr=[r_regionkey@0 as r_regionkey]
     CoalesceBatchesExec: target_batch_size=8192
       FilterExec: r_name@1 = ASIA
-        ParquetExec: file_groups={1 group: [[home/runner/work/datafusion-ray/datafusion-ray/data/region.parquet/part1.parquet]]}, projection=[r_regionkey, r_name], predicate=r_name@1 = ASIA, pruning_predicate=CASE WHEN r_name_null_count@2 = r_name_row_count@3 THEN false ELSE r_name_min@0 <= ASIA AND ASIA <= r_name_max@1 END, required_guarantees=[r_name in (ASIA)]
+        ParquetExec: file_groups={2 groups: [[home/runner/work/datafusion-ray/datafusion-ray/data/region.parquet/8NlZWnksIQjnYDPs_0.parquet], [home/runner/work/datafusion-ray/datafusion-ray/data/region.parquet/part1.parquet]]}, projection=[r_regionkey, r_name], predicate=r_name@1 = ASIA, pruning_predicate=CASE WHEN r_name_null_count@2 = r_name_row_count@3 THEN false ELSE r_name_min@0 <= ASIA AND ASIA <= r_name_max@1 END, required_guarantees=[r_name in (ASIA)]
 
-Query Stage #1 (1 -> 4):
+Query Stage #1 (2 -> 4):
 ShuffleWriterExec(stage_id=1, output_partitioning=Hash([Column { name: "n_nationkey", index: 0 }], 4))
-  ParquetExec: file_groups={1 group: [[home/runner/work/datafusion-ray/datafusion-ray/data/nation.parquet/part1.parquet]]}, projection=[n_nationkey, n_name, n_regionkey]
+  ParquetExec: file_groups={2 groups: [[home/runner/work/datafusion-ray/datafusion-ray/data/nation.parquet/IftthSxZMytggJzA_0.parquet], [home/runner/work/datafusion-ray/datafusion-ray/data/nation.parquet/part1.parquet]]}, projection=[n_nationkey, n_name, n_regionkey]
 
-Query Stage #2 (2 -> 4):
+Query Stage #2 (4 -> 4):
 ShuffleWriterExec(stage_id=2, output_partitioning=Hash([Column { name: "s_suppkey", index: 0 }], 4))
-  ParquetExec: file_groups={2 groups: [[home/runner/work/datafusion-ray/datafusion-ray/data/supplier.parquet/part1.parquet], [home/runner/work/datafusion-ray/datafusion-ray/data/supplier.parquet/part2.parquet]]}, projection=[s_suppkey, s_name, s_address, s_nationkey, s_phone, s_acctbal, s_comment]
+  ParquetExec: file_groups={4 groups: [[home/runner/work/datafusion-ray/datafusion-ray/data/supplier.parquet/8qdC2hv8M5cVyFo2_0.parquet], [home/runner/work/datafusion-ray/datafusion-ray/data/supplier.parquet/8qdC2hv8M5cVyFo2_1.parquet], [home/runner/work/datafusion-ray/datafusion-ray/data/supplier.parquet/part1.parquet], [home/runner/work/datafusion-ray/datafusion-ray/data/supplier.parquet/part2.parquet]]}, projection=[s_suppkey, s_name, s_address, s_nationkey, s_phone, s_acctbal, s_comment]
 
-Query Stage #3 (2 -> 4):
+Query Stage #3 (4 -> 4):
 ShuffleWriterExec(stage_id=3, output_partitioning=Hash([Column { name: "p_partkey", index: 0 }], 4))
   ProjectionExec: expr=[p_partkey@0 as p_partkey, p_mfgr@1 as p_mfgr]
     CoalesceBatchesExec: target_batch_size=8192
       FilterExec: p_size@3 = 48 AND p_type@2 LIKE %TIN
-        ParquetExec: file_groups={2 groups: [[home/runner/work/datafusion-ray/datafusion-ray/data/part.parquet/part1.parquet], [home/runner/work/datafusion-ray/datafusion-ray/data/part.parquet/part2.parquet]]}, projection=[p_partkey, p_mfgr, p_type, p_size], predicate=p_size@5 = 48 AND p_type@4 LIKE %TIN, pruning_predicate=CASE WHEN p_size_null_count@2 = p_size_row_count@3 THEN false ELSE p_size_min@0 <= 48 AND 48 <= p_size_max@1 END, required_guarantees=[p_size in (48)]
+        ParquetExec: file_groups={4 groups: [[home/runner/work/datafusion-ray/datafusion-ray/data/part.parquet/part1.parquet:0..3454243, home/runner/work/datafusion-ray/datafusion-ray/data/part.parquet/part2.parquet:0..61547], [home/runner/work/datafusion-ray/datafusion-ray/data/part.parquet/part2.parquet:61547..3452413, home/runner/work/datafusion-ray/datafusion-ray/data/part.parquet/zqREsW7hAwjnDl0s_0.parquet:0..124924], [home/runner/work/datafusion-ray/datafusion-ray/data/part.parquet/zqREsW7hAwjnDl0s_0.parquet:124924..2056321, home/runner/work/datafusion-ray/datafusion-ray/data/part.parquet/zqREsW7hAwjnDl0s_1.parquet:0..1526046, home/runner/work/datafusion-ray/datafusion-ray/data/part.parquet/zqREsW7hAwjnDl0s_2.parquet:0..58347], [home/runner/work/datafusion-ray/datafusion-ray/data/part.parquet/zqREsW7hAwjnDl0s_2.parquet:58347..1788444, home/runner/work/datafusion-ray/datafusion-ray/data/part.parquet/zqREsW7hAwjnDl0s_3.parquet:0..1785690]]}, projection=[p_partkey, p_mfgr, p_type, p_size], predicate=p_size@5 = 48 AND p_type@4 LIKE %TIN, pruning_predicate=CASE WHEN p_size_null_count@2 = p_size_row_count@3 THEN false ELSE p_size_min@0 <= 48 AND 48 <= p_size_max@1 END, required_guarantees=[p_size in (48)]
 
 Query Stage #4 (4 -> 4):
 ShuffleWriterExec(stage_id=4, output_partitioning=Hash([Column { name: "ps_partkey", index: 0 }], 4))
-  ParquetExec: file_groups={4 groups: [[home/runner/work/datafusion-ray/datafusion-ray/data/partsupp.parquet/part1.parquet:0..10449977], [home/runner/work/datafusion-ray/datafusion-ray/data/partsupp.parquet/part1.parquet:10449977..20896603, home/runner/work/datafusion-ray/datafusion-ray/data/partsupp.parquet/part2.parquet:0..3351], [home/runner/work/datafusion-ray/datafusion-ray/data/partsupp.parquet/part2.parquet:3351..10453328], [home/runner/work/datafusion-ray/datafusion-ray/data/partsupp.parquet/part2.parquet:10453328..20903305]]}, projection=[ps_partkey, ps_suppkey, ps_supplycost]
+  ParquetExec: file_groups={4 groups: [[home/runner/work/datafusion-ray/datafusion-ray/data/partsupp.parquet/i4vwrw2iQLnJna7E_0.parquet:0..11328263, home/runner/work/datafusion-ray/datafusion-ray/data/partsupp.parquet/i4vwrw2iQLnJna7E_1.parquet:0..9740046], [home/runner/work/datafusion-ray/datafusion-ray/data/partsupp.parquet/i4vwrw2iQLnJna7E_1.parquet:9740046..10585781, home/runner/work/datafusion-ray/datafusion-ray/data/partsupp.parquet/i4vwrw2iQLnJna7E_2.parquet:0..9946761, home/runner/work/datafusion-ray/datafusion-ray/data/partsupp.parquet/i4vwrw2iQLnJna7E_3.parquet:0..10275813], [home/runner/work/datafusion-ray/datafusion-ray/data/partsupp.parquet/i4vwrw2iQLnJna7E_3.parquet:10275813..10620507, home/runner/work/datafusion-ray/datafusion-ray/data/partsupp.parquet/part1.parquet:0..20723615], [home/runner/work/datafusion-ray/datafusion-ray/data/partsupp.parquet/part1.parquet:20723615..20895812, home/runner/work/datafusion-ray/datafusion-ray/data/partsupp.parquet/part2.parquet:0..20896109]]}, projection=[ps_partkey, ps_suppkey, ps_supplycost]
 
 Query Stage #5 (4 -> 4):
 ShuffleWriterExec(stage_id=5, output_partitioning=Hash([Column { name: "ps_suppkey", index: 2 }], 4))
@@ -193,24 +190,24 @@ ShuffleWriterExec(stage_id=8, output_partitioning=Hash([Column { name: "p_partke
       CoalesceBatchesExec: target_batch_size=8192
         ShuffleReaderExec(stage_id=7, input_partitioning=Hash([Column { name: "n_regionkey", index: 9 }], 4))
 
-Query Stage #9 (1 -> 4):
+Query Stage #9 (2 -> 4):
 ShuffleWriterExec(stage_id=9, output_partitioning=Hash([Column { name: "r_regionkey", index: 0 }], 4))
   ProjectionExec: expr=[r_regionkey@0 as r_regionkey]
     CoalesceBatchesExec: target_batch_size=8192
       FilterExec: r_name@1 = ASIA
-        ParquetExec: file_groups={1 group: [[home/runner/work/datafusion-ray/datafusion-ray/data/region.parquet/part1.parquet]]}, projection=[r_regionkey, r_name], predicate=r_name@1 = ASIA, pruning_predicate=CASE WHEN r_name_null_count@2 = r_name_row_count@3 THEN false ELSE r_name_min@0 <= ASIA AND ASIA <= r_name_max@1 END, required_guarantees=[r_name in (ASIA)]
+        ParquetExec: file_groups={2 groups: [[home/runner/work/datafusion-ray/datafusion-ray/data/region.parquet/8NlZWnksIQjnYDPs_0.parquet], [home/runner/work/datafusion-ray/datafusion-ray/data/region.parquet/part1.parquet]]}, projection=[r_regionkey, r_name], predicate=r_name@1 = ASIA, pruning_predicate=CASE WHEN r_name_null_count@2 = r_name_row_count@3 THEN false ELSE r_name_min@0 <= ASIA AND ASIA <= r_name_max@1 END, required_guarantees=[r_name in (ASIA)]
 
-Query Stage #10 (1 -> 4):
+Query Stage #10 (2 -> 4):
 ShuffleWriterExec(stage_id=10, output_partitioning=Hash([Column { name: "n_nationkey", index: 0 }], 4))
-  ParquetExec: file_groups={1 group: [[home/runner/work/datafusion-ray/datafusion-ray/data/nation.parquet/part1.parquet]]}, projection=[n_nationkey, n_regionkey]
+  ParquetExec: file_groups={2 groups: [[home/runner/work/datafusion-ray/datafusion-ray/data/nation.parquet/IftthSxZMytggJzA_0.parquet], [home/runner/work/datafusion-ray/datafusion-ray/data/nation.parquet/part1.parquet]]}, projection=[n_nationkey, n_regionkey]
 
-Query Stage #11 (2 -> 4):
+Query Stage #11 (4 -> 4):
 ShuffleWriterExec(stage_id=11, output_partitioning=Hash([Column { name: "s_suppkey", index: 0 }], 4))
-  ParquetExec: file_groups={2 groups: [[home/runner/work/datafusion-ray/datafusion-ray/data/supplier.parquet/part1.parquet], [home/runner/work/datafusion-ray/datafusion-ray/data/supplier.parquet/part2.parquet]]}, projection=[s_suppkey, s_nationkey]
+  ParquetExec: file_groups={4 groups: [[home/runner/work/datafusion-ray/datafusion-ray/data/supplier.parquet/8qdC2hv8M5cVyFo2_0.parquet], [home/runner/work/datafusion-ray/datafusion-ray/data/supplier.parquet/8qdC2hv8M5cVyFo2_1.parquet], [home/runner/work/datafusion-ray/datafusion-ray/data/supplier.parquet/part1.parquet], [home/runner/work/datafusion-ray/datafusion-ray/data/supplier.parquet/part2.parquet]]}, projection=[s_suppkey, s_nationkey]
 
 Query Stage #12 (4 -> 4):
 ShuffleWriterExec(stage_id=12, output_partitioning=Hash([Column { name: "ps_suppkey", index: 1 }], 4))
-  ParquetExec: file_groups={4 groups: [[home/runner/work/datafusion-ray/datafusion-ray/data/partsupp.parquet/part1.parquet:0..10449977], [home/runner/work/datafusion-ray/datafusion-ray/data/partsupp.parquet/part1.parquet:10449977..20896603, home/runner/work/datafusion-ray/datafusion-ray/data/partsupp.parquet/part2.parquet:0..3351], [home/runner/work/datafusion-ray/datafusion-ray/data/partsupp.parquet/part2.parquet:3351..10453328], [home/runner/work/datafusion-ray/datafusion-ray/data/partsupp.parquet/part2.parquet:10453328..20903305]]}, projection=[ps_partkey, ps_suppkey, ps_supplycost]
+  ParquetExec: file_groups={4 groups: [[home/runner/work/datafusion-ray/datafusion-ray/data/partsupp.parquet/i4vwrw2iQLnJna7E_0.parquet:0..11328263, home/runner/work/datafusion-ray/datafusion-ray/data/partsupp.parquet/i4vwrw2iQLnJna7E_1.parquet:0..9740046], [home/runner/work/datafusion-ray/datafusion-ray/data/partsupp.parquet/i4vwrw2iQLnJna7E_1.parquet:9740046..10585781, home/runner/work/datafusion-ray/datafusion-ray/data/partsupp.parquet/i4vwrw2iQLnJna7E_2.parquet:0..9946761, home/runner/work/datafusion-ray/datafusion-ray/data/partsupp.parquet/i4vwrw2iQLnJna7E_3.parquet:0..10275813], [home/runner/work/datafusion-ray/datafusion-ray/data/partsupp.parquet/i4vwrw2iQLnJna7E_3.parquet:10275813..10620507, home/runner/work/datafusion-ray/datafusion-ray/data/partsupp.parquet/part1.parquet:0..20723615], [home/runner/work/datafusion-ray/datafusion-ray/data/partsupp.parquet/part1.parquet:20723615..20895812, home/runner/work/datafusion-ray/datafusion-ray/data/partsupp.parquet/part2.parquet:0..20896109]]}, projection=[ps_partkey, ps_suppkey, ps_supplycost]
 
 Query Stage #13 (4 -> 4):
 ShuffleWriterExec(stage_id=13, output_partitioning=Hash([Column { name: "s_nationkey", index: 2 }], 4))
