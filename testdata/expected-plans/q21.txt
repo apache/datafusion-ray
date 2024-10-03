@@ -59,7 +59,7 @@ GlobalLimitExec: skip=0, fetch=100
                                       ProjectionExec: expr=[n_nationkey@0 as n_nationkey]
                                         CoalesceBatchesExec: target_batch_size=8192
                                           FilterExec: n_name@1 = ARGENTINA
-                                            ParquetExec: file_groups={1 group: [[home/edmondo/Development/datafusion-ray/data/nation.parquet/part1.parquet]]}, projection=[n_nationkey, n_name], predicate=n_name@1 = ARGENTINA, pruning_predicate=CASE WHEN n_name_null_count@2 = n_name_row_count@3 THEN false ELSE n_name_min@0 <= ARGENTINA AND ARGENTINA <= n_name_max@1 END, required_guarantees=[n_name in (ARGENTINA)]
+                                            ParquetExec: file_groups={1 group: [[home/runner/work/datafusion-ray/datafusion-ray/data/nation.parquet/part1.parquet]]}, projection=[n_nationkey, n_name], predicate=n_name@1 = ARGENTINA, pruning_predicate=CASE WHEN n_name_null_count@2 = n_name_row_count@3 THEN false ELSE n_name_min@0 <= ARGENTINA AND ARGENTINA <= n_name_max@1 END, required_guarantees=[n_name in (ARGENTINA)]
                                 CoalesceBatchesExec: target_batch_size=8192
                                   RepartitionExec: partitioning=Hash([s_nationkey@1], 4), input_partitions=4
                                     CoalesceBatchesExec: target_batch_size=8192
@@ -69,7 +69,7 @@ GlobalLimitExec: skip=0, fetch=100
                                             ProjectionExec: expr=[o_orderkey@0 as o_orderkey]
                                               CoalesceBatchesExec: target_batch_size=8192
                                                 FilterExec: o_orderstatus@1 = F
-                                                  ParquetExec: file_groups={4 groups: [[home/edmondo/Development/datafusion-ray/data/orders.parquet/part1.parquet:0..13635744], [home/edmondo/Development/datafusion-ray/data/orders.parquet/part1.parquet:13635744..27271488], [home/edmondo/Development/datafusion-ray/data/orders.parquet/part1.parquet:27271488..27277388, home/edmondo/Development/datafusion-ray/data/orders.parquet/part2.parquet:0..13629844], [home/edmondo/Development/datafusion-ray/data/orders.parquet/part2.parquet:13629844..27265588]]}, projection=[o_orderkey, o_orderstatus], predicate=o_orderstatus@2 = F, pruning_predicate=CASE WHEN o_orderstatus_null_count@2 = o_orderstatus_row_count@3 THEN false ELSE o_orderstatus_min@0 <= F AND F <= o_orderstatus_max@1 END, required_guarantees=[o_orderstatus in (F)]
+                                                  ParquetExec: file_groups={4 groups: [[home/runner/work/datafusion-ray/datafusion-ray/data/orders.parquet/part1.parquet:0..13635744], [home/runner/work/datafusion-ray/datafusion-ray/data/orders.parquet/part1.parquet:13635744..27271488], [home/runner/work/datafusion-ray/datafusion-ray/data/orders.parquet/part1.parquet:27271488..27277388, home/runner/work/datafusion-ray/datafusion-ray/data/orders.parquet/part2.parquet:0..13629844], [home/runner/work/datafusion-ray/datafusion-ray/data/orders.parquet/part2.parquet:13629844..27265588]]}, projection=[o_orderkey, o_orderstatus], predicate=o_orderstatus@2 = F, pruning_predicate=CASE WHEN o_orderstatus_null_count@2 = o_orderstatus_row_count@3 THEN false ELSE o_orderstatus_min@0 <= F AND F <= o_orderstatus_max@1 END, required_guarantees=[o_orderstatus in (F)]
                                         CoalesceBatchesExec: target_batch_size=8192
                                           RepartitionExec: partitioning=Hash([l_orderkey@2], 4), input_partitions=4
                                             CoalesceBatchesExec: target_batch_size=8192
@@ -77,22 +77,22 @@ GlobalLimitExec: skip=0, fetch=100
                                                 CoalesceBatchesExec: target_batch_size=8192
                                                   RepartitionExec: partitioning=Hash([s_suppkey@0], 4), input_partitions=4
                                                     RepartitionExec: partitioning=RoundRobinBatch(4), input_partitions=2
-                                                      ParquetExec: file_groups={2 groups: [[home/edmondo/Development/datafusion-ray/data/supplier.parquet/part1.parquet], [home/edmondo/Development/datafusion-ray/data/supplier.parquet/part2.parquet]]}, projection=[s_suppkey, s_name, s_nationkey]
+                                                      ParquetExec: file_groups={2 groups: [[home/runner/work/datafusion-ray/datafusion-ray/data/supplier.parquet/part1.parquet], [home/runner/work/datafusion-ray/datafusion-ray/data/supplier.parquet/part2.parquet]]}, projection=[s_suppkey, s_name, s_nationkey]
                                                 CoalesceBatchesExec: target_batch_size=8192
                                                   RepartitionExec: partitioning=Hash([l_suppkey@1], 4), input_partitions=4
                                                     ProjectionExec: expr=[l_orderkey@0 as l_orderkey, l_suppkey@1 as l_suppkey]
                                                       CoalesceBatchesExec: target_batch_size=8192
                                                         FilterExec: l_receiptdate@3 > l_commitdate@2
-                                                          ParquetExec: file_groups={4 groups: [[home/edmondo/Development/datafusion-ray/data/lineitem.parquet/part1.parquet:0..52077273], [home/edmondo/Development/datafusion-ray/data/lineitem.parquet/part1.parquet:52077273..104126391, home/edmondo/Development/datafusion-ray/data/lineitem.parquet/part2.parquet:0..28155], [home/edmondo/Development/datafusion-ray/data/lineitem.parquet/part2.parquet:28155..52105428], [home/edmondo/Development/datafusion-ray/data/lineitem.parquet/part2.parquet:52105428..104182701]]}, projection=[l_orderkey, l_suppkey, l_commitdate, l_receiptdate], predicate=l_receiptdate@12 > l_commitdate@11
+                                                          ParquetExec: file_groups={4 groups: [[home/runner/work/datafusion-ray/datafusion-ray/data/lineitem.parquet/part1.parquet:0..52077273], [home/runner/work/datafusion-ray/datafusion-ray/data/lineitem.parquet/part1.parquet:52077273..104126391, home/runner/work/datafusion-ray/datafusion-ray/data/lineitem.parquet/part2.parquet:0..28155], [home/runner/work/datafusion-ray/datafusion-ray/data/lineitem.parquet/part2.parquet:28155..52105428], [home/runner/work/datafusion-ray/datafusion-ray/data/lineitem.parquet/part2.parquet:52105428..104182701]]}, projection=[l_orderkey, l_suppkey, l_commitdate, l_receiptdate], predicate=l_receiptdate@12 > l_commitdate@11
                         CoalesceBatchesExec: target_batch_size=8192
                           RepartitionExec: partitioning=Hash([l_orderkey@0], 4), input_partitions=4
-                            ParquetExec: file_groups={4 groups: [[home/edmondo/Development/datafusion-ray/data/lineitem.parquet/part1.parquet:0..52077273], [home/edmondo/Development/datafusion-ray/data/lineitem.parquet/part1.parquet:52077273..104126391, home/edmondo/Development/datafusion-ray/data/lineitem.parquet/part2.parquet:0..28155], [home/edmondo/Development/datafusion-ray/data/lineitem.parquet/part2.parquet:28155..52105428], [home/edmondo/Development/datafusion-ray/data/lineitem.parquet/part2.parquet:52105428..104182701]]}, projection=[l_orderkey, l_suppkey]
+                            ParquetExec: file_groups={4 groups: [[home/runner/work/datafusion-ray/datafusion-ray/data/lineitem.parquet/part1.parquet:0..52077273], [home/runner/work/datafusion-ray/datafusion-ray/data/lineitem.parquet/part1.parquet:52077273..104126391, home/runner/work/datafusion-ray/datafusion-ray/data/lineitem.parquet/part2.parquet:0..28155], [home/runner/work/datafusion-ray/datafusion-ray/data/lineitem.parquet/part2.parquet:28155..52105428], [home/runner/work/datafusion-ray/datafusion-ray/data/lineitem.parquet/part2.parquet:52105428..104182701]]}, projection=[l_orderkey, l_suppkey]
                     CoalesceBatchesExec: target_batch_size=8192
                       RepartitionExec: partitioning=Hash([l_orderkey@0], 4), input_partitions=4
                         ProjectionExec: expr=[l_orderkey@0 as l_orderkey, l_suppkey@1 as l_suppkey]
                           CoalesceBatchesExec: target_batch_size=8192
                             FilterExec: l_receiptdate@3 > l_commitdate@2
-                              ParquetExec: file_groups={4 groups: [[home/edmondo/Development/datafusion-ray/data/lineitem.parquet/part1.parquet:0..52077273], [home/edmondo/Development/datafusion-ray/data/lineitem.parquet/part1.parquet:52077273..104126391, home/edmondo/Development/datafusion-ray/data/lineitem.parquet/part2.parquet:0..28155], [home/edmondo/Development/datafusion-ray/data/lineitem.parquet/part2.parquet:28155..52105428], [home/edmondo/Development/datafusion-ray/data/lineitem.parquet/part2.parquet:52105428..104182701]]}, projection=[l_orderkey, l_suppkey, l_commitdate, l_receiptdate], predicate=l_receiptdate@12 > l_commitdate@11
+                              ParquetExec: file_groups={4 groups: [[home/runner/work/datafusion-ray/datafusion-ray/data/lineitem.parquet/part1.parquet:0..52077273], [home/runner/work/datafusion-ray/datafusion-ray/data/lineitem.parquet/part1.parquet:52077273..104126391, home/runner/work/datafusion-ray/datafusion-ray/data/lineitem.parquet/part2.parquet:0..28155], [home/runner/work/datafusion-ray/datafusion-ray/data/lineitem.parquet/part2.parquet:28155..52105428], [home/runner/work/datafusion-ray/datafusion-ray/data/lineitem.parquet/part2.parquet:52105428..104182701]]}, projection=[l_orderkey, l_suppkey, l_commitdate, l_receiptdate], predicate=l_receiptdate@12 > l_commitdate@11
 
 RaySQL Plan
 ===========
@@ -102,25 +102,25 @@ ShuffleWriterExec(stage_id=0, output_partitioning=Hash([Column { name: "n_nation
   ProjectionExec: expr=[n_nationkey@0 as n_nationkey]
     CoalesceBatchesExec: target_batch_size=8192
       FilterExec: n_name@1 = ARGENTINA
-        ParquetExec: file_groups={1 group: [[home/edmondo/Development/datafusion-ray/data/nation.parquet/part1.parquet]]}, projection=[n_nationkey, n_name], predicate=n_name@1 = ARGENTINA, pruning_predicate=CASE WHEN n_name_null_count@2 = n_name_row_count@3 THEN false ELSE n_name_min@0 <= ARGENTINA AND ARGENTINA <= n_name_max@1 END, required_guarantees=[n_name in (ARGENTINA)]
+        ParquetExec: file_groups={1 group: [[home/runner/work/datafusion-ray/datafusion-ray/data/nation.parquet/part1.parquet]]}, projection=[n_nationkey, n_name], predicate=n_name@1 = ARGENTINA, pruning_predicate=CASE WHEN n_name_null_count@2 = n_name_row_count@3 THEN false ELSE n_name_min@0 <= ARGENTINA AND ARGENTINA <= n_name_max@1 END, required_guarantees=[n_name in (ARGENTINA)]
 
 Query Stage #1 (4 -> 4):
 ShuffleWriterExec(stage_id=1, output_partitioning=Hash([Column { name: "o_orderkey", index: 0 }], 4))
   ProjectionExec: expr=[o_orderkey@0 as o_orderkey]
     CoalesceBatchesExec: target_batch_size=8192
       FilterExec: o_orderstatus@1 = F
-        ParquetExec: file_groups={4 groups: [[home/edmondo/Development/datafusion-ray/data/orders.parquet/part1.parquet:0..13635744], [home/edmondo/Development/datafusion-ray/data/orders.parquet/part1.parquet:13635744..27271488], [home/edmondo/Development/datafusion-ray/data/orders.parquet/part1.parquet:27271488..27277388, home/edmondo/Development/datafusion-ray/data/orders.parquet/part2.parquet:0..13629844], [home/edmondo/Development/datafusion-ray/data/orders.parquet/part2.parquet:13629844..27265588]]}, projection=[o_orderkey, o_orderstatus], predicate=o_orderstatus@2 = F, pruning_predicate=CASE WHEN o_orderstatus_null_count@2 = o_orderstatus_row_count@3 THEN false ELSE o_orderstatus_min@0 <= F AND F <= o_orderstatus_max@1 END, required_guarantees=[o_orderstatus in (F)]
+        ParquetExec: file_groups={4 groups: [[home/runner/work/datafusion-ray/datafusion-ray/data/orders.parquet/part1.parquet:0..13635744], [home/runner/work/datafusion-ray/datafusion-ray/data/orders.parquet/part1.parquet:13635744..27271488], [home/runner/work/datafusion-ray/datafusion-ray/data/orders.parquet/part1.parquet:27271488..27277388, home/runner/work/datafusion-ray/datafusion-ray/data/orders.parquet/part2.parquet:0..13629844], [home/runner/work/datafusion-ray/datafusion-ray/data/orders.parquet/part2.parquet:13629844..27265588]]}, projection=[o_orderkey, o_orderstatus], predicate=o_orderstatus@2 = F, pruning_predicate=CASE WHEN o_orderstatus_null_count@2 = o_orderstatus_row_count@3 THEN false ELSE o_orderstatus_min@0 <= F AND F <= o_orderstatus_max@1 END, required_guarantees=[o_orderstatus in (F)]
 
 Query Stage #2 (2 -> 4):
 ShuffleWriterExec(stage_id=2, output_partitioning=Hash([Column { name: "s_suppkey", index: 0 }], 4))
-  ParquetExec: file_groups={2 groups: [[home/edmondo/Development/datafusion-ray/data/supplier.parquet/part1.parquet], [home/edmondo/Development/datafusion-ray/data/supplier.parquet/part2.parquet]]}, projection=[s_suppkey, s_name, s_nationkey]
+  ParquetExec: file_groups={2 groups: [[home/runner/work/datafusion-ray/datafusion-ray/data/supplier.parquet/part1.parquet], [home/runner/work/datafusion-ray/datafusion-ray/data/supplier.parquet/part2.parquet]]}, projection=[s_suppkey, s_name, s_nationkey]
 
 Query Stage #3 (4 -> 4):
 ShuffleWriterExec(stage_id=3, output_partitioning=Hash([Column { name: "l_suppkey", index: 1 }], 4))
   ProjectionExec: expr=[l_orderkey@0 as l_orderkey, l_suppkey@1 as l_suppkey]
     CoalesceBatchesExec: target_batch_size=8192
       FilterExec: l_receiptdate@3 > l_commitdate@2
-        ParquetExec: file_groups={4 groups: [[home/edmondo/Development/datafusion-ray/data/lineitem.parquet/part1.parquet:0..52077273], [home/edmondo/Development/datafusion-ray/data/lineitem.parquet/part1.parquet:52077273..104126391, home/edmondo/Development/datafusion-ray/data/lineitem.parquet/part2.parquet:0..28155], [home/edmondo/Development/datafusion-ray/data/lineitem.parquet/part2.parquet:28155..52105428], [home/edmondo/Development/datafusion-ray/data/lineitem.parquet/part2.parquet:52105428..104182701]]}, projection=[l_orderkey, l_suppkey, l_commitdate, l_receiptdate], predicate=l_receiptdate@12 > l_commitdate@11
+        ParquetExec: file_groups={4 groups: [[home/runner/work/datafusion-ray/datafusion-ray/data/lineitem.parquet/part1.parquet:0..52077273], [home/runner/work/datafusion-ray/datafusion-ray/data/lineitem.parquet/part1.parquet:52077273..104126391, home/runner/work/datafusion-ray/datafusion-ray/data/lineitem.parquet/part2.parquet:0..28155], [home/runner/work/datafusion-ray/datafusion-ray/data/lineitem.parquet/part2.parquet:28155..52105428], [home/runner/work/datafusion-ray/datafusion-ray/data/lineitem.parquet/part2.parquet:52105428..104182701]]}, projection=[l_orderkey, l_suppkey, l_commitdate, l_receiptdate], predicate=l_receiptdate@12 > l_commitdate@11
 
 Query Stage #4 (4 -> 4):
 ShuffleWriterExec(stage_id=4, output_partitioning=Hash([Column { name: "l_orderkey", index: 2 }], 4))
@@ -151,14 +151,14 @@ ShuffleWriterExec(stage_id=6, output_partitioning=Hash([Column { name: "l_orderk
 
 Query Stage #7 (4 -> 4):
 ShuffleWriterExec(stage_id=7, output_partitioning=Hash([Column { name: "l_orderkey", index: 0 }], 4))
-  ParquetExec: file_groups={4 groups: [[home/edmondo/Development/datafusion-ray/data/lineitem.parquet/part1.parquet:0..52077273], [home/edmondo/Development/datafusion-ray/data/lineitem.parquet/part1.parquet:52077273..104126391, home/edmondo/Development/datafusion-ray/data/lineitem.parquet/part2.parquet:0..28155], [home/edmondo/Development/datafusion-ray/data/lineitem.parquet/part2.parquet:28155..52105428], [home/edmondo/Development/datafusion-ray/data/lineitem.parquet/part2.parquet:52105428..104182701]]}, projection=[l_orderkey, l_suppkey]
+  ParquetExec: file_groups={4 groups: [[home/runner/work/datafusion-ray/datafusion-ray/data/lineitem.parquet/part1.parquet:0..52077273], [home/runner/work/datafusion-ray/datafusion-ray/data/lineitem.parquet/part1.parquet:52077273..104126391, home/runner/work/datafusion-ray/datafusion-ray/data/lineitem.parquet/part2.parquet:0..28155], [home/runner/work/datafusion-ray/datafusion-ray/data/lineitem.parquet/part2.parquet:28155..52105428], [home/runner/work/datafusion-ray/datafusion-ray/data/lineitem.parquet/part2.parquet:52105428..104182701]]}, projection=[l_orderkey, l_suppkey]
 
 Query Stage #8 (4 -> 4):
 ShuffleWriterExec(stage_id=8, output_partitioning=Hash([Column { name: "l_orderkey", index: 0 }], 4))
   ProjectionExec: expr=[l_orderkey@0 as l_orderkey, l_suppkey@1 as l_suppkey]
     CoalesceBatchesExec: target_batch_size=8192
       FilterExec: l_receiptdate@3 > l_commitdate@2
-        ParquetExec: file_groups={4 groups: [[home/edmondo/Development/datafusion-ray/data/lineitem.parquet/part1.parquet:0..52077273], [home/edmondo/Development/datafusion-ray/data/lineitem.parquet/part1.parquet:52077273..104126391, home/edmondo/Development/datafusion-ray/data/lineitem.parquet/part2.parquet:0..28155], [home/edmondo/Development/datafusion-ray/data/lineitem.parquet/part2.parquet:28155..52105428], [home/edmondo/Development/datafusion-ray/data/lineitem.parquet/part2.parquet:52105428..104182701]]}, projection=[l_orderkey, l_suppkey, l_commitdate, l_receiptdate], predicate=l_receiptdate@12 > l_commitdate@11
+        ParquetExec: file_groups={4 groups: [[home/runner/work/datafusion-ray/datafusion-ray/data/lineitem.parquet/part1.parquet:0..52077273], [home/runner/work/datafusion-ray/datafusion-ray/data/lineitem.parquet/part1.parquet:52077273..104126391, home/runner/work/datafusion-ray/datafusion-ray/data/lineitem.parquet/part2.parquet:0..28155], [home/runner/work/datafusion-ray/datafusion-ray/data/lineitem.parquet/part2.parquet:28155..52105428], [home/runner/work/datafusion-ray/datafusion-ray/data/lineitem.parquet/part2.parquet:52105428..104182701]]}, projection=[l_orderkey, l_suppkey, l_commitdate, l_receiptdate], predicate=l_receiptdate@12 > l_commitdate@11
 
 Query Stage #9 (4 -> 4):
 ShuffleWriterExec(stage_id=9, output_partitioning=Hash([Column { name: "s_name", index: 0 }], 4))

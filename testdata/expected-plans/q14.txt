@@ -23,27 +23,27 @@ ProjectionExec: expr=[100 * CAST(sum(CASE WHEN part.p_type LIKE Utf8("PROMO%") T
               CoalesceBatchesExec: target_batch_size=8192
                 RepartitionExec: partitioning=Hash([p_partkey@0], 4), input_partitions=4
                   RepartitionExec: partitioning=RoundRobinBatch(4), input_partitions=2
-                    ParquetExec: file_groups={2 groups: [[home/edmondo/Development/datafusion-ray/data/part.parquet/part1.parquet], [home/edmondo/Development/datafusion-ray/data/part.parquet/part2.parquet]]}, projection=[p_partkey, p_type]
+                    ParquetExec: file_groups={2 groups: [[home/runner/work/datafusion-ray/datafusion-ray/data/part.parquet/part1.parquet], [home/runner/work/datafusion-ray/datafusion-ray/data/part.parquet/part2.parquet]]}, projection=[p_partkey, p_type]
               CoalesceBatchesExec: target_batch_size=8192
                 RepartitionExec: partitioning=Hash([l_partkey@0], 4), input_partitions=4
                   ProjectionExec: expr=[l_partkey@0 as l_partkey, l_extendedprice@1 as l_extendedprice, l_discount@2 as l_discount]
                     CoalesceBatchesExec: target_batch_size=8192
                       FilterExec: l_shipdate@3 >= 1995-02-01 AND l_shipdate@3 < 1995-03-01
-                        ParquetExec: file_groups={4 groups: [[home/edmondo/Development/datafusion-ray/data/lineitem.parquet/part1.parquet:0..52077273], [home/edmondo/Development/datafusion-ray/data/lineitem.parquet/part1.parquet:52077273..104126391, home/edmondo/Development/datafusion-ray/data/lineitem.parquet/part2.parquet:0..28155], [home/edmondo/Development/datafusion-ray/data/lineitem.parquet/part2.parquet:28155..52105428], [home/edmondo/Development/datafusion-ray/data/lineitem.parquet/part2.parquet:52105428..104182701]]}, projection=[l_partkey, l_extendedprice, l_discount, l_shipdate], predicate=l_shipdate@10 >= 1995-02-01 AND l_shipdate@10 < 1995-03-01, pruning_predicate=CASE WHEN l_shipdate_null_count@1 = l_shipdate_row_count@2 THEN false ELSE l_shipdate_max@0 >= 1995-02-01 END AND CASE WHEN l_shipdate_null_count@1 = l_shipdate_row_count@2 THEN false ELSE l_shipdate_min@3 < 1995-03-01 END, required_guarantees=[]
+                        ParquetExec: file_groups={4 groups: [[home/runner/work/datafusion-ray/datafusion-ray/data/lineitem.parquet/part1.parquet:0..52077273], [home/runner/work/datafusion-ray/datafusion-ray/data/lineitem.parquet/part1.parquet:52077273..104126391, home/runner/work/datafusion-ray/datafusion-ray/data/lineitem.parquet/part2.parquet:0..28155], [home/runner/work/datafusion-ray/datafusion-ray/data/lineitem.parquet/part2.parquet:28155..52105428], [home/runner/work/datafusion-ray/datafusion-ray/data/lineitem.parquet/part2.parquet:52105428..104182701]]}, projection=[l_partkey, l_extendedprice, l_discount, l_shipdate], predicate=l_shipdate@10 >= 1995-02-01 AND l_shipdate@10 < 1995-03-01, pruning_predicate=CASE WHEN l_shipdate_null_count@1 = l_shipdate_row_count@2 THEN false ELSE l_shipdate_max@0 >= 1995-02-01 END AND CASE WHEN l_shipdate_null_count@1 = l_shipdate_row_count@2 THEN false ELSE l_shipdate_min@3 < 1995-03-01 END, required_guarantees=[]
 
 RaySQL Plan
 ===========
 
 Query Stage #0 (2 -> 4):
 ShuffleWriterExec(stage_id=0, output_partitioning=Hash([Column { name: "p_partkey", index: 0 }], 4))
-  ParquetExec: file_groups={2 groups: [[home/edmondo/Development/datafusion-ray/data/part.parquet/part1.parquet], [home/edmondo/Development/datafusion-ray/data/part.parquet/part2.parquet]]}, projection=[p_partkey, p_type]
+  ParquetExec: file_groups={2 groups: [[home/runner/work/datafusion-ray/datafusion-ray/data/part.parquet/part1.parquet], [home/runner/work/datafusion-ray/datafusion-ray/data/part.parquet/part2.parquet]]}, projection=[p_partkey, p_type]
 
 Query Stage #1 (4 -> 4):
 ShuffleWriterExec(stage_id=1, output_partitioning=Hash([Column { name: "l_partkey", index: 0 }], 4))
   ProjectionExec: expr=[l_partkey@0 as l_partkey, l_extendedprice@1 as l_extendedprice, l_discount@2 as l_discount]
     CoalesceBatchesExec: target_batch_size=8192
       FilterExec: l_shipdate@3 >= 1995-02-01 AND l_shipdate@3 < 1995-03-01
-        ParquetExec: file_groups={4 groups: [[home/edmondo/Development/datafusion-ray/data/lineitem.parquet/part1.parquet:0..52077273], [home/edmondo/Development/datafusion-ray/data/lineitem.parquet/part1.parquet:52077273..104126391, home/edmondo/Development/datafusion-ray/data/lineitem.parquet/part2.parquet:0..28155], [home/edmondo/Development/datafusion-ray/data/lineitem.parquet/part2.parquet:28155..52105428], [home/edmondo/Development/datafusion-ray/data/lineitem.parquet/part2.parquet:52105428..104182701]]}, projection=[l_partkey, l_extendedprice, l_discount, l_shipdate], predicate=l_shipdate@10 >= 1995-02-01 AND l_shipdate@10 < 1995-03-01, pruning_predicate=CASE WHEN l_shipdate_null_count@1 = l_shipdate_row_count@2 THEN false ELSE l_shipdate_max@0 >= 1995-02-01 END AND CASE WHEN l_shipdate_null_count@1 = l_shipdate_row_count@2 THEN false ELSE l_shipdate_min@3 < 1995-03-01 END, required_guarantees=[]
+        ParquetExec: file_groups={4 groups: [[home/runner/work/datafusion-ray/datafusion-ray/data/lineitem.parquet/part1.parquet:0..52077273], [home/runner/work/datafusion-ray/datafusion-ray/data/lineitem.parquet/part1.parquet:52077273..104126391, home/runner/work/datafusion-ray/datafusion-ray/data/lineitem.parquet/part2.parquet:0..28155], [home/runner/work/datafusion-ray/datafusion-ray/data/lineitem.parquet/part2.parquet:28155..52105428], [home/runner/work/datafusion-ray/datafusion-ray/data/lineitem.parquet/part2.parquet:52105428..104182701]]}, projection=[l_partkey, l_extendedprice, l_discount, l_shipdate], predicate=l_shipdate@10 >= 1995-02-01 AND l_shipdate@10 < 1995-03-01, pruning_predicate=CASE WHEN l_shipdate_null_count@1 = l_shipdate_row_count@2 THEN false ELSE l_shipdate_max@0 >= 1995-02-01 END AND CASE WHEN l_shipdate_null_count@1 = l_shipdate_row_count@2 THEN false ELSE l_shipdate_min@3 < 1995-03-01 END, required_guarantees=[]
 
 Query Stage #2 (4 -> 1):
 ShuffleWriterExec(stage_id=2, output_partitioning=Hash([], 4))
