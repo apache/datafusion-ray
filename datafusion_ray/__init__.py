@@ -28,6 +28,6 @@ from ._datafusion_ray_internal import (
     serialize_execution_plan,
     deserialize_execution_plan,
 )
-from .context import RaySqlContext
+from .context import DatafusionRayContext
 
 __version__ = importlib_metadata.version(__name__)

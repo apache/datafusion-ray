@@ -27,6 +27,7 @@ import datafusion_ray
 from datafusion_ray import Context, ExecutionGraph, QueryStage
 from typing import List
 
+
 def schedule_execution(
     graph: ExecutionGraph,
     stage_id: int,
@@ -208,7 +209,7 @@ def execute_query_partition(
     return ret[0] if len(ret) == 1 else ret
 
 
-class RaySqlContext:
+class DatafusionRayContext:
     def __init__(self, num_workers: int = 1, use_ray_shuffle: bool = False):
         self.ctx = Context(num_workers, use_ray_shuffle)
         self.num_workers = num_workers
