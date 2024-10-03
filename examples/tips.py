@@ -16,9 +16,9 @@
 # under the License.
 
 import os
-import pandas as pd
 import ray
 
+from datafusion import SessionContext
 from datafusion_ray import DatafusionRayContext
 
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
@@ -27,12 +27,14 @@ SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 ray.init(resources={"worker": 1})
 
 # Create a context and register a table
-ctx = DatafusionRayContext(2, use_ray_shuffle=True)
+df_ctx = SessionContext()
+
+ray_ctx = DatafusionRayContext(df_ctx, use_ray_shuffle=True)
 # Register either a CSV or Parquet file
 # ctx.register_csv("tips", f"{SCRIPT_DIR}/tips.csv", True)
-ctx.register_parquet("tips", f"{SCRIPT_DIR}/tips.parquet")
+df_ctx.register_parquet("tips", f"{SCRIPT_DIR}/tips.parquet")
 
-result_set = ctx.sql(
+result_set = ray_ctx.sql(
     "select sex, smoker, avg(tip/total_bill) as tip_pct from tips group by sex, smoker"
 )
 for record_batch in result_set:
