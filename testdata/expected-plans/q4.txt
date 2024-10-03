@@ -25,11 +25,11 @@ SortExec: expr=[o_orderpriority@0 ASC NULLS LAST], preserve_partitioning=[false]
           ProjectionExec: expr=[o_orderkey@0 as o_orderkey, o_orderpriority@2 as o_orderpriority]
             CoalesceBatchesExec: target_batch_size=8192
               FilterExec: o_orderdate@1 >= 1995-04-01 AND o_orderdate@1 < 1995-07-01
-                ParquetExec: file_groups={1 group: [[home/edmondo/Development/datafusion-ray/data/orders.parquet:0..54531250]]}, projection=[o_orderkey, o_orderdate, o_orderpriority], predicate=o_orderdate@4 >= 1995-04-01 AND o_orderdate@4 < 1995-07-01, pruning_predicate=CASE WHEN o_orderdate_null_count@1 = o_orderdate_row_count@2 THEN false ELSE o_orderdate_max@0 >= 1995-04-01 END AND CASE WHEN o_orderdate_null_count@1 = o_orderdate_row_count@2 THEN false ELSE o_orderdate_min@3 < 1995-07-01 END, required_guarantees=[]
+                ParquetExec: file_groups={1 group: [[home/runner/work/datafusion-ray/datafusion-ray/data/orders.parquet:0..54531250]]}, projection=[o_orderkey, o_orderdate, o_orderpriority], predicate=o_orderdate@4 >= 1995-04-01 AND o_orderdate@4 < 1995-07-01, pruning_predicate=CASE WHEN o_orderdate_null_count@1 = o_orderdate_row_count@2 THEN false ELSE o_orderdate_max@0 >= 1995-04-01 END AND CASE WHEN o_orderdate_null_count@1 = o_orderdate_row_count@2 THEN false ELSE o_orderdate_min@3 < 1995-07-01 END, required_guarantees=[]
           ProjectionExec: expr=[l_orderkey@0 as l_orderkey]
             CoalesceBatchesExec: target_batch_size=8192
               FilterExec: l_receiptdate@2 > l_commitdate@1
-                ParquetExec: file_groups={1 group: [[home/edmondo/Development/datafusion-ray/data/lineitem.parquet:0..208341192]]}, projection=[l_orderkey, l_commitdate, l_receiptdate], predicate=l_receiptdate@12 > l_commitdate@11
+                ParquetExec: file_groups={1 group: [[home/runner/work/datafusion-ray/datafusion-ray/data/lineitem.parquet:0..208341192]]}, projection=[l_orderkey, l_commitdate, l_receiptdate], predicate=l_receiptdate@12 > l_commitdate@11
 
 RaySQL Plan
 ===========
@@ -43,9 +43,9 @@ SortExec: expr=[o_orderpriority@0 ASC NULLS LAST], preserve_partitioning=[false]
           ProjectionExec: expr=[o_orderkey@0 as o_orderkey, o_orderpriority@2 as o_orderpriority]
             CoalesceBatchesExec: target_batch_size=8192
               FilterExec: o_orderdate@1 >= 1995-04-01 AND o_orderdate@1 < 1995-07-01
-                ParquetExec: file_groups={1 group: [[home/edmondo/Development/datafusion-ray/data/orders.parquet:0..54531250]]}, projection=[o_orderkey, o_orderdate, o_orderpriority], predicate=o_orderdate@4 >= 1995-04-01 AND o_orderdate@4 < 1995-07-01, pruning_predicate=CASE WHEN o_orderdate_null_count@1 = o_orderdate_row_count@2 THEN false ELSE o_orderdate_max@0 >= 1995-04-01 END AND CASE WHEN o_orderdate_null_count@1 = o_orderdate_row_count@2 THEN false ELSE o_orderdate_min@3 < 1995-07-01 END, required_guarantees=[]
+                ParquetExec: file_groups={1 group: [[home/runner/work/datafusion-ray/datafusion-ray/data/orders.parquet:0..54531250]]}, projection=[o_orderkey, o_orderdate, o_orderpriority], predicate=o_orderdate@4 >= 1995-04-01 AND o_orderdate@4 < 1995-07-01, pruning_predicate=CASE WHEN o_orderdate_null_count@1 = o_orderdate_row_count@2 THEN false ELSE o_orderdate_max@0 >= 1995-04-01 END AND CASE WHEN o_orderdate_null_count@1 = o_orderdate_row_count@2 THEN false ELSE o_orderdate_min@3 < 1995-07-01 END, required_guarantees=[]
           ProjectionExec: expr=[l_orderkey@0 as l_orderkey]
             CoalesceBatchesExec: target_batch_size=8192
               FilterExec: l_receiptdate@2 > l_commitdate@1
-                ParquetExec: file_groups={1 group: [[home/edmondo/Development/datafusion-ray/data/lineitem.parquet:0..208341192]]}, projection=[l_orderkey, l_commitdate, l_receiptdate], predicate=l_receiptdate@12 > l_commitdate@11
+                ParquetExec: file_groups={1 group: [[home/runner/work/datafusion-ray/datafusion-ray/data/lineitem.parquet:0..208341192]]}, projection=[l_orderkey, l_commitdate, l_receiptdate], predicate=l_receiptdate@12 > l_commitdate@11
 

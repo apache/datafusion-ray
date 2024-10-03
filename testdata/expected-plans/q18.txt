@@ -29,14 +29,14 @@ SortExec: TopK(fetch=100), expr=[o_totalprice@4 DESC,o_orderdate@3 ASC NULLS LAS
           CoalesceBatchesExec: target_batch_size=8192
             FilterExec: sum(lineitem.l_quantity)@1 > Some(31300),21,2
               AggregateExec: mode=Single, gby=[l_orderkey@0 as l_orderkey], aggr=[sum(lineitem.l_quantity)]
-                ParquetExec: file_groups={1 group: [[home/edmondo/Development/datafusion-ray/data/lineitem.parquet:0..208341192]]}, projection=[l_orderkey, l_quantity]
+                ParquetExec: file_groups={1 group: [[home/runner/work/datafusion-ray/datafusion-ray/data/lineitem.parquet:0..208341192]]}, projection=[l_orderkey, l_quantity]
         CoalesceBatchesExec: target_batch_size=8192
           HashJoinExec: mode=CollectLeft, join_type=Inner, on=[(o_orderkey@2, l_orderkey@0)], projection=[c_custkey@0, c_name@1, o_orderkey@2, o_totalprice@3, o_orderdate@4, l_quantity@6]
             CoalesceBatchesExec: target_batch_size=8192
               HashJoinExec: mode=CollectLeft, join_type=Inner, on=[(c_custkey@0, o_custkey@1)], projection=[c_custkey@0, c_name@1, o_orderkey@2, o_totalprice@4, o_orderdate@5]
-                ParquetExec: file_groups={1 group: [[home/edmondo/Development/datafusion-ray/data/customer.parquet:0..13212491]]}, projection=[c_custkey, c_name]
-                ParquetExec: file_groups={1 group: [[home/edmondo/Development/datafusion-ray/data/orders.parquet:0..54531250]]}, projection=[o_orderkey, o_custkey, o_totalprice, o_orderdate]
-            ParquetExec: file_groups={1 group: [[home/edmondo/Development/datafusion-ray/data/lineitem.parquet:0..208341192]]}, projection=[l_orderkey, l_quantity]
+                ParquetExec: file_groups={1 group: [[home/runner/work/datafusion-ray/datafusion-ray/data/customer.parquet:0..13212491]]}, projection=[c_custkey, c_name]
+                ParquetExec: file_groups={1 group: [[home/runner/work/datafusion-ray/datafusion-ray/data/orders.parquet:0..54531250]]}, projection=[o_orderkey, o_custkey, o_totalprice, o_orderdate]
+            ParquetExec: file_groups={1 group: [[home/runner/work/datafusion-ray/datafusion-ray/data/lineitem.parquet:0..208341192]]}, projection=[l_orderkey, l_quantity]
 
 RaySQL Plan
 ===========
@@ -50,12 +50,12 @@ SortExec: TopK(fetch=100), expr=[o_totalprice@4 DESC,o_orderdate@3 ASC NULLS LAS
           CoalesceBatchesExec: target_batch_size=8192
             FilterExec: sum(lineitem.l_quantity)@1 > Some(31300),21,2
               AggregateExec: mode=Single, gby=[l_orderkey@0 as l_orderkey], aggr=[sum(lineitem.l_quantity)]
-                ParquetExec: file_groups={1 group: [[home/edmondo/Development/datafusion-ray/data/lineitem.parquet:0..208341192]]}, projection=[l_orderkey, l_quantity]
+                ParquetExec: file_groups={1 group: [[home/runner/work/datafusion-ray/datafusion-ray/data/lineitem.parquet:0..208341192]]}, projection=[l_orderkey, l_quantity]
         CoalesceBatchesExec: target_batch_size=8192
           HashJoinExec: mode=CollectLeft, join_type=Inner, on=[(o_orderkey@2, l_orderkey@0)], projection=[c_custkey@0, c_name@1, o_orderkey@2, o_totalprice@3, o_orderdate@4, l_quantity@6]
             CoalesceBatchesExec: target_batch_size=8192
               HashJoinExec: mode=CollectLeft, join_type=Inner, on=[(c_custkey@0, o_custkey@1)], projection=[c_custkey@0, c_name@1, o_orderkey@2, o_totalprice@4, o_orderdate@5]
-                ParquetExec: file_groups={1 group: [[home/edmondo/Development/datafusion-ray/data/customer.parquet:0..13212491]]}, projection=[c_custkey, c_name]
-                ParquetExec: file_groups={1 group: [[home/edmondo/Development/datafusion-ray/data/orders.parquet:0..54531250]]}, projection=[o_orderkey, o_custkey, o_totalprice, o_orderdate]
-            ParquetExec: file_groups={1 group: [[home/edmondo/Development/datafusion-ray/data/lineitem.parquet:0..208341192]]}, projection=[l_orderkey, l_quantity]
+                ParquetExec: file_groups={1 group: [[home/runner/work/datafusion-ray/datafusion-ray/data/customer.parquet:0..13212491]]}, projection=[c_custkey, c_name]
+                ParquetExec: file_groups={1 group: [[home/runner/work/datafusion-ray/datafusion-ray/data/orders.parquet:0..54531250]]}, projection=[o_orderkey, o_custkey, o_totalprice, o_orderdate]
+            ParquetExec: file_groups={1 group: [[home/runner/work/datafusion-ray/datafusion-ray/data/lineitem.parquet:0..208341192]]}, projection=[l_orderkey, l_quantity]
 

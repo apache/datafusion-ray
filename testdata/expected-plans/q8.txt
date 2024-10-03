@@ -47,36 +47,36 @@ SortExec: expr=[o_year@0 ASC NULLS LAST], preserve_partitioning=[false]
             ProjectionExec: expr=[r_regionkey@0 as r_regionkey]
               CoalesceBatchesExec: target_batch_size=8192
                 FilterExec: r_name@1 = MIDDLE EAST
-                  ParquetExec: file_groups={1 group: [[home/edmondo/Development/datafusion-ray/data/region.parquet]]}, projection=[r_regionkey, r_name], predicate=r_name@1 = MIDDLE EAST, pruning_predicate=CASE WHEN r_name_null_count@2 = r_name_row_count@3 THEN false ELSE r_name_min@0 <= MIDDLE EAST AND MIDDLE EAST <= r_name_max@1 END, required_guarantees=[r_name in (MIDDLE EAST)]
+                  ParquetExec: file_groups={1 group: [[home/runner/work/datafusion-ray/datafusion-ray/data/region.parquet]]}, projection=[r_regionkey, r_name], predicate=r_name@1 = MIDDLE EAST, pruning_predicate=CASE WHEN r_name_null_count@2 = r_name_row_count@3 THEN false ELSE r_name_min@0 <= MIDDLE EAST AND MIDDLE EAST <= r_name_max@1 END, required_guarantees=[r_name in (MIDDLE EAST)]
             ProjectionExec: expr=[l_extendedprice@1 as l_extendedprice, l_discount@2 as l_discount, o_orderdate@3 as o_orderdate, n_regionkey@4 as n_regionkey, n_name@0 as n_name]
               CoalesceBatchesExec: target_batch_size=8192
                 HashJoinExec: mode=CollectLeft, join_type=Inner, on=[(n_nationkey@0, s_nationkey@2)], projection=[n_name@1, l_extendedprice@2, l_discount@3, o_orderdate@5, n_regionkey@6]
-                  ParquetExec: file_groups={1 group: [[home/edmondo/Development/datafusion-ray/data/nation.parquet]]}, projection=[n_nationkey, n_name]
+                  ParquetExec: file_groups={1 group: [[home/runner/work/datafusion-ray/datafusion-ray/data/nation.parquet]]}, projection=[n_nationkey, n_name]
                   ProjectionExec: expr=[l_extendedprice@1 as l_extendedprice, l_discount@2 as l_discount, s_nationkey@3 as s_nationkey, o_orderdate@4 as o_orderdate, n_regionkey@0 as n_regionkey]
                     CoalesceBatchesExec: target_batch_size=8192
                       HashJoinExec: mode=CollectLeft, join_type=Inner, on=[(n_nationkey@0, c_nationkey@4)], projection=[n_regionkey@1, l_extendedprice@2, l_discount@3, s_nationkey@4, o_orderdate@5]
-                        ParquetExec: file_groups={1 group: [[home/edmondo/Development/datafusion-ray/data/nation.parquet]]}, projection=[n_nationkey, n_regionkey]
+                        ParquetExec: file_groups={1 group: [[home/runner/work/datafusion-ray/datafusion-ray/data/nation.parquet]]}, projection=[n_nationkey, n_regionkey]
                         ProjectionExec: expr=[l_extendedprice@1 as l_extendedprice, l_discount@2 as l_discount, s_nationkey@3 as s_nationkey, o_orderdate@4 as o_orderdate, c_nationkey@0 as c_nationkey]
                           CoalesceBatchesExec: target_batch_size=8192
                             HashJoinExec: mode=CollectLeft, join_type=Inner, on=[(c_custkey@0, o_custkey@3)], projection=[c_nationkey@1, l_extendedprice@2, l_discount@3, s_nationkey@4, o_orderdate@6]
-                              ParquetExec: file_groups={1 group: [[home/edmondo/Development/datafusion-ray/data/customer.parquet:0..13212491]]}, projection=[c_custkey, c_nationkey]
+                              ParquetExec: file_groups={1 group: [[home/runner/work/datafusion-ray/datafusion-ray/data/customer.parquet:0..13212491]]}, projection=[c_custkey, c_nationkey]
                               ProjectionExec: expr=[l_extendedprice@2 as l_extendedprice, l_discount@3 as l_discount, s_nationkey@4 as s_nationkey, o_custkey@0 as o_custkey, o_orderdate@1 as o_orderdate]
                                 CoalesceBatchesExec: target_batch_size=8192
                                   HashJoinExec: mode=CollectLeft, join_type=Inner, on=[(o_orderkey@0, l_orderkey@0)], projection=[o_custkey@1, o_orderdate@2, l_extendedprice@4, l_discount@5, s_nationkey@6]
                                     CoalesceBatchesExec: target_batch_size=8192
                                       FilterExec: o_orderdate@2 >= 1995-01-01 AND o_orderdate@2 <= 1996-12-31
-                                        ParquetExec: file_groups={1 group: [[home/edmondo/Development/datafusion-ray/data/orders.parquet:0..54531250]]}, projection=[o_orderkey, o_custkey, o_orderdate], predicate=o_orderdate@4 >= 1995-01-01 AND o_orderdate@4 <= 1996-12-31, pruning_predicate=CASE WHEN o_orderdate_null_count@1 = o_orderdate_row_count@2 THEN false ELSE o_orderdate_max@0 >= 1995-01-01 END AND CASE WHEN o_orderdate_null_count@1 = o_orderdate_row_count@2 THEN false ELSE o_orderdate_min@3 <= 1996-12-31 END, required_guarantees=[]
+                                        ParquetExec: file_groups={1 group: [[home/runner/work/datafusion-ray/datafusion-ray/data/orders.parquet:0..54531250]]}, projection=[o_orderkey, o_custkey, o_orderdate], predicate=o_orderdate@4 >= 1995-01-01 AND o_orderdate@4 <= 1996-12-31, pruning_predicate=CASE WHEN o_orderdate_null_count@1 = o_orderdate_row_count@2 THEN false ELSE o_orderdate_max@0 >= 1995-01-01 END AND CASE WHEN o_orderdate_null_count@1 = o_orderdate_row_count@2 THEN false ELSE o_orderdate_min@3 <= 1996-12-31 END, required_guarantees=[]
                                     ProjectionExec: expr=[l_orderkey@1 as l_orderkey, l_extendedprice@2 as l_extendedprice, l_discount@3 as l_discount, s_nationkey@0 as s_nationkey]
                                       CoalesceBatchesExec: target_batch_size=8192
                                         HashJoinExec: mode=CollectLeft, join_type=Inner, on=[(s_suppkey@0, l_suppkey@1)], projection=[s_nationkey@1, l_orderkey@2, l_extendedprice@4, l_discount@5]
-                                          ParquetExec: file_groups={1 group: [[home/edmondo/Development/datafusion-ray/data/supplier.parquet]]}, projection=[s_suppkey, s_nationkey]
+                                          ParquetExec: file_groups={1 group: [[home/runner/work/datafusion-ray/datafusion-ray/data/supplier.parquet]]}, projection=[s_suppkey, s_nationkey]
                                           CoalesceBatchesExec: target_batch_size=8192
                                             HashJoinExec: mode=CollectLeft, join_type=Inner, on=[(p_partkey@0, l_partkey@1)], projection=[l_orderkey@1, l_suppkey@3, l_extendedprice@4, l_discount@5]
                                               ProjectionExec: expr=[p_partkey@0 as p_partkey]
                                                 CoalesceBatchesExec: target_batch_size=8192
                                                   FilterExec: p_type@1 = LARGE PLATED STEEL
-                                                    ParquetExec: file_groups={1 group: [[home/edmondo/Development/datafusion-ray/data/part.parquet]]}, projection=[p_partkey, p_type], predicate=p_type@4 = LARGE PLATED STEEL, pruning_predicate=CASE WHEN p_type_null_count@2 = p_type_row_count@3 THEN false ELSE p_type_min@0 <= LARGE PLATED STEEL AND LARGE PLATED STEEL <= p_type_max@1 END, required_guarantees=[p_type in (LARGE PLATED STEEL)]
-                                              ParquetExec: file_groups={1 group: [[home/edmondo/Development/datafusion-ray/data/lineitem.parquet:0..208341192]]}, projection=[l_orderkey, l_partkey, l_suppkey, l_extendedprice, l_discount]
+                                                    ParquetExec: file_groups={1 group: [[home/runner/work/datafusion-ray/datafusion-ray/data/part.parquet]]}, projection=[p_partkey, p_type], predicate=p_type@4 = LARGE PLATED STEEL, pruning_predicate=CASE WHEN p_type_null_count@2 = p_type_row_count@3 THEN false ELSE p_type_min@0 <= LARGE PLATED STEEL AND LARGE PLATED STEEL <= p_type_max@1 END, required_guarantees=[p_type in (LARGE PLATED STEEL)]
+                                              ParquetExec: file_groups={1 group: [[home/runner/work/datafusion-ray/datafusion-ray/data/lineitem.parquet:0..208341192]]}, projection=[l_orderkey, l_partkey, l_suppkey, l_extendedprice, l_discount]
 
 RaySQL Plan
 ===========
@@ -91,34 +91,34 @@ SortExec: expr=[o_year@0 ASC NULLS LAST], preserve_partitioning=[false]
             ProjectionExec: expr=[r_regionkey@0 as r_regionkey]
               CoalesceBatchesExec: target_batch_size=8192
                 FilterExec: r_name@1 = MIDDLE EAST
-                  ParquetExec: file_groups={1 group: [[home/edmondo/Development/datafusion-ray/data/region.parquet]]}, projection=[r_regionkey, r_name], predicate=r_name@1 = MIDDLE EAST, pruning_predicate=CASE WHEN r_name_null_count@2 = r_name_row_count@3 THEN false ELSE r_name_min@0 <= MIDDLE EAST AND MIDDLE EAST <= r_name_max@1 END, required_guarantees=[r_name in (MIDDLE EAST)]
+                  ParquetExec: file_groups={1 group: [[home/runner/work/datafusion-ray/datafusion-ray/data/region.parquet]]}, projection=[r_regionkey, r_name], predicate=r_name@1 = MIDDLE EAST, pruning_predicate=CASE WHEN r_name_null_count@2 = r_name_row_count@3 THEN false ELSE r_name_min@0 <= MIDDLE EAST AND MIDDLE EAST <= r_name_max@1 END, required_guarantees=[r_name in (MIDDLE EAST)]
             ProjectionExec: expr=[l_extendedprice@1 as l_extendedprice, l_discount@2 as l_discount, o_orderdate@3 as o_orderdate, n_regionkey@4 as n_regionkey, n_name@0 as n_name]
               CoalesceBatchesExec: target_batch_size=8192
                 HashJoinExec: mode=CollectLeft, join_type=Inner, on=[(n_nationkey@0, s_nationkey@2)], projection=[n_name@1, l_extendedprice@2, l_discount@3, o_orderdate@5, n_regionkey@6]
-                  ParquetExec: file_groups={1 group: [[home/edmondo/Development/datafusion-ray/data/nation.parquet]]}, projection=[n_nationkey, n_name]
+                  ParquetExec: file_groups={1 group: [[home/runner/work/datafusion-ray/datafusion-ray/data/nation.parquet]]}, projection=[n_nationkey, n_name]
                   ProjectionExec: expr=[l_extendedprice@1 as l_extendedprice, l_discount@2 as l_discount, s_nationkey@3 as s_nationkey, o_orderdate@4 as o_orderdate, n_regionkey@0 as n_regionkey]
                     CoalesceBatchesExec: target_batch_size=8192
                       HashJoinExec: mode=CollectLeft, join_type=Inner, on=[(n_nationkey@0, c_nationkey@4)], projection=[n_regionkey@1, l_extendedprice@2, l_discount@3, s_nationkey@4, o_orderdate@5]
-                        ParquetExec: file_groups={1 group: [[home/edmondo/Development/datafusion-ray/data/nation.parquet]]}, projection=[n_nationkey, n_regionkey]
+                        ParquetExec: file_groups={1 group: [[home/runner/work/datafusion-ray/datafusion-ray/data/nation.parquet]]}, projection=[n_nationkey, n_regionkey]
                         ProjectionExec: expr=[l_extendedprice@1 as l_extendedprice, l_discount@2 as l_discount, s_nationkey@3 as s_nationkey, o_orderdate@4 as o_orderdate, c_nationkey@0 as c_nationkey]
                           CoalesceBatchesExec: target_batch_size=8192
                             HashJoinExec: mode=CollectLeft, join_type=Inner, on=[(c_custkey@0, o_custkey@3)], projection=[c_nationkey@1, l_extendedprice@2, l_discount@3, s_nationkey@4, o_orderdate@6]
-                              ParquetExec: file_groups={1 group: [[home/edmondo/Development/datafusion-ray/data/customer.parquet:0..13212491]]}, projection=[c_custkey, c_nationkey]
+                              ParquetExec: file_groups={1 group: [[home/runner/work/datafusion-ray/datafusion-ray/data/customer.parquet:0..13212491]]}, projection=[c_custkey, c_nationkey]
                               ProjectionExec: expr=[l_extendedprice@2 as l_extendedprice, l_discount@3 as l_discount, s_nationkey@4 as s_nationkey, o_custkey@0 as o_custkey, o_orderdate@1 as o_orderdate]
                                 CoalesceBatchesExec: target_batch_size=8192
                                   HashJoinExec: mode=CollectLeft, join_type=Inner, on=[(o_orderkey@0, l_orderkey@0)], projection=[o_custkey@1, o_orderdate@2, l_extendedprice@4, l_discount@5, s_nationkey@6]
                                     CoalesceBatchesExec: target_batch_size=8192
                                       FilterExec: o_orderdate@2 >= 1995-01-01 AND o_orderdate@2 <= 1996-12-31
-                                        ParquetExec: file_groups={1 group: [[home/edmondo/Development/datafusion-ray/data/orders.parquet:0..54531250]]}, projection=[o_orderkey, o_custkey, o_orderdate], predicate=o_orderdate@4 >= 1995-01-01 AND o_orderdate@4 <= 1996-12-31, pruning_predicate=CASE WHEN o_orderdate_null_count@1 = o_orderdate_row_count@2 THEN false ELSE o_orderdate_max@0 >= 1995-01-01 END AND CASE WHEN o_orderdate_null_count@1 = o_orderdate_row_count@2 THEN false ELSE o_orderdate_min@3 <= 1996-12-31 END, required_guarantees=[]
+                                        ParquetExec: file_groups={1 group: [[home/runner/work/datafusion-ray/datafusion-ray/data/orders.parquet:0..54531250]]}, projection=[o_orderkey, o_custkey, o_orderdate], predicate=o_orderdate@4 >= 1995-01-01 AND o_orderdate@4 <= 1996-12-31, pruning_predicate=CASE WHEN o_orderdate_null_count@1 = o_orderdate_row_count@2 THEN false ELSE o_orderdate_max@0 >= 1995-01-01 END AND CASE WHEN o_orderdate_null_count@1 = o_orderdate_row_count@2 THEN false ELSE o_orderdate_min@3 <= 1996-12-31 END, required_guarantees=[]
                                     ProjectionExec: expr=[l_orderkey@1 as l_orderkey, l_extendedprice@2 as l_extendedprice, l_discount@3 as l_discount, s_nationkey@0 as s_nationkey]
                                       CoalesceBatchesExec: target_batch_size=8192
                                         HashJoinExec: mode=CollectLeft, join_type=Inner, on=[(s_suppkey@0, l_suppkey@1)], projection=[s_nationkey@1, l_orderkey@2, l_extendedprice@4, l_discount@5]
-                                          ParquetExec: file_groups={1 group: [[home/edmondo/Development/datafusion-ray/data/supplier.parquet]]}, projection=[s_suppkey, s_nationkey]
+                                          ParquetExec: file_groups={1 group: [[home/runner/work/datafusion-ray/datafusion-ray/data/supplier.parquet]]}, projection=[s_suppkey, s_nationkey]
                                           CoalesceBatchesExec: target_batch_size=8192
                                             HashJoinExec: mode=CollectLeft, join_type=Inner, on=[(p_partkey@0, l_partkey@1)], projection=[l_orderkey@1, l_suppkey@3, l_extendedprice@4, l_discount@5]
                                               ProjectionExec: expr=[p_partkey@0 as p_partkey]
                                                 CoalesceBatchesExec: target_batch_size=8192
                                                   FilterExec: p_type@1 = LARGE PLATED STEEL
-                                                    ParquetExec: file_groups={1 group: [[home/edmondo/Development/datafusion-ray/data/part.parquet]]}, projection=[p_partkey, p_type], predicate=p_type@4 = LARGE PLATED STEEL, pruning_predicate=CASE WHEN p_type_null_count@2 = p_type_row_count@3 THEN false ELSE p_type_min@0 <= LARGE PLATED STEEL AND LARGE PLATED STEEL <= p_type_max@1 END, required_guarantees=[p_type in (LARGE PLATED STEEL)]
-                                              ParquetExec: file_groups={1 group: [[home/edmondo/Development/datafusion-ray/data/lineitem.parquet:0..208341192]]}, projection=[l_orderkey, l_partkey, l_suppkey, l_extendedprice, l_discount]
+                                                    ParquetExec: file_groups={1 group: [[home/runner/work/datafusion-ray/datafusion-ray/data/part.parquet]]}, projection=[p_partkey, p_type], predicate=p_type@4 = LARGE PLATED STEEL, pruning_predicate=CASE WHEN p_type_null_count@2 = p_type_row_count@3 THEN false ELSE p_type_min@0 <= LARGE PLATED STEEL AND LARGE PLATED STEEL <= p_type_max@1 END, required_guarantees=[p_type in (LARGE PLATED STEEL)]
+                                              ParquetExec: file_groups={1 group: [[home/runner/work/datafusion-ray/datafusion-ray/data/lineitem.parquet:0..208341192]]}, projection=[l_orderkey, l_partkey, l_suppkey, l_extendedprice, l_discount]
 

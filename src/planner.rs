@@ -384,7 +384,7 @@ mod test {
         let data_path = env::var("TPCH_DATA_PATH")?;
         let file = format!("testdata/queries/q{n}.sql");
         let sql = fs::read_to_string(&file)?;
-        let config = SessionConfig::new().with_target_partitions(1);
+        let config = SessionConfig::new().with_target_partitions(4);
         let ctx = SessionContext::with_config(config);
         let tables = &[
             "customer", "lineitem", "nation", "orders", "part", "partsupp", "region", "supplier",

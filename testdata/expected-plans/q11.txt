@@ -40,24 +40,24 @@ SortExec: expr=[value@1 DESC], preserve_partitioning=[false]
               ProjectionExec: expr=[n_nationkey@0 as n_nationkey]
                 CoalesceBatchesExec: target_batch_size=8192
                   FilterExec: n_name@1 = ALGERIA
-                    ParquetExec: file_groups={1 group: [[home/edmondo/Development/datafusion-ray/data/nation.parquet]]}, projection=[n_nationkey, n_name], predicate=n_name@1 = ALGERIA, pruning_predicate=CASE WHEN n_name_null_count@2 = n_name_row_count@3 THEN false ELSE n_name_min@0 <= ALGERIA AND ALGERIA <= n_name_max@1 END, required_guarantees=[n_name in (ALGERIA)]
+                    ParquetExec: file_groups={1 group: [[home/runner/work/datafusion-ray/datafusion-ray/data/nation.parquet]]}, projection=[n_nationkey, n_name], predicate=n_name@1 = ALGERIA, pruning_predicate=CASE WHEN n_name_null_count@2 = n_name_row_count@3 THEN false ELSE n_name_min@0 <= ALGERIA AND ALGERIA <= n_name_max@1 END, required_guarantees=[n_name in (ALGERIA)]
               ProjectionExec: expr=[ps_availqty@1 as ps_availqty, ps_supplycost@2 as ps_supplycost, s_nationkey@0 as s_nationkey]
                 CoalesceBatchesExec: target_batch_size=8192
                   HashJoinExec: mode=CollectLeft, join_type=Inner, on=[(s_suppkey@0, ps_suppkey@0)], projection=[s_nationkey@1, ps_availqty@3, ps_supplycost@4]
-                    ParquetExec: file_groups={1 group: [[home/edmondo/Development/datafusion-ray/data/supplier.parquet]]}, projection=[s_suppkey, s_nationkey]
-                    ParquetExec: file_groups={1 group: [[home/edmondo/Development/datafusion-ray/data/partsupp.parquet:0..41092331]]}, projection=[ps_suppkey, ps_availqty, ps_supplycost]
+                    ParquetExec: file_groups={1 group: [[home/runner/work/datafusion-ray/datafusion-ray/data/supplier.parquet]]}, projection=[s_suppkey, s_nationkey]
+                    ParquetExec: file_groups={1 group: [[home/runner/work/datafusion-ray/datafusion-ray/data/partsupp.parquet:0..41092331]]}, projection=[ps_suppkey, ps_availqty, ps_supplycost]
       AggregateExec: mode=Single, gby=[ps_partkey@0 as ps_partkey], aggr=[sum(partsupp.ps_supplycost * partsupp.ps_availqty)]
         CoalesceBatchesExec: target_batch_size=8192
           HashJoinExec: mode=CollectLeft, join_type=Inner, on=[(n_nationkey@0, s_nationkey@3)], projection=[ps_partkey@1, ps_availqty@2, ps_supplycost@3]
             ProjectionExec: expr=[n_nationkey@0 as n_nationkey]
               CoalesceBatchesExec: target_batch_size=8192
                 FilterExec: n_name@1 = ALGERIA
-                  ParquetExec: file_groups={1 group: [[home/edmondo/Development/datafusion-ray/data/nation.parquet]]}, projection=[n_nationkey, n_name], predicate=n_name@1 = ALGERIA, pruning_predicate=CASE WHEN n_name_null_count@2 = n_name_row_count@3 THEN false ELSE n_name_min@0 <= ALGERIA AND ALGERIA <= n_name_max@1 END, required_guarantees=[n_name in (ALGERIA)]
+                  ParquetExec: file_groups={1 group: [[home/runner/work/datafusion-ray/datafusion-ray/data/nation.parquet]]}, projection=[n_nationkey, n_name], predicate=n_name@1 = ALGERIA, pruning_predicate=CASE WHEN n_name_null_count@2 = n_name_row_count@3 THEN false ELSE n_name_min@0 <= ALGERIA AND ALGERIA <= n_name_max@1 END, required_guarantees=[n_name in (ALGERIA)]
             ProjectionExec: expr=[ps_partkey@1 as ps_partkey, ps_availqty@2 as ps_availqty, ps_supplycost@3 as ps_supplycost, s_nationkey@0 as s_nationkey]
               CoalesceBatchesExec: target_batch_size=8192
                 HashJoinExec: mode=CollectLeft, join_type=Inner, on=[(s_suppkey@0, ps_suppkey@1)], projection=[s_nationkey@1, ps_partkey@2, ps_availqty@4, ps_supplycost@5]
-                  ParquetExec: file_groups={1 group: [[home/edmondo/Development/datafusion-ray/data/supplier.parquet]]}, projection=[s_suppkey, s_nationkey]
-                  ParquetExec: file_groups={1 group: [[home/edmondo/Development/datafusion-ray/data/partsupp.parquet:0..41092331]]}, projection=[ps_partkey, ps_suppkey, ps_availqty, ps_supplycost]
+                  ParquetExec: file_groups={1 group: [[home/runner/work/datafusion-ray/datafusion-ray/data/supplier.parquet]]}, projection=[s_suppkey, s_nationkey]
+                  ParquetExec: file_groups={1 group: [[home/runner/work/datafusion-ray/datafusion-ray/data/partsupp.parquet:0..41092331]]}, projection=[ps_partkey, ps_suppkey, ps_availqty, ps_supplycost]
 
 RaySQL Plan
 ===========
@@ -73,22 +73,22 @@ SortExec: expr=[value@1 DESC], preserve_partitioning=[false]
               ProjectionExec: expr=[n_nationkey@0 as n_nationkey]
                 CoalesceBatchesExec: target_batch_size=8192
                   FilterExec: n_name@1 = ALGERIA
-                    ParquetExec: file_groups={1 group: [[home/edmondo/Development/datafusion-ray/data/nation.parquet]]}, projection=[n_nationkey, n_name], predicate=n_name@1 = ALGERIA, pruning_predicate=CASE WHEN n_name_null_count@2 = n_name_row_count@3 THEN false ELSE n_name_min@0 <= ALGERIA AND ALGERIA <= n_name_max@1 END, required_guarantees=[n_name in (ALGERIA)]
+                    ParquetExec: file_groups={1 group: [[home/runner/work/datafusion-ray/datafusion-ray/data/nation.parquet]]}, projection=[n_nationkey, n_name], predicate=n_name@1 = ALGERIA, pruning_predicate=CASE WHEN n_name_null_count@2 = n_name_row_count@3 THEN false ELSE n_name_min@0 <= ALGERIA AND ALGERIA <= n_name_max@1 END, required_guarantees=[n_name in (ALGERIA)]
               ProjectionExec: expr=[ps_availqty@1 as ps_availqty, ps_supplycost@2 as ps_supplycost, s_nationkey@0 as s_nationkey]
                 CoalesceBatchesExec: target_batch_size=8192
                   HashJoinExec: mode=CollectLeft, join_type=Inner, on=[(s_suppkey@0, ps_suppkey@0)], projection=[s_nationkey@1, ps_availqty@3, ps_supplycost@4]
-                    ParquetExec: file_groups={1 group: [[home/edmondo/Development/datafusion-ray/data/supplier.parquet]]}, projection=[s_suppkey, s_nationkey]
-                    ParquetExec: file_groups={1 group: [[home/edmondo/Development/datafusion-ray/data/partsupp.parquet:0..41092331]]}, projection=[ps_suppkey, ps_availqty, ps_supplycost]
+                    ParquetExec: file_groups={1 group: [[home/runner/work/datafusion-ray/datafusion-ray/data/supplier.parquet]]}, projection=[s_suppkey, s_nationkey]
+                    ParquetExec: file_groups={1 group: [[home/runner/work/datafusion-ray/datafusion-ray/data/partsupp.parquet:0..41092331]]}, projection=[ps_suppkey, ps_availqty, ps_supplycost]
       AggregateExec: mode=Single, gby=[ps_partkey@0 as ps_partkey], aggr=[sum(partsupp.ps_supplycost * partsupp.ps_availqty)]
         CoalesceBatchesExec: target_batch_size=8192
           HashJoinExec: mode=CollectLeft, join_type=Inner, on=[(n_nationkey@0, s_nationkey@3)], projection=[ps_partkey@1, ps_availqty@2, ps_supplycost@3]
             ProjectionExec: expr=[n_nationkey@0 as n_nationkey]
               CoalesceBatchesExec: target_batch_size=8192
                 FilterExec: n_name@1 = ALGERIA
-                  ParquetExec: file_groups={1 group: [[home/edmondo/Development/datafusion-ray/data/nation.parquet]]}, projection=[n_nationkey, n_name], predicate=n_name@1 = ALGERIA, pruning_predicate=CASE WHEN n_name_null_count@2 = n_name_row_count@3 THEN false ELSE n_name_min@0 <= ALGERIA AND ALGERIA <= n_name_max@1 END, required_guarantees=[n_name in (ALGERIA)]
+                  ParquetExec: file_groups={1 group: [[home/runner/work/datafusion-ray/datafusion-ray/data/nation.parquet]]}, projection=[n_nationkey, n_name], predicate=n_name@1 = ALGERIA, pruning_predicate=CASE WHEN n_name_null_count@2 = n_name_row_count@3 THEN false ELSE n_name_min@0 <= ALGERIA AND ALGERIA <= n_name_max@1 END, required_guarantees=[n_name in (ALGERIA)]
             ProjectionExec: expr=[ps_partkey@1 as ps_partkey, ps_availqty@2 as ps_availqty, ps_supplycost@3 as ps_supplycost, s_nationkey@0 as s_nationkey]
               CoalesceBatchesExec: target_batch_size=8192
                 HashJoinExec: mode=CollectLeft, join_type=Inner, on=[(s_suppkey@0, ps_suppkey@1)], projection=[s_nationkey@1, ps_partkey@2, ps_availqty@4, ps_supplycost@5]
-                  ParquetExec: file_groups={1 group: [[home/edmondo/Development/datafusion-ray/data/supplier.parquet]]}, projection=[s_suppkey, s_nationkey]
-                  ParquetExec: file_groups={1 group: [[home/edmondo/Development/datafusion-ray/data/partsupp.parquet:0..41092331]]}, projection=[ps_partkey, ps_suppkey, ps_availqty, ps_supplycost]
+                  ParquetExec: file_groups={1 group: [[home/runner/work/datafusion-ray/datafusion-ray/data/supplier.parquet]]}, projection=[s_suppkey, s_nationkey]
+                  ParquetExec: file_groups={1 group: [[home/runner/work/datafusion-ray/datafusion-ray/data/partsupp.parquet:0..41092331]]}, projection=[ps_partkey, ps_suppkey, ps_availqty, ps_supplycost]
 
