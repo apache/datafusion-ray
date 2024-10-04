@@ -48,6 +48,7 @@ tonic-build = { version = "0.8", default-features = false, features = ["transpor
 [dev-dependencies]
 anyhow = "1.0.89"
 pretty_assertions = "1.4.0"
+regex = "1.11.0"
 
 [lib]
 name = "datafusion_ray"

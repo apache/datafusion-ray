@@ -265,6 +265,7 @@ mod test {
     use datafusion::physical_plan::displayable;
     use datafusion::prelude::{ParquetReadOptions, SessionConfig, SessionContext};
     use pretty_assertions::assert_eq;
+    use regex::Regex;
     use std::path::Path;
     use std::{env, fs};
     type TestResult<T> = std::result::Result<T, anyhow::Error>;
@@ -429,7 +430,14 @@ mod test {
             fs::write(&expected_file, &output)?;
         }
         let expected_plan = fs::read_to_string(&expected_file)?;
-        assert_eq!(expected_plan, output);
+
+        let re = Regex::new(r":[^]]*]")?;
+
+        // Remove the byte offsets from the plans, seems non repeatable
+        // between CI/CD and local
+        let cleaned_expected_plan = re.replace_all(&expected_plan, "]");
+        let cleaned_output = re.replace_all(&output, "]");
+        assert_eq!(cleaned_expected_plan, cleaned_output);
         Ok(())
     }
 }
