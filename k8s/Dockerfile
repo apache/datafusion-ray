@@ -1,4 +1,4 @@
-FROM rayproject/ray:2.9.0
+FROM rayproject/ray:2.37.0.cabc24-py312
 
 RUN sudo apt update && \
     sudo apt install -y curl build-essential
@@ -29,4 +29,6 @@ RUN source venv/bin/activate && \
     source /home/ray/.cargo/env && \
     maturin build --release
 
-RUN pip3 install /home/ray/target/wheels/datafusion_ray-0.6.0-cp38-abi3-manylinux_2_31_x86_64.whl
+FROM rayproject/ray:2.37.0.cabc24-py312
+COPY --from=0 /home/ray/target/wheels/datafusion_ray-0.6.0-cp38-abi3-manylinux_2_35_x86_64.whl /home/ray/datafusion_ray-0.6.0-cp38-abi3-manylinux_2_35_x86_64.whl
+RUN pip3 install /home/ray/datafusion_ray-0.6.0-cp38-abi3-manylinux_2_35_x86_64.whl

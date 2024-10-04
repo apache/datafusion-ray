@@ -1,6 +1,0 @@
-spec:
-  runtimeEnvYAML: |
-    container: 
-      - image: dfray
-    pip:
-      - pandas

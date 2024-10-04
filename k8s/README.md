@@ -17,10 +17,18 @@ Run the following command to build the Docker image.
 docker build -t dfray -f k8s/Dockerfile .
 ```
 
-Import the image into k3s
+Either push the image to a repository that k3s can pull from (recommended), or copy the image directly into the nodes:
 
 ```shell
-docker save dfray | k3s ctr images import -
+docker save -o dfray.tar dfray
+scp dfray.tar username@node1:
+scp dfray.tar username@node2:
+```
+
+ssh into each node and run:
+
+```shell
+sudo k3s ctr images import dfray.tar
 ```
 
 ## Run the example
@@ -28,5 +36,13 @@ docker save dfray | k3s ctr images import -
 From the `examples` directory:
 
 ```shell
-ray job submit --working-dir `pwd` --runtime-env ../k8s/runtime-env.yaml -- python3 tips.py
+ray job submit --runtime-env-json='{"container": {"image": "dfray"}}' -- python3 tips.py
 ```
+
+This fails with:
+
+```text
+ 'The 'container' field currently cannot be used together with other fields of runtime_env. Specified fields: dict_keys(['container', 'env_vars'])'
+```
+
+Possible fix: https://github.com/ray-project/ray/pull/42121
