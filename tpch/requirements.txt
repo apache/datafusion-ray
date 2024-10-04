@@ -1,0 +1,4 @@
+# This is a bad idea, we should lock dependencies with poetry and consume this tool as an action
+pyarrow
+datafusion
+argparse

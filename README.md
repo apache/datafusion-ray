@@ -19,8 +19,8 @@
 
 # DataFusion on Ray
 
-> This was originally a research project donated from  [ray-sql](https://github.com/datafusion-contrib/ray-sql) to evaluate performing distributed SQL queries from Python, using
-[Ray](https://www.ray.io/) and [DataFusion](https://github.com/apache/arrow-datafusion).
+> This was originally a research project donated from [ray-sql](https://github.com/datafusion-contrib/ray-sql) to evaluate performing distributed SQL queries from Python, using
+> [Ray](https://www.ray.io/) and [DataFusion](https://github.com/apache/arrow-datafusion).
 
 DataFusion Ray is a distributed SQL query engine powered by the Rust implementation of [Apache Arrow](https://arrow.apache.org/), [Apache DataFusion](https://datafusion.apache.org/) and [Ray](https://www.ray.io/).
 
@@ -33,7 +33,7 @@ DataFusion Ray is a distributed SQL query engine powered by the Rust implementat
 
 ## Non Goals
 
-- Re-build the cluster scheduling systems like what [Ballista](https://datafusion.apache.org/ballista/) did. 
+- Re-build the cluster scheduling systems like what [Ballista](https://datafusion.apache.org/ballista/) did.
   - Ballista is extremely complex and utilizing Ray feels like it abstracts some of that complexity away.
   - Datafusion Ray is delegating cluster management to Ray.
 
@@ -120,10 +120,38 @@ python -m pip install -r requirements-in.txt
 
 Whenever rust code changes (your changes or via `git pull`):
 
-```bash
+````bash
 # make sure you activate the venv using "source venv/bin/activate" first
-maturin develop
-python -m pytest
+maturin develop python -m pytest ```
+
+
+## Testing
+
+Running local Rust tests require generating the tpch-data. This can be done
+by running the following command:
+
+```bash
+./scripts/generate_tpch_data.sh
+```
+
+Tests compare plans with expected plans, which unfortunately contain the
+path to the parquet tables. The path committed under version control is
+the one of a Github Runner, and won't work locally. You can fix it by
+running the following command:
+
+```bash
+./scripts/replace-expected-plan-paths.sh local-dev
+````
+
+When instead you need to regenerate the plans, which you can do by
+re-running the planner tests removing all the content of
+`testdata/expected-plans`, they will now contain your local paths. You can
+fix it before committing the plans running
+
+```bash
+
+./scripts/replace-expected-plan-paths.sh pre-ci
+
 ```
 
 ## Benchmarking

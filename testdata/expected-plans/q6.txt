@@ -1,38 +1,30 @@
 DataFusion Logical Plan
 =======================
 
-Projection: SUM(lineitem.l_extendedprice * lineitem.l_discount) AS revenue
-  Aggregate: groupBy=[[]], aggr=[[SUM(lineitem.l_extendedprice * lineitem.l_discount)]]
+Projection: sum(lineitem.l_extendedprice * lineitem.l_discount) AS revenue
+  Aggregate: groupBy=[[]], aggr=[[sum(lineitem.l_extendedprice * lineitem.l_discount)]]
     Projection: lineitem.l_extendedprice, lineitem.l_discount
-      Filter: lineitem.l_shipdate >= Date32("8766") AND lineitem.l_shipdate < Date32("9131") AND lineitem.l_discount >= Decimal128(Some(3),11,2) AND lineitem.l_discount <= Decimal128(Some(5),11,2) AND lineitem.l_quantity < Decimal128(Some(2400),11,2)
-        TableScan: lineitem projection=[l_quantity, l_extendedprice, l_discount, l_shipdate], partial_filters=[lineitem.l_shipdate >= Date32("8766"), lineitem.l_shipdate < Date32("9131"), lineitem.l_discount >= Decimal128(Some(3),11,2), lineitem.l_discount <= Decimal128(Some(5),11,2), lineitem.l_quantity < Decimal128(Some(2400),11,2)]
+      Filter: lineitem.l_shipdate >= Date32("1994-01-01") AND lineitem.l_shipdate < Date32("1995-01-01") AND lineitem.l_discount >= Decimal128(Some(3),11,2) AND lineitem.l_discount <= Decimal128(Some(5),11,2) AND lineitem.l_quantity < Decimal128(Some(2400),11,2)
+        TableScan: lineitem projection=[l_quantity, l_extendedprice, l_discount, l_shipdate], partial_filters=[lineitem.l_shipdate >= Date32("1994-01-01"), lineitem.l_shipdate < Date32("1995-01-01"), lineitem.l_discount >= Decimal128(Some(3),11,2), lineitem.l_discount <= Decimal128(Some(5),11,2), lineitem.l_quantity < Decimal128(Some(2400),11,2)]
 
 DataFusion Physical Plan
 ========================
 
-ProjectionExec: expr=[SUM(lineitem.l_extendedprice * lineitem.l_discount)@0 as revenue]
-  AggregateExec: mode=Final, gby=[], aggr=[SUM(lineitem.l_extendedprice * lineitem.l_discount)]
-    CoalescePartitionsExec
-      AggregateExec: mode=Partial, gby=[], aggr=[SUM(lineitem.l_extendedprice * lineitem.l_discount)]
-        ProjectionExec: expr=[l_extendedprice@1 as l_extendedprice, l_discount@2 as l_discount]
-          CoalesceBatchesExec: target_batch_size=8192
-            FilterExec: l_shipdate@3 >= 8766 AND l_shipdate@3 < 9131 AND l_discount@2 >= Some(3),11,2 AND l_discount@2 <= Some(5),11,2 AND l_quantity@0 < Some(2400),11,2
-              ParquetExec: limit=None, partitions={4 groups: [[mnt/bigdata/tpch/sf10-parquet/lineitem.parquet/part-5.parquet, mnt/bigdata/tpch/sf10-parquet/lineitem.parquet/part-10.parquet, mnt/bigdata/tpch/sf10-parquet/lineitem.parquet/part-11.parquet, mnt/bigdata/tpch/sf10-parquet/lineitem.parquet/part-13.parquet, mnt/bigdata/tpch/sf10-parquet/lineitem.parquet/part-6.parquet, mnt/bigdata/tpch/sf10-parquet/lineitem.parquet/part-14.parquet], [mnt/bigdata/tpch/sf10-parquet/lineitem.parquet/part-20.parquet, mnt/bigdata/tpch/sf10-parquet/lineitem.parquet/part-2.parquet, mnt/bigdata/tpch/sf10-parquet/lineitem.parquet/part-22.parquet, mnt/bigdata/tpch/sf10-parquet/lineitem.parquet/part-19.parquet, mnt/bigdata/tpch/sf10-parquet/lineitem.parquet/part-0.parquet, mnt/bigdata/tpch/sf10-parquet/lineitem.parquet/part-16.parquet], [mnt/bigdata/tpch/sf10-parquet/lineitem.parquet/part-21.parquet, mnt/bigdata/tpch/sf10-parquet/lineitem.parquet/part-23.parquet, mnt/bigdata/tpch/sf10-parquet/lineitem.parquet/part-4.parquet, mnt/bigdata/tpch/sf10-parquet/lineitem.parquet/part-17.parquet, mnt/bigdata/tpch/sf10-parquet/lineitem.parquet/part-9.parquet, mnt/bigdata/tpch/sf10-parquet/lineitem.parquet/part-1.parquet], [mnt/bigdata/tpch/sf10-parquet/lineitem.parquet/part-18.parquet, mnt/bigdata/tpch/sf10-parquet/lineitem.parquet/part-8.parquet, mnt/bigdata/tpch/sf10-parquet/lineitem.parquet/part-12.parquet, mnt/bigdata/tpch/sf10-parquet/lineitem.parquet/part-15.parquet, mnt/bigdata/tpch/sf10-parquet/lineitem.parquet/part-7.parquet, mnt/bigdata/tpch/sf10-parquet/lineitem.parquet/part-3.parquet]]}, predicate=l_shipdate@10 >= 8766 AND l_shipdate@10 < 9131 AND l_discount@6 >= Some(3),11,2 AND l_discount@6 <= Some(5),11,2 AND l_quantity@4 < Some(2400),11,2, pruning_predicate=l_shipdate_max@0 >= 8766 AND l_shipdate_min@1 < 9131 AND l_discount_max@2 >= Some(3),11,2 AND l_discount_min@3 <= Some(5),11,2 AND l_quantity_min@4 < Some(2400),11,2, projection=[l_quantity, l_extendedprice, l_discount, l_shipdate]
+ProjectionExec: expr=[sum(lineitem.l_extendedprice * lineitem.l_discount)@0 as revenue]
+  AggregateExec: mode=Single, gby=[], aggr=[sum(lineitem.l_extendedprice * lineitem.l_discount)]
+    ProjectionExec: expr=[l_extendedprice@1 as l_extendedprice, l_discount@2 as l_discount]
+      CoalesceBatchesExec: target_batch_size=8192
+        FilterExec: l_shipdate@3 >= 1994-01-01 AND l_shipdate@3 < 1995-01-01 AND l_discount@2 >= Some(3),11,2 AND l_discount@2 <= Some(5),11,2 AND l_quantity@0 < Some(2400),11,2
+          ParquetExec: file_groups={1 group: [[home/runner/work/datafusion-ray/datafusion-ray/data/lineitem.parquet:0..208317955]]}, projection=[l_quantity, l_extendedprice, l_discount, l_shipdate], predicate=l_shipdate@10 >= 1994-01-01 AND l_shipdate@10 < 1995-01-01 AND l_discount@6 >= Some(3),11,2 AND l_discount@6 <= Some(5),11,2 AND l_quantity@4 < Some(2400),11,2, pruning_predicate=CASE WHEN l_shipdate_null_count@1 = l_shipdate_row_count@2 THEN false ELSE l_shipdate_max@0 >= 1994-01-01 END AND CASE WHEN l_shipdate_null_count@1 = l_shipdate_row_count@2 THEN false ELSE l_shipdate_min@3 < 1995-01-01 END AND CASE WHEN l_discount_null_count@5 = l_discount_row_count@6 THEN false ELSE l_discount_max@4 >= Some(3),11,2 END AND CASE WHEN l_discount_null_count@5 = l_discount_row_count@6 THEN false ELSE l_discount_min@7 <= Some(5),11,2 END AND CASE WHEN l_quantity_null_count@9 = l_quantity_row_count@10 THEN false ELSE l_quantity_min@8 < Some(2400),11,2 END, required_guarantees=[]
 
 RaySQL Plan
 ===========
 
-Query Stage #0 (4 -> 1):
-ShuffleWriterExec(stage_id=0, output_partitioning=UnknownPartitioning(4))
-  AggregateExec: mode=Partial, gby=[], aggr=[SUM(lineitem.l_extendedprice * lineitem.l_discount)]
+Query Stage #0 (1 -> 1):
+ProjectionExec: expr=[sum(lineitem.l_extendedprice * lineitem.l_discount)@0 as revenue]
+  AggregateExec: mode=Single, gby=[], aggr=[sum(lineitem.l_extendedprice * lineitem.l_discount)]
     ProjectionExec: expr=[l_extendedprice@1 as l_extendedprice, l_discount@2 as l_discount]
       CoalesceBatchesExec: target_batch_size=8192
-        FilterExec: l_shipdate@3 >= 8766 AND l_shipdate@3 < 9131 AND l_discount@2 >= Some(3),11,2 AND l_discount@2 <= Some(5),11,2 AND l_quantity@0 < Some(2400),11,2
-          ParquetExec: limit=None, partitions={4 groups: [[mnt/bigdata/tpch/sf10-parquet/lineitem.parquet/part-5.parquet, mnt/bigdata/tpch/sf10-parquet/lineitem.parquet/part-10.parquet, mnt/bigdata/tpch/sf10-parquet/lineitem.parquet/part-11.parquet, mnt/bigdata/tpch/sf10-parquet/lineitem.parquet/part-13.parquet, mnt/bigdata/tpch/sf10-parquet/lineitem.parquet/part-6.parquet, mnt/bigdata/tpch/sf10-parquet/lineitem.parquet/part-14.parquet], [mnt/bigdata/tpch/sf10-parquet/lineitem.parquet/part-20.parquet, mnt/bigdata/tpch/sf10-parquet/lineitem.parquet/part-2.parquet, mnt/bigdata/tpch/sf10-parquet/lineitem.parquet/part-22.parquet, mnt/bigdata/tpch/sf10-parquet/lineitem.parquet/part-19.parquet, mnt/bigdata/tpch/sf10-parquet/lineitem.parquet/part-0.parquet, mnt/bigdata/tpch/sf10-parquet/lineitem.parquet/part-16.parquet], [mnt/bigdata/tpch/sf10-parquet/lineitem.parquet/part-21.parquet, mnt/bigdata/tpch/sf10-parquet/lineitem.parquet/part-23.parquet, mnt/bigdata/tpch/sf10-parquet/lineitem.parquet/part-4.parquet, mnt/bigdata/tpch/sf10-parquet/lineitem.parquet/part-17.parquet, mnt/bigdata/tpch/sf10-parquet/lineitem.parquet/part-9.parquet, mnt/bigdata/tpch/sf10-parquet/lineitem.parquet/part-1.parquet], [mnt/bigdata/tpch/sf10-parquet/lineitem.parquet/part-18.parquet, mnt/bigdata/tpch/sf10-parquet/lineitem.parquet/part-8.parquet, mnt/bigdata/tpch/sf10-parquet/lineitem.parquet/part-12.parquet, mnt/bigdata/tpch/sf10-parquet/lineitem.parquet/part-15.parquet, mnt/bigdata/tpch/sf10-parquet/lineitem.parquet/part-7.parquet, mnt/bigdata/tpch/sf10-parquet/lineitem.parquet/part-3.parquet]]}, predicate=l_shipdate@10 >= 8766 AND l_shipdate@10 < 9131 AND l_discount@6 >= Some(3),11,2 AND l_discount@6 <= Some(5),11,2 AND l_quantity@4 < Some(2400),11,2, pruning_predicate=l_shipdate_max@0 >= 8766 AND l_shipdate_min@1 < 9131 AND l_discount_max@2 >= Some(3),11,2 AND l_discount_min@3 <= Some(5),11,2 AND l_quantity_min@4 < Some(2400),11,2, projection=[l_quantity, l_extendedprice, l_discount, l_shipdate]
-
-Query Stage #1 (1 -> 1):
-ProjectionExec: expr=[SUM(lineitem.l_extendedprice * lineitem.l_discount)@0 as revenue]
-  AggregateExec: mode=Final, gby=[], aggr=[SUM(lineitem.l_extendedprice * lineitem.l_discount)]
-    CoalescePartitionsExec
-      ShuffleReaderExec(stage_id=0, input_partitioning=UnknownPartitioning(4))
+        FilterExec: l_shipdate@3 >= 1994-01-01 AND l_shipdate@3 < 1995-01-01 AND l_discount@2 >= Some(3),11,2 AND l_discount@2 <= Some(5),11,2 AND l_quantity@0 < Some(2400),11,2
+          ParquetExec: file_groups={1 group: [[home/runner/work/datafusion-ray/datafusion-ray/data/lineitem.parquet:0..208317955]]}, projection=[l_quantity, l_extendedprice, l_discount, l_shipdate], predicate=l_shipdate@10 >= 1994-01-01 AND l_shipdate@10 < 1995-01-01 AND l_discount@6 >= Some(3),11,2 AND l_discount@6 <= Some(5),11,2 AND l_quantity@4 < Some(2400),11,2, pruning_predicate=CASE WHEN l_shipdate_null_count@1 = l_shipdate_row_count@2 THEN false ELSE l_shipdate_max@0 >= 1994-01-01 END AND CASE WHEN l_shipdate_null_count@1 = l_shipdate_row_count@2 THEN false ELSE l_shipdate_min@3 < 1995-01-01 END AND CASE WHEN l_discount_null_count@5 = l_discount_row_count@6 THEN false ELSE l_discount_max@4 >= Some(3),11,2 END AND CASE WHEN l_discount_null_count@5 = l_discount_row_count@6 THEN false ELSE l_discount_min@7 <= Some(5),11,2 END AND CASE WHEN l_quantity_null_count@9 = l_quantity_row_count@10 THEN false ELSE l_quantity_min@8 < Some(2400),11,2 END, required_guarantees=[]
 

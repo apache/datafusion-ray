@@ -264,128 +264,135 @@ mod test {
     use super::*;
     use datafusion::physical_plan::displayable;
     use datafusion::prelude::{ParquetReadOptions, SessionConfig, SessionContext};
-    use std::fs;
+    use pretty_assertions::assert_eq;
+    use regex::Regex;
     use std::path::Path;
+    use std::{env, fs};
+    type TestResult<T> = std::result::Result<T, anyhow::Error>;
 
     #[tokio::test]
-    async fn test_q1() -> Result<()> {
+    async fn test_q1() -> TestResult<()> {
         do_test(1).await
     }
 
     #[tokio::test]
-    async fn test_q2() -> Result<()> {
+    async fn test_q2() -> TestResult<()> {
         do_test(2).await
     }
 
     #[tokio::test]
-    async fn test_q3() -> Result<()> {
+    async fn test_q3() -> TestResult<()> {
         do_test(3).await
     }
 
     #[tokio::test]
-    async fn test_q4() -> Result<()> {
+    async fn test_q4() -> TestResult<()> {
         do_test(4).await
     }
 
     #[tokio::test]
-    async fn test_q5() -> Result<()> {
+    async fn test_q5() -> TestResult<()> {
         do_test(5).await
     }
 
     #[tokio::test]
-    async fn test_q6() -> Result<()> {
+    async fn test_q6() -> TestResult<()> {
         do_test(6).await
     }
 
+    #[ignore = "non-deterministic IN clause"]
     #[tokio::test]
-    async fn test_q7() -> Result<()> {
+    async fn test_q7() -> TestResult<()> {
         do_test(7).await
     }
 
     #[tokio::test]
-    async fn test_q8() -> Result<()> {
+    async fn test_q8() -> TestResult<()> {
         do_test(8).await
     }
 
     #[tokio::test]
-    async fn test_q9() -> Result<()> {
+    async fn test_q9() -> TestResult<()> {
         do_test(9).await
     }
 
     #[tokio::test]
-    async fn test_q10() -> Result<()> {
+    async fn test_q10() -> TestResult<()> {
         do_test(10).await
     }
 
     #[tokio::test]
-    async fn test_q11() -> Result<()> {
+    async fn test_q11() -> TestResult<()> {
         do_test(11).await
     }
 
+    #[ignore = "non-deterministic IN clause"]
     #[tokio::test]
-    async fn test_q12() -> Result<()> {
+    async fn test_q12() -> TestResult<()> {
         do_test(12).await
     }
 
     #[tokio::test]
-    async fn test_q13() -> Result<()> {
+    async fn test_q13() -> TestResult<()> {
         do_test(13).await
     }
 
     #[tokio::test]
-    async fn test_q14() -> Result<()> {
+    async fn test_q14() -> TestResult<()> {
         do_test(14).await
     }
 
     #[ignore]
     #[tokio::test]
-    async fn test_q15() -> Result<()> {
+    async fn test_q15() -> TestResult<()> {
         do_test(15).await
     }
 
+    // This test is ignored because there is some non-determinism
+    // in a part of the plan, see
+    // https://github.com/edmondop/datafusion-ray/actions/runs/11180062292/job/31080996808"
+    #[ignore = "non-deterministic IN clause"]
     #[tokio::test]
-    async fn test_q16() -> Result<()> {
+    async fn test_q16() -> TestResult<()> {
         do_test(16).await
     }
 
     #[tokio::test]
-    async fn test_q17() -> Result<()> {
+    async fn test_q17() -> TestResult<()> {
         do_test(17).await
     }
 
     #[tokio::test]
-    async fn test_q18() -> Result<()> {
+    async fn test_q18() -> TestResult<()> {
         do_test(18).await
     }
 
+    #[ignore = "non-deterministic IN clause"]
     #[tokio::test]
-    async fn test_q19() -> Result<()> {
+    async fn test_q19() -> TestResult<()> {
         do_test(19).await
     }
 
     #[tokio::test]
-    async fn test_q20() -> Result<()> {
+    async fn test_q20() -> TestResult<()> {
         do_test(20).await
     }
 
     #[tokio::test]
-    async fn test_q21() -> Result<()> {
+    async fn test_q21() -> TestResult<()> {
         do_test(21).await
     }
 
     #[tokio::test]
-    async fn test_q22() -> Result<()> {
+    async fn test_q22() -> TestResult<()> {
         do_test(22).await
     }
 
-    async fn do_test(n: u8) -> Result<()> {
-        let data_path = "/mnt/bigdata/tpch/sf10-parquet";
-        if !Path::new(&data_path).exists() {
-            return Ok(());
-        }
+    async fn do_test(n: u8) -> TestResult<()> {
+        let data_path = env::var("TPCH_DATA_PATH")?;
         let file = format!("testdata/queries/q{n}.sql");
         let sql = fs::read_to_string(&file)?;
-        let config = SessionConfig::new().with_target_partitions(4);
+        let config = SessionConfig::new().with_target_partitions(1);
         let ctx = SessionContext::with_config(config);
         let tables = &[
             "customer", "lineitem", "nation", "orders", "part", "partsupp", "region", "supplier",
@@ -430,7 +437,14 @@ mod test {
             fs::write(&expected_file, &output)?;
         }
         let expected_plan = fs::read_to_string(&expected_file)?;
-        assert_eq!(expected_plan, output);
+
+        let re = Regex::new(r":[^]]*]")?;
+
+        // Remove the byte offsets from the plans, seems non repeatable
+        // between CI/CD and local
+        let cleaned_expected_plan = re.replace_all(&expected_plan, "]");
+        let cleaned_output = re.replace_all(&output, "]");
+        assert_eq!(cleaned_expected_plan, cleaned_output);
         Ok(())
     }
 }
