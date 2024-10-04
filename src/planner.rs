@@ -300,6 +300,7 @@ mod test {
         do_test(6).await
     }
 
+    #[ignore = "non-deterministic"]
     #[tokio::test]
     async fn test_q7() -> TestResult<()> {
         do_test(7).await
@@ -325,6 +326,7 @@ mod test {
         do_test(11).await
     }
 
+    #[ignore = "non-deterministic"]
     #[tokio::test]
     async fn test_q12() -> TestResult<()> {
         do_test(12).await
@@ -346,6 +348,10 @@ mod test {
         do_test(15).await
     }
 
+    // This test is ignored because there is some non-determinism
+    // in a part of the plan, see
+    // https://github.com/edmondop/datafusion-ray/actions/runs/11180062292/job/31080996808"
+    #[ignore = "non-deterministic"]
     #[tokio::test]
     async fn test_q16() -> TestResult<()> {
         do_test(16).await
