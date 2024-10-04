@@ -22,7 +22,8 @@ ProjectionExec: expr=[100 * CAST(sum(CASE WHEN part.p_type LIKE Utf8("PROMO%") T
             HashJoinExec: mode=Partitioned, join_type=Inner, on=[(p_partkey@0, l_partkey@0)], projection=[p_type@1, l_extendedprice@3, l_discount@4]
               CoalesceBatchesExec: target_batch_size=8192
                 RepartitionExec: partitioning=Hash([p_partkey@0], 2), input_partitions=2
-                  ParquetExec: file_groups={ ... }, projection=[p_partkey, p_type]
+                  RepartitionExec: partitioning=RoundRobinBatch(2), input_partitions=1
+                    ParquetExec: file_groups={ ... }, projection=[p_partkey, p_type]
               CoalesceBatchesExec: target_batch_size=8192
                 RepartitionExec: partitioning=Hash([l_partkey@0], 2), input_partitions=2
                   ProjectionExec: expr=[l_partkey@0 as l_partkey, l_extendedprice@1 as l_extendedprice, l_discount@2 as l_discount]
@@ -33,7 +34,7 @@ ProjectionExec: expr=[100 * CAST(sum(CASE WHEN part.p_type LIKE Utf8("PROMO%") T
 DataFusion Ray Distributed Plan
 ===========
 
-Query Stage #0 (2 -> 2):
+Query Stage #0 (1 -> 2):
 ShuffleWriterExec(stage_id=0, output_partitioning=Hash([Column { name: "p_partkey", index: 0 }], 2))
   ParquetExec: file_groups={ ... }, projection=[p_partkey, p_type]
 

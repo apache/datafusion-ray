@@ -54,7 +54,8 @@ SortPreservingMergeExec: [value@1 DESC]
                             HashJoinExec: mode=Partitioned, join_type=Inner, on=[(s_suppkey@0, ps_suppkey@0)], projection=[s_nationkey@1, ps_availqty@3, ps_supplycost@4]
                               CoalesceBatchesExec: target_batch_size=8192
                                 RepartitionExec: partitioning=Hash([s_suppkey@0], 2), input_partitions=2
-                                  ParquetExec: file_groups={ ... }, projection=[s_suppkey, s_nationkey]
+                                  RepartitionExec: partitioning=RoundRobinBatch(2), input_partitions=1
+                                    ParquetExec: file_groups={ ... }, projection=[s_suppkey, s_nationkey]
                               CoalesceBatchesExec: target_batch_size=8192
                                 RepartitionExec: partitioning=Hash([ps_suppkey@0], 2), input_partitions=2
                                   ParquetExec: file_groups={ ... }, projection=[ps_suppkey, ps_availqty, ps_supplycost]
@@ -78,7 +79,8 @@ SortPreservingMergeExec: [value@1 DESC]
                             HashJoinExec: mode=Partitioned, join_type=Inner, on=[(s_suppkey@0, ps_suppkey@1)], projection=[s_nationkey@1, ps_partkey@2, ps_availqty@4, ps_supplycost@5]
                               CoalesceBatchesExec: target_batch_size=8192
                                 RepartitionExec: partitioning=Hash([s_suppkey@0], 2), input_partitions=2
-                                  ParquetExec: file_groups={ ... }, projection=[s_suppkey, s_nationkey]
+                                  RepartitionExec: partitioning=RoundRobinBatch(2), input_partitions=1
+                                    ParquetExec: file_groups={ ... }, projection=[s_suppkey, s_nationkey]
                               CoalesceBatchesExec: target_batch_size=8192
                                 RepartitionExec: partitioning=Hash([ps_suppkey@1], 2), input_partitions=2
                                   ParquetExec: file_groups={ ... }, projection=[ps_partkey, ps_suppkey, ps_availqty, ps_supplycost]
@@ -93,7 +95,7 @@ ShuffleWriterExec(stage_id=0, output_partitioning=Hash([Column { name: "n_nation
       FilterExec: n_name@1 = ALGERIA
         ParquetExec: file_groups={ ... }, projection=[n_nationkey, n_name], predicate=n_name@1 = ALGERIA, pruning_predicate=CASE WHEN n_name_null_count@2 = n_name_row_count@3 THEN false ELSE n_name_min@0 <= ALGERIA AND ALGERIA <= n_name_max@1 END, required_guarantees=[n_name in (ALGERIA)]
 
-Query Stage #1 (2 -> 2):
+Query Stage #1 (1 -> 2):
 ShuffleWriterExec(stage_id=1, output_partitioning=Hash([Column { name: "s_suppkey", index: 0 }], 2))
   ParquetExec: file_groups={ ... }, projection=[s_suppkey, s_nationkey]
 
@@ -128,7 +130,7 @@ ShuffleWriterExec(stage_id=5, output_partitioning=Hash([Column { name: "n_nation
       FilterExec: n_name@1 = ALGERIA
         ParquetExec: file_groups={ ... }, projection=[n_nationkey, n_name], predicate=n_name@1 = ALGERIA, pruning_predicate=CASE WHEN n_name_null_count@2 = n_name_row_count@3 THEN false ELSE n_name_min@0 <= ALGERIA AND ALGERIA <= n_name_max@1 END, required_guarantees=[n_name in (ALGERIA)]
 
-Query Stage #6 (2 -> 2):
+Query Stage #6 (1 -> 2):
 ShuffleWriterExec(stage_id=6, output_partitioning=Hash([Column { name: "s_suppkey", index: 0 }], 2))
   ParquetExec: file_groups={ ... }, projection=[s_suppkey, s_nationkey]
 

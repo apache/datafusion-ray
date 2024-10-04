@@ -96,7 +96,8 @@ SortPreservingMergeExec: [o_year@0 ASC NULLS LAST]
                                                                     HashJoinExec: mode=Partitioned, join_type=Inner, on=[(s_suppkey@0, l_suppkey@1)], projection=[s_nationkey@1, l_orderkey@2, l_extendedprice@4, l_discount@5]
                                                                       CoalesceBatchesExec: target_batch_size=8192
                                                                         RepartitionExec: partitioning=Hash([s_suppkey@0], 2), input_partitions=2
-                                                                          ParquetExec: file_groups={ ... }, projection=[s_suppkey, s_nationkey]
+                                                                          RepartitionExec: partitioning=RoundRobinBatch(2), input_partitions=1
+                                                                            ParquetExec: file_groups={ ... }, projection=[s_suppkey, s_nationkey]
                                                                       CoalesceBatchesExec: target_batch_size=8192
                                                                         RepartitionExec: partitioning=Hash([l_suppkey@1], 2), input_partitions=2
                                                                           CoalesceBatchesExec: target_batch_size=8192
@@ -106,7 +107,8 @@ SortPreservingMergeExec: [o_year@0 ASC NULLS LAST]
                                                                                   ProjectionExec: expr=[p_partkey@0 as p_partkey]
                                                                                     CoalesceBatchesExec: target_batch_size=8192
                                                                                       FilterExec: p_type@1 = LARGE PLATED STEEL
-                                                                                        ParquetExec: file_groups={ ... }, projection=[p_partkey, p_type], predicate=p_type@4 = LARGE PLATED STEEL, pruning_predicate=CASE WHEN p_type_null_count@2 = p_type_row_count@3 THEN false ELSE p_type_min@0 <= LARGE PLATED STEEL AND LARGE PLATED STEEL <= p_type_max@1 END, required_guarantees=[p_type in (LARGE PLATED STEEL)]
+                                                                                        RepartitionExec: partitioning=RoundRobinBatch(2), input_partitions=1
+                                                                                          ParquetExec: file_groups={ ... }, projection=[p_partkey, p_type], predicate=p_type@4 = LARGE PLATED STEEL, pruning_predicate=CASE WHEN p_type_null_count@2 = p_type_row_count@3 THEN false ELSE p_type_min@0 <= LARGE PLATED STEEL AND LARGE PLATED STEEL <= p_type_max@1 END, required_guarantees=[p_type in (LARGE PLATED STEEL)]
                                                                               CoalesceBatchesExec: target_batch_size=8192
                                                                                 RepartitionExec: partitioning=Hash([l_partkey@1], 2), input_partitions=2
                                                                                   ParquetExec: file_groups={ ... }, projection=[l_orderkey, l_partkey, l_suppkey, l_extendedprice, l_discount]
@@ -139,11 +141,11 @@ ShuffleWriterExec(stage_id=4, output_partitioning=Hash([Column { name: "o_orderk
     FilterExec: o_orderdate@2 >= 1995-01-01 AND o_orderdate@2 <= 1996-12-31
       ParquetExec: file_groups={ ... }, projection=[o_orderkey, o_custkey, o_orderdate], predicate=o_orderdate@4 >= 1995-01-01 AND o_orderdate@4 <= 1996-12-31, pruning_predicate=CASE WHEN o_orderdate_null_count@1 = o_orderdate_row_count@2 THEN false ELSE o_orderdate_max@0 >= 1995-01-01 END AND CASE WHEN o_orderdate_null_count@1 = o_orderdate_row_count@2 THEN false ELSE o_orderdate_min@3 <= 1996-12-31 END, required_guarantees=[]
 
-Query Stage #5 (2 -> 2):
+Query Stage #5 (1 -> 2):
 ShuffleWriterExec(stage_id=5, output_partitioning=Hash([Column { name: "s_suppkey", index: 0 }], 2))
   ParquetExec: file_groups={ ... }, projection=[s_suppkey, s_nationkey]
 
-Query Stage #6 (2 -> 2):
+Query Stage #6 (1 -> 2):
 ShuffleWriterExec(stage_id=6, output_partitioning=Hash([Column { name: "p_partkey", index: 0 }], 2))
   ProjectionExec: expr=[p_partkey@0 as p_partkey]
     CoalesceBatchesExec: target_batch_size=8192

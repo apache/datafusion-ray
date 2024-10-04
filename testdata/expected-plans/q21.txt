@@ -76,7 +76,8 @@ GlobalLimitExec: skip=0, fetch=100
                                               HashJoinExec: mode=Partitioned, join_type=Inner, on=[(s_suppkey@0, l_suppkey@1)], projection=[s_name@1, s_nationkey@2, l_orderkey@3, l_suppkey@4]
                                                 CoalesceBatchesExec: target_batch_size=8192
                                                   RepartitionExec: partitioning=Hash([s_suppkey@0], 2), input_partitions=2
-                                                    ParquetExec: file_groups={ ... }, projection=[s_suppkey, s_name, s_nationkey]
+                                                    RepartitionExec: partitioning=RoundRobinBatch(2), input_partitions=1
+                                                      ParquetExec: file_groups={ ... }, projection=[s_suppkey, s_name, s_nationkey]
                                                 CoalesceBatchesExec: target_batch_size=8192
                                                   RepartitionExec: partitioning=Hash([l_suppkey@1], 2), input_partitions=2
                                                     ProjectionExec: expr=[l_orderkey@0 as l_orderkey, l_suppkey@1 as l_suppkey]
@@ -110,7 +111,7 @@ ShuffleWriterExec(stage_id=1, output_partitioning=Hash([Column { name: "o_orderk
       FilterExec: o_orderstatus@1 = F
         ParquetExec: file_groups={ ... }, projection=[o_orderkey, o_orderstatus], predicate=o_orderstatus@2 = F, pruning_predicate=CASE WHEN o_orderstatus_null_count@2 = o_orderstatus_row_count@3 THEN false ELSE o_orderstatus_min@0 <= F AND F <= o_orderstatus_max@1 END, required_guarantees=[o_orderstatus in (F)]
 
-Query Stage #2 (2 -> 2):
+Query Stage #2 (1 -> 2):
 ShuffleWriterExec(stage_id=2, output_partitioning=Hash([Column { name: "s_suppkey", index: 0 }], 2))
   ParquetExec: file_groups={ ... }, projection=[s_suppkey, s_name, s_nationkey]
 

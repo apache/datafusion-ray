@@ -59,7 +59,8 @@ SortPreservingMergeExec: [revenue@1 DESC]
                                     HashJoinExec: mode=Partitioned, join_type=Inner, on=[(s_suppkey@0, l_suppkey@1), (s_nationkey@1, c_nationkey@0)], projection=[s_nationkey@1, l_extendedprice@4, l_discount@5]
                                       CoalesceBatchesExec: target_batch_size=8192
                                         RepartitionExec: partitioning=Hash([s_suppkey@0, s_nationkey@1], 2), input_partitions=2
-                                          ParquetExec: file_groups={ ... }, projection=[s_suppkey, s_nationkey]
+                                          RepartitionExec: partitioning=RoundRobinBatch(2), input_partitions=1
+                                            ParquetExec: file_groups={ ... }, projection=[s_suppkey, s_nationkey]
                                       CoalesceBatchesExec: target_batch_size=8192
                                         RepartitionExec: partitioning=Hash([l_suppkey@1, c_nationkey@0], 2), input_partitions=2
                                           CoalesceBatchesExec: target_batch_size=8192
@@ -95,7 +96,7 @@ Query Stage #1 (1 -> 2):
 ShuffleWriterExec(stage_id=1, output_partitioning=Hash([Column { name: "n_nationkey", index: 0 }], 2))
   ParquetExec: file_groups={ ... }, projection=[n_nationkey, n_name, n_regionkey]
 
-Query Stage #2 (2 -> 2):
+Query Stage #2 (1 -> 2):
 ShuffleWriterExec(stage_id=2, output_partitioning=Hash([Column { name: "s_suppkey", index: 0 }, Column { name: "s_nationkey", index: 1 }], 2))
   ParquetExec: file_groups={ ... }, projection=[s_suppkey, s_nationkey]
 
