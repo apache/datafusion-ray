@@ -14,11 +14,19 @@ instead of pulling the latest release from PyPi.
 Run the following command to build the Docker image.
 
 ```shell
-docker build -t apache/datafusion-ray -f k8s/Dockerfile .
+docker build -t dfray -f k8s/Dockerfile .
+```
+
+Import the image into k3s
+
+```shell
+docker save dfray | k3s ctr images import -
 ```
 
 ## Run the example
 
+From the `examples` directory:
+
 ```shell
-ray job submit --working-dir `pwd` -- python3 tips.py
+ray job submit --working-dir `pwd` --runtime-env ../k8s/runtime-env.yaml -- python3 tips.py
 ```

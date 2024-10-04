@@ -27,4 +27,6 @@ COPY README.md /home/ray/
 # build datafusion_ray
 RUN source venv/bin/activate && \
     source /home/ray/.cargo/env && \
-    maturin develop --release
+    maturin build --release
+
+RUN pip3 install /home/ray/target/wheels/datafusion_ray-0.6.0-cp38-abi3-manylinux_2_31_x86_64.whl
