@@ -31,14 +31,14 @@ SortExec: TopK(fetch=10), expr=[revenue@1 DESC,o_orderdate@2 ASC NULLS LAST], pr
               ProjectionExec: expr=[c_custkey@0 as c_custkey]
                 CoalesceBatchesExec: target_batch_size=8192
                   FilterExec: c_mktsegment@1 = BUILDING
-                    ParquetExec: file_groups={1 group: [[home/runner/work/datafusion-ray/datafusion-ray/data/customer.parquet:0..13211178]]}, projection=[c_custkey, c_mktsegment], predicate=c_mktsegment@6 = BUILDING, pruning_predicate=CASE WHEN c_mktsegment_null_count@2 = c_mktsegment_row_count@3 THEN false ELSE c_mktsegment_min@0 <= BUILDING AND BUILDING <= c_mktsegment_max@1 END, required_guarantees=[c_mktsegment in (BUILDING)]
+                    ParquetExec: file_groups={ ... }, projection=[c_custkey, c_mktsegment], predicate=c_mktsegment@6 = BUILDING, pruning_predicate=CASE WHEN c_mktsegment_null_count@2 = c_mktsegment_row_count@3 THEN false ELSE c_mktsegment_min@0 <= BUILDING AND BUILDING <= c_mktsegment_max@1 END, required_guarantees=[c_mktsegment in (BUILDING)]
               CoalesceBatchesExec: target_batch_size=8192
                 FilterExec: o_orderdate@2 < 1995-03-15
-                  ParquetExec: file_groups={1 group: [[home/runner/work/datafusion-ray/datafusion-ray/data/orders.parquet:0..54530383]]}, projection=[o_orderkey, o_custkey, o_orderdate, o_shippriority], predicate=o_orderdate@4 < 1995-03-15, pruning_predicate=CASE WHEN o_orderdate_null_count@1 = o_orderdate_row_count@2 THEN false ELSE o_orderdate_min@0 < 1995-03-15 END, required_guarantees=[]
+                  ParquetExec: file_groups={ ... }, projection=[o_orderkey, o_custkey, o_orderdate, o_shippriority], predicate=o_orderdate@4 < 1995-03-15, pruning_predicate=CASE WHEN o_orderdate_null_count@1 = o_orderdate_row_count@2 THEN false ELSE o_orderdate_min@0 < 1995-03-15 END, required_guarantees=[]
           ProjectionExec: expr=[l_orderkey@0 as l_orderkey, l_extendedprice@1 as l_extendedprice, l_discount@2 as l_discount]
             CoalesceBatchesExec: target_batch_size=8192
               FilterExec: l_shipdate@3 > 1995-03-15
-                ParquetExec: file_groups={1 group: [[home/runner/work/datafusion-ray/datafusion-ray/data/lineitem.parquet:0..208317955]]}, projection=[l_orderkey, l_extendedprice, l_discount, l_shipdate], predicate=l_shipdate@10 > 1995-03-15, pruning_predicate=CASE WHEN l_shipdate_null_count@1 = l_shipdate_row_count@2 THEN false ELSE l_shipdate_max@0 > 1995-03-15 END, required_guarantees=[]
+                ParquetExec: file_groups={ ... }, projection=[l_orderkey, l_extendedprice, l_discount, l_shipdate], predicate=l_shipdate@10 > 1995-03-15, pruning_predicate=CASE WHEN l_shipdate_null_count@1 = l_shipdate_row_count@2 THEN false ELSE l_shipdate_max@0 > 1995-03-15 END, required_guarantees=[]
 
 RaySQL Plan
 ===========
@@ -54,12 +54,12 @@ SortExec: TopK(fetch=10), expr=[revenue@1 DESC,o_orderdate@2 ASC NULLS LAST], pr
               ProjectionExec: expr=[c_custkey@0 as c_custkey]
                 CoalesceBatchesExec: target_batch_size=8192
                   FilterExec: c_mktsegment@1 = BUILDING
-                    ParquetExec: file_groups={1 group: [[home/runner/work/datafusion-ray/datafusion-ray/data/customer.parquet:0..13211178]]}, projection=[c_custkey, c_mktsegment], predicate=c_mktsegment@6 = BUILDING, pruning_predicate=CASE WHEN c_mktsegment_null_count@2 = c_mktsegment_row_count@3 THEN false ELSE c_mktsegment_min@0 <= BUILDING AND BUILDING <= c_mktsegment_max@1 END, required_guarantees=[c_mktsegment in (BUILDING)]
+                    ParquetExec: file_groups={ ... }, projection=[c_custkey, c_mktsegment], predicate=c_mktsegment@6 = BUILDING, pruning_predicate=CASE WHEN c_mktsegment_null_count@2 = c_mktsegment_row_count@3 THEN false ELSE c_mktsegment_min@0 <= BUILDING AND BUILDING <= c_mktsegment_max@1 END, required_guarantees=[c_mktsegment in (BUILDING)]
               CoalesceBatchesExec: target_batch_size=8192
                 FilterExec: o_orderdate@2 < 1995-03-15
-                  ParquetExec: file_groups={1 group: [[home/runner/work/datafusion-ray/datafusion-ray/data/orders.parquet:0..54530383]]}, projection=[o_orderkey, o_custkey, o_orderdate, o_shippriority], predicate=o_orderdate@4 < 1995-03-15, pruning_predicate=CASE WHEN o_orderdate_null_count@1 = o_orderdate_row_count@2 THEN false ELSE o_orderdate_min@0 < 1995-03-15 END, required_guarantees=[]
+                  ParquetExec: file_groups={ ... }, projection=[o_orderkey, o_custkey, o_orderdate, o_shippriority], predicate=o_orderdate@4 < 1995-03-15, pruning_predicate=CASE WHEN o_orderdate_null_count@1 = o_orderdate_row_count@2 THEN false ELSE o_orderdate_min@0 < 1995-03-15 END, required_guarantees=[]
           ProjectionExec: expr=[l_orderkey@0 as l_orderkey, l_extendedprice@1 as l_extendedprice, l_discount@2 as l_discount]
             CoalesceBatchesExec: target_batch_size=8192
               FilterExec: l_shipdate@3 > 1995-03-15
-                ParquetExec: file_groups={1 group: [[home/runner/work/datafusion-ray/datafusion-ray/data/lineitem.parquet:0..208317955]]}, projection=[l_orderkey, l_extendedprice, l_discount, l_shipdate], predicate=l_shipdate@10 > 1995-03-15, pruning_predicate=CASE WHEN l_shipdate_null_count@1 = l_shipdate_row_count@2 THEN false ELSE l_shipdate_max@0 > 1995-03-15 END, required_guarantees=[]
+                ParquetExec: file_groups={ ... }, projection=[l_orderkey, l_extendedprice, l_discount, l_shipdate], predicate=l_shipdate@10 > 1995-03-15, pruning_predicate=CASE WHEN l_shipdate_null_count@1 = l_shipdate_row_count@2 THEN false ELSE l_shipdate_max@0 > 1995-03-15 END, required_guarantees=[]
 
