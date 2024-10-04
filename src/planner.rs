@@ -394,8 +394,8 @@ mod test {
 
         let file = format!("testdata/queries/q{n}.sql");
         let sql = fs::read_to_string(&file)?;
-        let config = SessionConfig::new().with_target_partitions(1);
-        let ctx = SessionContext::with_config(config);
+        let config = SessionConfig::new().with_target_partitions(2);
+        let ctx = SessionContext::new_with_config(config);
         let tables = &[
             "customer", "lineitem", "nation", "orders", "part", "partsupp", "region", "supplier",
         ];
@@ -423,7 +423,7 @@ mod test {
             displayable(plan.as_ref()).indent(false)
         ));
 
-        output.push_str("RaySQL Plan\n===========\n\n");
+        output.push_str("DataFusion Ray Distributed Plan\n===========\n\n");
         let graph = make_execution_graph(plan, false)?;
         for id in 0..=graph.get_final_query_stage().id {
             let query_stage = graph.query_stages.get(&id).unwrap();

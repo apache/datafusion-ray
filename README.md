@@ -145,26 +145,6 @@ export TPCH_DATA_PATH=`pwd`/data
 cargo test
 ```
 
-Tests compare plans with expected plans, which unfortunately contain the
-path to the parquet tables. The path committed under version control is
-the one of a Github Runner, and won't work locally. You can fix it by
-running the following command:
-
-```bash
-./scripts/replace-expected-plan-paths.sh local-dev
-````
-
-When instead you need to regenerate the plans, which you can do by
-re-running the planner tests removing all the content of
-`testdata/expected-plans`, they will now contain your local paths. You can
-fix it before committing the plans running
-
-```bash
-
-./scripts/replace-expected-plan-paths.sh pre-ci
-
-```
-
 ## Benchmarking
 
 Create a release build when running benchmarks, then use pip to install the wheel.
