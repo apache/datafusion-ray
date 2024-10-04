@@ -29,11 +29,11 @@ ProjectionExec: expr=[CAST(sum(lineitem.l_extendedprice)@0 AS Float64) / 7 as av
               ProjectionExec: expr=[p_partkey@0 as p_partkey]
                 CoalesceBatchesExec: target_batch_size=8192
                   FilterExec: p_brand@1 = Brand#42 AND p_container@2 = LG BAG
-                    ParquetExec: file_groups={1 group: [[home/runner/work/datafusion-ray/datafusion-ray/data/part.parquet]]}, projection=[p_partkey, p_brand, p_container], predicate=p_brand@3 = Brand#42 AND p_container@6 = LG BAG, pruning_predicate=CASE WHEN p_brand_null_count@2 = p_brand_row_count@3 THEN false ELSE p_brand_min@0 <= Brand#42 AND Brand#42 <= p_brand_max@1 END AND CASE WHEN p_container_null_count@6 = p_container_row_count@7 THEN false ELSE p_container_min@4 <= LG BAG AND LG BAG <= p_container_max@5 END, required_guarantees=[p_brand in (Brand#42), p_container in (LG BAG)]
-              ParquetExec: file_groups={1 group: [[home/runner/work/datafusion-ray/datafusion-ray/data/lineitem.parquet:0..208317955]]}, projection=[l_partkey, l_quantity, l_extendedprice]
+                    ParquetExec: file_groups={ ... }, projection=[p_partkey, p_brand, p_container], predicate=p_brand@3 = Brand#42 AND p_container@6 = LG BAG, pruning_predicate=CASE WHEN p_brand_null_count@2 = p_brand_row_count@3 THEN false ELSE p_brand_min@0 <= Brand#42 AND Brand#42 <= p_brand_max@1 END AND CASE WHEN p_container_null_count@6 = p_container_row_count@7 THEN false ELSE p_container_min@4 <= LG BAG AND LG BAG <= p_container_max@5 END, required_guarantees=[p_brand in (Brand#42), p_container in (LG BAG)]
+              ParquetExec: file_groups={ ... }, projection=[l_partkey, l_quantity, l_extendedprice]
         ProjectionExec: expr=[CAST(0.2 * CAST(avg(lineitem.l_quantity)@1 AS Float64) AS Decimal128(30, 15)) as Float64(0.2) * avg(lineitem.l_quantity), l_partkey@0 as l_partkey]
           AggregateExec: mode=Single, gby=[l_partkey@0 as l_partkey], aggr=[avg(lineitem.l_quantity)]
-            ParquetExec: file_groups={1 group: [[home/runner/work/datafusion-ray/datafusion-ray/data/lineitem.parquet:0..208317955]]}, projection=[l_partkey, l_quantity]
+            ParquetExec: file_groups={ ... }, projection=[l_partkey, l_quantity]
 
 RaySQL Plan
 ===========
@@ -49,9 +49,9 @@ ProjectionExec: expr=[CAST(sum(lineitem.l_extendedprice)@0 AS Float64) / 7 as av
               ProjectionExec: expr=[p_partkey@0 as p_partkey]
                 CoalesceBatchesExec: target_batch_size=8192
                   FilterExec: p_brand@1 = Brand#42 AND p_container@2 = LG BAG
-                    ParquetExec: file_groups={1 group: [[home/runner/work/datafusion-ray/datafusion-ray/data/part.parquet]]}, projection=[p_partkey, p_brand, p_container], predicate=p_brand@3 = Brand#42 AND p_container@6 = LG BAG, pruning_predicate=CASE WHEN p_brand_null_count@2 = p_brand_row_count@3 THEN false ELSE p_brand_min@0 <= Brand#42 AND Brand#42 <= p_brand_max@1 END AND CASE WHEN p_container_null_count@6 = p_container_row_count@7 THEN false ELSE p_container_min@4 <= LG BAG AND LG BAG <= p_container_max@5 END, required_guarantees=[p_brand in (Brand#42), p_container in (LG BAG)]
-              ParquetExec: file_groups={1 group: [[home/runner/work/datafusion-ray/datafusion-ray/data/lineitem.parquet:0..208317955]]}, projection=[l_partkey, l_quantity, l_extendedprice]
+                    ParquetExec: file_groups={ ... }, projection=[p_partkey, p_brand, p_container], predicate=p_brand@3 = Brand#42 AND p_container@6 = LG BAG, pruning_predicate=CASE WHEN p_brand_null_count@2 = p_brand_row_count@3 THEN false ELSE p_brand_min@0 <= Brand#42 AND Brand#42 <= p_brand_max@1 END AND CASE WHEN p_container_null_count@6 = p_container_row_count@7 THEN false ELSE p_container_min@4 <= LG BAG AND LG BAG <= p_container_max@5 END, required_guarantees=[p_brand in (Brand#42), p_container in (LG BAG)]
+              ParquetExec: file_groups={ ... }, projection=[l_partkey, l_quantity, l_extendedprice]
         ProjectionExec: expr=[CAST(0.2 * CAST(avg(lineitem.l_quantity)@1 AS Float64) AS Decimal128(30, 15)) as Float64(0.2) * avg(lineitem.l_quantity), l_partkey@0 as l_partkey]
           AggregateExec: mode=Single, gby=[l_partkey@0 as l_partkey], aggr=[avg(lineitem.l_quantity)]
-            ParquetExec: file_groups={1 group: [[home/runner/work/datafusion-ray/datafusion-ray/data/lineitem.parquet:0..208317955]]}, projection=[l_partkey, l_quantity]
+            ParquetExec: file_groups={ ... }, projection=[l_partkey, l_quantity]
 

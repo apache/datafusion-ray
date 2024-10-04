@@ -389,7 +389,9 @@ mod test {
     }
 
     async fn do_test(n: u8) -> TestResult<()> {
-        let data_path = env::var("TPCH_DATA_PATH")?;
+        let tpch_path_env_var = "TPCH_DATA_PATH";
+        let data_path = env::var(tpch_path_env_var).expect(&format!("Environment variable {} not found", tpch_path_env_var));
+
         let file = format!("testdata/queries/q{n}.sql");
         let sql = fs::read_to_string(&file)?;
         let config = SessionConfig::new().with_target_partitions(1);
@@ -432,19 +434,18 @@ mod test {
                 displayable(query_stage.plan.as_ref()).indent(false)
             ));
         }
+
+        // Remove Parquet file group information since it will vary between CI/CD and local
+        let re = Regex::new(r"file_groups=\{.*}")?;
+        let cleaned_output = re.replace_all(output.as_str(), "file_groups={ ... }");
+
         let expected_file = format!("testdata/expected-plans/q{n}.txt");
         if !Path::new(&expected_file).exists() {
-            fs::write(&expected_file, &output)?;
+            fs::write(&expected_file, &*cleaned_output)?;
         }
         let expected_plan = fs::read_to_string(&expected_file)?;
 
-        let re = Regex::new(r"file_groups=.*")?;
-
-        // Remove the byte offsets from the plans, seems non repeatable
-        // between CI/CD and local
-        let cleaned_expected_plan = re.replace_all(&expected_plan, "");
-        let cleaned_output = re.replace_all(&output, "");
-        assert_eq!(cleaned_expected_plan, cleaned_output);
+        assert_eq!(expected_plan, cleaned_output);
         Ok(())
     }
 }

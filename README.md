@@ -120,18 +120,29 @@ python -m pip install -r requirements-in.txt
 
 Whenever rust code changes (your changes or via `git pull`):
 
-````bash
+```bash
 # make sure you activate the venv using "source venv/bin/activate" first
-maturin develop python -m pytest ```
-
+maturin develop python -m pytest 
+```
 
 ## Testing
 
 Running local Rust tests require generating the tpch-data. This can be done
-by running the following command:
+by running the following commands:
 
 ```bash
-./scripts/generate_tpch_data.sh
+export TPCH_TEST_PARTITIONS=1
+export TPCH_SCALING_FACTOR=1
+./scripts/gen-test-data.sh
+```
+
+This will generate data into a top-level `data` directory.
+
+Tests can be run with:
+
+```shell
+export TPCH_DATA_PATH=`pwd`/data
+cargo test
 ```
 
 Tests compare plans with expected plans, which unfortunately contain the
