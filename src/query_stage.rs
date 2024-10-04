@@ -20,7 +20,6 @@ use datafusion::error::Result;
 use datafusion::physical_plan::{ExecutionPlan, Partitioning};
 use datafusion::prelude::SessionContext;
 use datafusion_proto::bytes::physical_plan_from_bytes_with_extension_codec;
-use datafusion_python::physical_plan::PyExecutionPlan;
 use pyo3::prelude::*;
 use std::sync::Arc;
 
@@ -51,9 +50,9 @@ impl PyQueryStage {
         self.stage.id
     }
 
-    pub fn get_execution_plan(&self) -> PyExecutionPlan {
-        PyExecutionPlan::new(self.stage.plan.clone())
-    }
+    // pub fn get_execution_plan(&self) -> PyExecutionPlan {
+    //     PyExecutionPlan::new(self.stage.plan.clone())
+    // }
 
     pub fn get_child_stage_ids(&self) -> Vec<usize> {
         self.stage.get_child_stage_ids()

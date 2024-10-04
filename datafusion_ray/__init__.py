@@ -25,8 +25,8 @@ from ._datafusion_ray_internal import (
     ExecutionGraph,
     QueryStage,
     execute_partition,
-    serialize_execution_plan,
-    deserialize_execution_plan,
+    # serialize_execution_plan,
+    # deserialize_execution_plan,
 )
 from .context import DatafusionRayContext
 

@@ -36,7 +36,6 @@ use datafusion_proto::bytes::{
 };
 use datafusion_proto::physical_plan::{AsExecutionPlan, DefaultPhysicalExtensionCodec};
 use datafusion_proto::protobuf;
-use datafusion_python::physical_plan::PyExecutionPlan;
 use futures::StreamExt;
 use prost::{DecodeError, Message};
 use pyo3::exceptions::PyRuntimeError;
@@ -52,6 +51,26 @@ type PyResultSet = Vec<PyObject>;
 #[pyclass(name = "Context", module = "datafusion_ray", subclass)]
 pub struct PyContext {
     pub(crate) py_ctx: PyObject,
+}
+
+pub(crate) fn execution_plan_from_pyany(
+    py_plan: &Bound<PyAny>,
+) -> PyResult<Arc<dyn ExecutionPlan>> {
+    let py_proto = py_plan.call_method0("to_proto")?;
+    let plan_bytes: &[u8] = py_proto.extract()?;
+    let plan_node = protobuf::PhysicalPlanNode::try_decode(plan_bytes).map_err(|e| {
+        PyRuntimeError::new_err(format!(
+            "Unable to decode physical plan protobuf message: {}",
+            e
+        ))
+    })?;
+
+    let codec = DefaultPhysicalExtensionCodec {};
+    let runtime = RuntimeEnv::default();
+    let registry = SessionContext::new();
+    plan_node
+        .try_into_physical_plan(&registry, &runtime, &codec)
+        .map_err(|e| e.into())
 }
 
 #[pymethods]
@@ -114,20 +133,9 @@ impl PyContext {
         // let df = wait_for_future(py, self.ctx.sql(sql))?;
         let py_df = self.run_sql(sql, py)?;
         let py_plan = py_df.call_method0(py, "execution_plan")?;
-        let py_proto = py_plan.call_method0(py, "to_proto")?;
-        let plan_bytes: &[u8] = py_proto.extract(py)?;
-        let plan_node = protobuf::PhysicalPlanNode::decode(plan_bytes).map_err(|e| {
-            PyRuntimeError::new_err(format!(
-                "Unable to decode physical plan protobuf message: {}",
-                e
-            ))
-        })?;
+        let py_plan = py_plan.bind(py);
 
-        let codec = DefaultPhysicalExtensionCodec {};
-        let runtime = RuntimeEnv::default();
-        let registry = SessionContext::new();
-        let plan = plan_node.try_into_physical_plan(&registry, &runtime, &codec)?;
-
+        let plan = execution_plan_from_pyany(py_plan)?;
         let graph = make_execution_graph(plan.clone())?;
 
         // debug logging
@@ -147,7 +155,7 @@ impl PyContext {
     /// Execute a partition of a query plan. This will typically be executing a shuffle write and write the results to disk
     pub fn execute_partition(
         &self,
-        plan: PyExecutionPlan,
+        plan: &Bound<'_, PyAny>,
         part: usize,
         inputs: PyObject,
         py: Python,
@@ -158,7 +166,7 @@ impl PyContext {
 
 #[pyfunction]
 pub fn execute_partition(
-    plan: PyExecutionPlan,
+    plan: &Bound<'_, PyAny>,
     part: usize,
     inputs: PyObject,
     py: Python,
@@ -171,20 +179,20 @@ pub fn execute_partition(
 }
 
 // TODO(@lsf) change this to use pickle
-#[pyfunction]
-pub fn serialize_execution_plan(plan: PyExecutionPlan) -> PyResult<Vec<u8>> {
-    let codec = ShuffleCodec {};
-    Ok(physical_plan_to_bytes_with_extension_codec(plan.plan, &codec)?.to_vec())
-}
+// #[pyfunction]
+// pub fn serialize_execution_plan(plan: Py<PyAny>) -> PyResult<Vec<u8>> {
+//     let codec = ShuffleCodec {};
+//     Ok(physical_plan_to_bytes_with_extension_codec(plan.plan, &codec)?.to_vec())
+// }
 
-#[pyfunction]
-pub fn deserialize_execution_plan(bytes: Vec<u8>) -> PyResult<PyExecutionPlan> {
-    let ctx = SessionContext::new();
-    let codec = ShuffleCodec {};
-    Ok(PyExecutionPlan::new(
-        physical_plan_from_bytes_with_extension_codec(&bytes, &ctx, &codec)?,
-    ))
-}
+// #[pyfunction]
+// pub fn deserialize_execution_plan(bytes: Vec<u8>) -> PyResult<PyExecutionPlan> {
+//     let ctx = SessionContext::new();
+//     let codec = ShuffleCodec {};
+//     Ok(PyExecutionPlan::new(
+//         physical_plan_from_bytes_with_extension_codec(&bytes, &ctx, &codec)?,
+//     ))
+// }
 
 /// Iterate down an ExecutionPlan and set the input objects for RayShuffleReaderExec.
 fn _set_inputs_for_ray_shuffle_reader(
@@ -235,7 +243,7 @@ fn _set_inputs_for_ray_shuffle_reader(
 /// write the results to disk, except for the final query stage, which will return the data.
 /// inputs is a list of tuples of (stage_id, partition_id, bytes) for each input partition.
 fn _execute_partition(
-    plan: PyExecutionPlan,
+    py_plan: &Bound<'_, PyAny>,
     part: usize,
     inputs: PyObject,
 ) -> Result<Vec<RecordBatch>> {
@@ -248,19 +256,21 @@ fn _execute_partition(
         HashMap::new(),
         Arc::new(RuntimeEnv::default()),
     ));
+
+    let plan = execution_plan_from_pyany(py_plan)
+        .map_err(|e| DataFusionError::Execution(e.to_string()))?;
     Python::with_gil(|py| {
         let input_partitions = inputs
-            .bind(py)
-            .downcast::<PyList>()
+            .downcast_bound::<PyList>(py)
             .map_err(|e| DataFusionError::Execution(format!("{}", e)))?;
-        _set_inputs_for_ray_shuffle_reader(plan.plan.clone(), input_partitions)
+        _set_inputs_for_ray_shuffle_reader(plan.clone(), input_partitions)
     })?;
 
     // create a Tokio runtime to run the async code
     let rt = Runtime::new().unwrap();
 
     let fut: JoinHandle<Result<Vec<RecordBatch>>> = rt.spawn(async move {
-        let mut stream = plan.plan.execute(part, ctx)?;
+        let mut stream = plan.execute(part, ctx)?;
         let mut results = vec![];
         while let Some(result) = stream.next().await {
             results.push(result?);
