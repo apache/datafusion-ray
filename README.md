@@ -130,7 +130,9 @@ maturin develop python -m pytest ```
 Running local Rust tests require generating the tpch-data. This can be done
 by running the following command:
 
-```bash ./scripts/generate_tpch_data.sh ```
+```bash
+./scripts/generate_tpch_data.sh
+```
 
 Tests compare plans with expected plans, which unfortunately contain the
 path to the parquet tables. The path committed under version control is
@@ -138,9 +140,7 @@ the one of a Github Runner, and won't work locally. You can fix it by
 running the following command:
 
 ```bash
-
 ./scripts/replace-expected-plan-paths.sh local-dev
-
 ````
 
 When instead you need to regenerate the plans, which you can do by
