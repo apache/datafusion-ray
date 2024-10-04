@@ -45,4 +45,5 @@ This fails with:
  'The 'container' field currently cannot be used together with other fields of runtime_env. Specified fields: dict_keys(['container', 'env_vars'])'
 ```
 
-Possible fix: https://github.com/ray-project/ray/pull/42121
+The fix (https://github.com/ray-project/ray/pull/42121) went into Ray 2.37.0 but there is not a version of the 
+kuberay operator yet that uses this version.
