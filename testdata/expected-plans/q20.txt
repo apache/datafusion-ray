@@ -1,0 +1,152 @@
+DataFusion Logical Plan
+=======================
+
+Sort: supplier.s_name ASC NULLS LAST
+  Projection: supplier.s_name, supplier.s_address
+    LeftSemi Join: supplier.s_suppkey = __correlated_sq_1.ps_suppkey
+      Projection: supplier.s_suppkey, supplier.s_name, supplier.s_address
+        Inner Join: supplier.s_nationkey = nation.n_nationkey
+          TableScan: supplier projection=[s_suppkey, s_name, s_address, s_nationkey]
+          Projection: nation.n_nationkey
+            Filter: nation.n_name = Utf8("KENYA")
+              TableScan: nation projection=[n_nationkey, n_name], partial_filters=[nation.n_name = Utf8("KENYA")]
+      SubqueryAlias: __correlated_sq_1
+        Projection: partsupp.ps_suppkey
+          Inner Join: partsupp.ps_partkey = __scalar_sq_3.l_partkey, partsupp.ps_suppkey = __scalar_sq_3.l_suppkey Filter: CAST(partsupp.ps_availqty AS Float64) > __scalar_sq_3.Float64(0.5) * sum(lineitem.l_quantity)
+            LeftSemi Join: partsupp.ps_partkey = __correlated_sq_2.p_partkey
+              TableScan: partsupp projection=[ps_partkey, ps_suppkey, ps_availqty]
+              SubqueryAlias: __correlated_sq_2
+                Projection: part.p_partkey
+                  Filter: part.p_name LIKE Utf8("blanched%")
+                    TableScan: part projection=[p_partkey, p_name], partial_filters=[part.p_name LIKE Utf8("blanched%")]
+            SubqueryAlias: __scalar_sq_3
+              Projection: Float64(0.5) * CAST(sum(lineitem.l_quantity) AS Float64), lineitem.l_partkey, lineitem.l_suppkey
+                Aggregate: groupBy=[[lineitem.l_partkey, lineitem.l_suppkey]], aggr=[[sum(lineitem.l_quantity)]]
+                  Projection: lineitem.l_partkey, lineitem.l_suppkey, lineitem.l_quantity
+                    Filter: lineitem.l_shipdate >= Date32("1993-01-01") AND lineitem.l_shipdate < Date32("1994-01-01")
+                      TableScan: lineitem projection=[l_partkey, l_suppkey, l_quantity, l_shipdate], partial_filters=[lineitem.l_shipdate >= Date32("1993-01-01"), lineitem.l_shipdate < Date32("1994-01-01")]
+
+DataFusion Physical Plan
+========================
+
+SortPreservingMergeExec: [s_name@0 ASC NULLS LAST]
+  SortExec: expr=[s_name@0 ASC NULLS LAST], preserve_partitioning=[true]
+    CoalesceBatchesExec: target_batch_size=8192
+      HashJoinExec: mode=Partitioned, join_type=LeftSemi, on=[(s_suppkey@0, ps_suppkey@0)], projection=[s_name@1, s_address@2]
+        CoalesceBatchesExec: target_batch_size=8192
+          RepartitionExec: partitioning=Hash([s_suppkey@0], 2), input_partitions=2
+            CoalesceBatchesExec: target_batch_size=8192
+              HashJoinExec: mode=Partitioned, join_type=Inner, on=[(n_nationkey@0, s_nationkey@3)], projection=[s_suppkey@1, s_name@2, s_address@3]
+                CoalesceBatchesExec: target_batch_size=8192
+                  RepartitionExec: partitioning=Hash([n_nationkey@0], 2), input_partitions=2
+                    RepartitionExec: partitioning=RoundRobinBatch(2), input_partitions=1
+                      ProjectionExec: expr=[n_nationkey@0 as n_nationkey]
+                        CoalesceBatchesExec: target_batch_size=8192
+                          FilterExec: n_name@1 = KENYA
+                            ParquetExec: file_groups={ ... }, projection=[n_nationkey, n_name], predicate=n_name@1 = KENYA, pruning_predicate=CASE WHEN n_name_null_count@2 = n_name_row_count@3 THEN false ELSE n_name_min@0 <= KENYA AND KENYA <= n_name_max@1 END, required_guarantees=[n_name in (KENYA)]
+                CoalesceBatchesExec: target_batch_size=8192
+                  RepartitionExec: partitioning=Hash([s_nationkey@3], 2), input_partitions=2
+                    ParquetExec: file_groups={ ... }, projection=[s_suppkey, s_name, s_address, s_nationkey]
+        CoalesceBatchesExec: target_batch_size=8192
+          RepartitionExec: partitioning=Hash([ps_suppkey@0], 2), input_partitions=2
+            CoalesceBatchesExec: target_batch_size=8192
+              HashJoinExec: mode=Partitioned, join_type=Inner, on=[(ps_partkey@0, l_partkey@1), (ps_suppkey@1, l_suppkey@2)], filter=CAST(ps_availqty@0 AS Float64) > Float64(0.5) * sum(lineitem.l_quantity)@1, projection=[ps_suppkey@1]
+                CoalesceBatchesExec: target_batch_size=8192
+                  RepartitionExec: partitioning=Hash([ps_partkey@0, ps_suppkey@1], 2), input_partitions=2
+                    CoalesceBatchesExec: target_batch_size=8192
+                      HashJoinExec: mode=Partitioned, join_type=RightSemi, on=[(p_partkey@0, ps_partkey@0)]
+                        CoalesceBatchesExec: target_batch_size=8192
+                          RepartitionExec: partitioning=Hash([p_partkey@0], 2), input_partitions=2
+                            ProjectionExec: expr=[p_partkey@0 as p_partkey]
+                              CoalesceBatchesExec: target_batch_size=8192
+                                FilterExec: p_name@1 LIKE blanched%
+                                  ParquetExec: file_groups={ ... }, projection=[p_partkey, p_name], predicate=p_name@1 LIKE blanched%
+                        CoalesceBatchesExec: target_batch_size=8192
+                          RepartitionExec: partitioning=Hash([ps_partkey@0], 2), input_partitions=2
+                            ParquetExec: file_groups={ ... }, projection=[ps_partkey, ps_suppkey, ps_availqty]
+                ProjectionExec: expr=[0.5 * CAST(sum(lineitem.l_quantity)@2 AS Float64) as Float64(0.5) * sum(lineitem.l_quantity), l_partkey@0 as l_partkey, l_suppkey@1 as l_suppkey]
+                  AggregateExec: mode=FinalPartitioned, gby=[l_partkey@0 as l_partkey, l_suppkey@1 as l_suppkey], aggr=[sum(lineitem.l_quantity)]
+                    CoalesceBatchesExec: target_batch_size=8192
+                      RepartitionExec: partitioning=Hash([l_partkey@0, l_suppkey@1], 2), input_partitions=2
+                        AggregateExec: mode=Partial, gby=[l_partkey@0 as l_partkey, l_suppkey@1 as l_suppkey], aggr=[sum(lineitem.l_quantity)]
+                          ProjectionExec: expr=[l_partkey@0 as l_partkey, l_suppkey@1 as l_suppkey, l_quantity@2 as l_quantity]
+                            CoalesceBatchesExec: target_batch_size=8192
+                              FilterExec: l_shipdate@3 >= 1993-01-01 AND l_shipdate@3 < 1994-01-01
+                                ParquetExec: file_groups={ ... }, projection=[l_partkey, l_suppkey, l_quantity, l_shipdate], predicate=l_shipdate@10 >= 1993-01-01 AND l_shipdate@10 < 1994-01-01, pruning_predicate=CASE WHEN l_shipdate_null_count@1 = l_shipdate_row_count@2 THEN false ELSE l_shipdate_max@0 >= 1993-01-01 END AND CASE WHEN l_shipdate_null_count@1 = l_shipdate_row_count@2 THEN false ELSE l_shipdate_min@3 < 1994-01-01 END, required_guarantees=[]
+
+DataFusion Ray Distributed Plan
+===========
+
+Query Stage #0 (1 -> 2):
+ShuffleWriterExec(stage_id=0, output_partitioning=Hash([Column { name: "n_nationkey", index: 0 }], 2))
+  ProjectionExec: expr=[n_nationkey@0 as n_nationkey]
+    CoalesceBatchesExec: target_batch_size=8192
+      FilterExec: n_name@1 = KENYA
+        ParquetExec: file_groups={ ... }, projection=[n_nationkey, n_name], predicate=n_name@1 = KENYA, pruning_predicate=CASE WHEN n_name_null_count@2 = n_name_row_count@3 THEN false ELSE n_name_min@0 <= KENYA AND KENYA <= n_name_max@1 END, required_guarantees=[n_name in (KENYA)]
+
+Query Stage #1 (2 -> 2):
+ShuffleWriterExec(stage_id=1, output_partitioning=Hash([Column { name: "s_nationkey", index: 3 }], 2))
+  ParquetExec: file_groups={ ... }, projection=[s_suppkey, s_name, s_address, s_nationkey]
+
+Query Stage #2 (2 -> 2):
+ShuffleWriterExec(stage_id=2, output_partitioning=Hash([Column { name: "s_suppkey", index: 0 }], 2))
+  CoalesceBatchesExec: target_batch_size=8192
+    HashJoinExec: mode=Partitioned, join_type=Inner, on=[(n_nationkey@0, s_nationkey@3)], projection=[s_suppkey@1, s_name@2, s_address@3]
+      CoalesceBatchesExec: target_batch_size=8192
+        ShuffleReaderExec(stage_id=0, input_partitioning=Hash([Column { name: "n_nationkey", index: 0 }], 2))
+      CoalesceBatchesExec: target_batch_size=8192
+        ShuffleReaderExec(stage_id=1, input_partitioning=Hash([Column { name: "s_nationkey", index: 3 }], 2))
+
+Query Stage #3 (2 -> 2):
+ShuffleWriterExec(stage_id=3, output_partitioning=Hash([Column { name: "p_partkey", index: 0 }], 2))
+  ProjectionExec: expr=[p_partkey@0 as p_partkey]
+    CoalesceBatchesExec: target_batch_size=8192
+      FilterExec: p_name@1 LIKE blanched%
+        ParquetExec: file_groups={ ... }, projection=[p_partkey, p_name], predicate=p_name@1 LIKE blanched%
+
+Query Stage #4 (2 -> 2):
+ShuffleWriterExec(stage_id=4, output_partitioning=Hash([Column { name: "ps_partkey", index: 0 }], 2))
+  ParquetExec: file_groups={ ... }, projection=[ps_partkey, ps_suppkey, ps_availqty]
+
+Query Stage #5 (2 -> 2):
+ShuffleWriterExec(stage_id=5, output_partitioning=Hash([Column { name: "ps_partkey", index: 0 }, Column { name: "ps_suppkey", index: 1 }], 2))
+  CoalesceBatchesExec: target_batch_size=8192
+    HashJoinExec: mode=Partitioned, join_type=RightSemi, on=[(p_partkey@0, ps_partkey@0)]
+      CoalesceBatchesExec: target_batch_size=8192
+        ShuffleReaderExec(stage_id=3, input_partitioning=Hash([Column { name: "p_partkey", index: 0 }], 2))
+      CoalesceBatchesExec: target_batch_size=8192
+        ShuffleReaderExec(stage_id=4, input_partitioning=Hash([Column { name: "ps_partkey", index: 0 }], 2))
+
+Query Stage #6 (2 -> 2):
+ShuffleWriterExec(stage_id=6, output_partitioning=Hash([Column { name: "l_partkey", index: 0 }, Column { name: "l_suppkey", index: 1 }], 2))
+  AggregateExec: mode=Partial, gby=[l_partkey@0 as l_partkey, l_suppkey@1 as l_suppkey], aggr=[sum(lineitem.l_quantity)]
+    ProjectionExec: expr=[l_partkey@0 as l_partkey, l_suppkey@1 as l_suppkey, l_quantity@2 as l_quantity]
+      CoalesceBatchesExec: target_batch_size=8192
+        FilterExec: l_shipdate@3 >= 1993-01-01 AND l_shipdate@3 < 1994-01-01
+          ParquetExec: file_groups={ ... }, projection=[l_partkey, l_suppkey, l_quantity, l_shipdate], predicate=l_shipdate@10 >= 1993-01-01 AND l_shipdate@10 < 1994-01-01, pruning_predicate=CASE WHEN l_shipdate_null_count@1 = l_shipdate_row_count@2 THEN false ELSE l_shipdate_max@0 >= 1993-01-01 END AND CASE WHEN l_shipdate_null_count@1 = l_shipdate_row_count@2 THEN false ELSE l_shipdate_min@3 < 1994-01-01 END, required_guarantees=[]
+
+Query Stage #7 (2 -> 2):
+ShuffleWriterExec(stage_id=7, output_partitioning=Hash([Column { name: "ps_suppkey", index: 0 }], 2))
+  CoalesceBatchesExec: target_batch_size=8192
+    HashJoinExec: mode=Partitioned, join_type=Inner, on=[(ps_partkey@0, l_partkey@1), (ps_suppkey@1, l_suppkey@2)], filter=CAST(ps_availqty@0 AS Float64) > Float64(0.5) * sum(lineitem.l_quantity)@1, projection=[ps_suppkey@1]
+      CoalesceBatchesExec: target_batch_size=8192
+        ShuffleReaderExec(stage_id=5, input_partitioning=Hash([Column { name: "ps_partkey", index: 0 }, Column { name: "ps_suppkey", index: 1 }], 2))
+      ProjectionExec: expr=[0.5 * CAST(sum(lineitem.l_quantity)@2 AS Float64) as Float64(0.5) * sum(lineitem.l_quantity), l_partkey@0 as l_partkey, l_suppkey@1 as l_suppkey]
+        AggregateExec: mode=FinalPartitioned, gby=[l_partkey@0 as l_partkey, l_suppkey@1 as l_suppkey], aggr=[sum(lineitem.l_quantity)]
+          CoalesceBatchesExec: target_batch_size=8192
+            ShuffleReaderExec(stage_id=6, input_partitioning=Hash([Column { name: "l_partkey", index: 0 }, Column { name: "l_suppkey", index: 1 }], 2))
+
+Query Stage #8 (2 -> 1):
+ShuffleWriterExec(stage_id=8, output_partitioning=Hash([], 2))
+  SortExec: expr=[s_name@0 ASC NULLS LAST], preserve_partitioning=[true]
+    CoalesceBatchesExec: target_batch_size=8192
+      HashJoinExec: mode=Partitioned, join_type=LeftSemi, on=[(s_suppkey@0, ps_suppkey@0)], projection=[s_name@1, s_address@2]
+        CoalesceBatchesExec: target_batch_size=8192
+          ShuffleReaderExec(stage_id=2, input_partitioning=Hash([Column { name: "s_suppkey", index: 0 }], 2))
+        CoalesceBatchesExec: target_batch_size=8192
+          ShuffleReaderExec(stage_id=7, input_partitioning=Hash([Column { name: "ps_suppkey", index: 0 }], 2))
+
+Query Stage #9 (2 -> 1):
+SortPreservingMergeExec: [s_name@0 ASC NULLS LAST]
+  ShuffleReaderExec(stage_id=8, input_partitioning=Hash([], 2))
+
