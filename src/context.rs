@@ -67,7 +67,7 @@ pub(crate) fn execution_plan_from_pyany(
         ))
     })?;
 
-    let codec = DefaultPhysicalExtensionCodec {};
+    let codec = ShuffleCodec {};
     let runtime = RuntimeEnv::default();
     let registry = SessionContext::new();
     plan_node
