@@ -26,7 +26,6 @@ use datafusion::arrow::datatypes::SchemaRef;
 use datafusion::common::{DataFusionError, Result};
 use datafusion::execution::runtime_env::RuntimeEnv;
 use datafusion::execution::FunctionRegistry;
-use datafusion::logical_expr::{AggregateUDF, ScalarUDF, WindowUDF};
 use datafusion::physical_plan::{ExecutionPlan, Partitioning};
 use datafusion_proto::physical_plan::from_proto::parse_protobuf_hash_partitioning;
 use datafusion_proto::physical_plan::to_proto::serialize_physical_expr;
@@ -34,7 +33,6 @@ use datafusion_proto::physical_plan::PhysicalExtensionCodec;
 use datafusion_proto::physical_plan::{AsExecutionPlan, DefaultPhysicalExtensionCodec};
 use datafusion_proto::protobuf::{self, PhysicalHashRepartition, PhysicalPlanNode};
 use prost::Message;
-use std::collections::HashSet;
 use std::sync::Arc;
 
 #[derive(Debug)]
