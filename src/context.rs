@@ -52,7 +52,7 @@ pub struct PyContext {
 #[pymethods]
 impl PyContext {
     #[new]
-    pub fn new(target_partitions: usize, use_ray_shuffle: bool) -> Result<Self> {
+    pub fn new(target_partitions: usize) -> Result<Self> {
         let config = SessionConfig::default()
             .with_target_partitions(target_partitions)
             .with_batch_size(16 * 1024)
