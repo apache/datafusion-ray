@@ -17,8 +17,7 @@
 
 use crate::protobuf::ray_sql_exec_node::PlanType;
 use crate::protobuf::{
-    RayShuffleReaderExecNode, RayShuffleWriterExecNode, RaySqlExecNode, ShuffleReaderExecNode,
-    ShuffleWriterExecNode,
+    RayShuffleReaderExecNode, RayShuffleWriterExecNode, RaySqlExecNode,
 };
 use crate::shuffle::{
     RayShuffleReaderExec, RayShuffleWriterExec
@@ -33,8 +32,7 @@ use datafusion_proto::physical_plan::from_proto::parse_protobuf_hash_partitionin
 use datafusion_proto::physical_plan::to_proto::serialize_physical_expr;
 use datafusion_proto::physical_plan::PhysicalExtensionCodec;
 use datafusion_proto::physical_plan::{AsExecutionPlan, DefaultPhysicalExtensionCodec};
-use datafusion_proto::protobuf::{self, PhysicalExprNode};
-use datafusion_proto::protobuf::{PhysicalHashRepartition, PhysicalPlanNode};
+use datafusion_proto::protobuf::{self, PhysicalHashRepartition, PhysicalPlanNode};
 use prost::Message;
 use std::collections::HashSet;
 use std::sync::Arc;
