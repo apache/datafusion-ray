@@ -47,7 +47,6 @@ type PyResultSet = Vec<PyObject>;
 #[pyclass(name = "Context", module = "datafusion_ray", subclass)]
 pub struct PyContext {
     pub(crate) ctx: SessionContext,
-    use_ray_shuffle: bool,
 }
 
 #[pymethods]
@@ -67,10 +66,9 @@ impl PyContext {
             .with_memory_pool(Arc::new(FairSpillPool::new(mem_pool_size)))
             .with_disk_manager(DiskManagerConfig::new_specified(vec!["/tmp".into()]));
         let runtime = Arc::new(RuntimeEnv::new(runtime_config)?);
-        let ctx = SessionContext::with_config_rt(config, runtime);
+        let ctx = SessionContext::new_with_config_rt(config, runtime);
         Ok(Self {
             ctx,
-            use_ray_shuffle,
         })
     }
 
@@ -94,9 +92,9 @@ impl PyContext {
 
     pub fn register_datalake_table(
         &self,
-        name: &str,
-        path: Vec<String>,
-        py: Python,
+        _name: &str,
+        _path: Vec<String>,
+        _py: Python,
     ) -> PyResult<()> {
         // let options = ParquetReadOptions::default();
         // let listing_options = options.to_listing_options(&self.ctx.state().config());
@@ -119,7 +117,7 @@ impl PyContext {
         let df = wait_for_future(py, self.ctx.sql(sql))?;
         let plan = wait_for_future(py, df.create_physical_plan())?;
 
-        let graph = make_execution_graph(plan.clone(), self.use_ray_shuffle)?;
+        let graph = make_execution_graph(plan.clone())?;
 
         // debug logging
         let mut stages = graph.query_stages.values().collect::<Vec<_>>();
