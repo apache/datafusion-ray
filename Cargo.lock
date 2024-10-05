@@ -1113,14 +1113,13 @@ dependencies = [
 
 [[package]]
 name = "datafusion_ray"
-version = "0.6.0"
+version = "0.1.0"
 dependencies = [
  "anyhow",
  "datafusion",
  "datafusion-proto",
  "datafusion-python",
  "futures",
- "glob",
  "log",
  "pretty_assertions",
  "prost 0.12.6",
@@ -1130,7 +1129,6 @@ dependencies = [
  "rustc_version",
  "tokio",
  "tonic-build",
- "uuid",
 ]
 
 [[package]]
