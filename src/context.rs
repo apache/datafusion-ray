@@ -65,9 +65,7 @@ impl PyContext {
             .with_disk_manager(DiskManagerConfig::new_specified(vec!["/tmp".into()]));
         let runtime = Arc::new(RuntimeEnv::new(runtime_config)?);
         let ctx = SessionContext::new_with_config_rt(config, runtime);
-        Ok(Self {
-            ctx,
-        })
+        Ok(Self { ctx })
     }
 
     pub fn register_csv(

@@ -112,9 +112,7 @@ impl ExecutionGraph {
     }
 }
 
-pub fn make_execution_graph(
-    plan: Arc<dyn ExecutionPlan>,
-) -> Result<ExecutionGraph> {
+pub fn make_execution_graph(plan: Arc<dyn ExecutionPlan>) -> Result<ExecutionGraph> {
     let mut graph = ExecutionGraph::new();
     let root = generate_query_stages(plan, &mut graph)?;
     // We force the final stage to produce a single partition to return
@@ -204,10 +202,10 @@ fn create_shuffle_exchange(
 
     let shuffle_writer_input = plan.clone();
     let shuffle_writer: Arc<dyn ExecutionPlan> = Arc::new(RayShuffleWriterExec::new(
-            stage_id,
-            shuffle_writer_input,
-            partitioning_scheme.clone(),
-        ));
+        stage_id,
+        shuffle_writer_input,
+        partitioning_scheme.clone(),
+    ));
 
     debug!(
         "Created shuffle writer with output partitioning {:?}",
@@ -354,7 +352,10 @@ mod test {
 
     async fn do_test(n: u8) -> TestResult<()> {
         let tpch_path_env_var = "TPCH_DATA_PATH";
-        let data_path = env::var(tpch_path_env_var).expect(&format!("Environment variable {} not found", tpch_path_env_var));
+        let data_path = env::var(tpch_path_env_var).expect(&format!(
+            "Environment variable {} not found",
+            tpch_path_env_var
+        ));
 
         let file = format!("testdata/queries/q{n}.sql");
         let sql = fs::read_to_string(&file)?;
