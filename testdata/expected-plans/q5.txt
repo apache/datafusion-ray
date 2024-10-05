@@ -86,92 +86,92 @@ DataFusion Ray Distributed Plan
 ===========
 
 Query Stage #0 (1 -> 2):
-ShuffleWriterExec(stage_id=0, output_partitioning=Hash([Column { name: "r_regionkey", index: 0 }], 2))
+RayShuffleWriterExec(stage_id=0, output_partitioning=Hash([Column { name: "r_regionkey", index: 0 }], 2))
   ProjectionExec: expr=[r_regionkey@0 as r_regionkey]
     CoalesceBatchesExec: target_batch_size=8192
       FilterExec: r_name@1 = AFRICA
         ParquetExec: file_groups={ ... }, projection=[r_regionkey, r_name], predicate=r_name@1 = AFRICA, pruning_predicate=CASE WHEN r_name_null_count@2 = r_name_row_count@3 THEN false ELSE r_name_min@0 <= AFRICA AND AFRICA <= r_name_max@1 END, required_guarantees=[r_name in (AFRICA)]
 
 Query Stage #1 (1 -> 2):
-ShuffleWriterExec(stage_id=1, output_partitioning=Hash([Column { name: "n_nationkey", index: 0 }], 2))
+RayShuffleWriterExec(stage_id=1, output_partitioning=Hash([Column { name: "n_nationkey", index: 0 }], 2))
   ParquetExec: file_groups={ ... }, projection=[n_nationkey, n_name, n_regionkey]
 
 Query Stage #2 (1 -> 2):
-ShuffleWriterExec(stage_id=2, output_partitioning=Hash([Column { name: "s_suppkey", index: 0 }, Column { name: "s_nationkey", index: 1 }], 2))
+RayShuffleWriterExec(stage_id=2, output_partitioning=Hash([Column { name: "s_suppkey", index: 0 }, Column { name: "s_nationkey", index: 1 }], 2))
   ParquetExec: file_groups={ ... }, projection=[s_suppkey, s_nationkey]
 
 Query Stage #3 (2 -> 2):
-ShuffleWriterExec(stage_id=3, output_partitioning=Hash([Column { name: "c_custkey", index: 0 }], 2))
+RayShuffleWriterExec(stage_id=3, output_partitioning=Hash([Column { name: "c_custkey", index: 0 }], 2))
   ParquetExec: file_groups={ ... }, projection=[c_custkey, c_nationkey]
 
 Query Stage #4 (2 -> 2):
-ShuffleWriterExec(stage_id=4, output_partitioning=Hash([Column { name: "o_custkey", index: 1 }], 2))
+RayShuffleWriterExec(stage_id=4, output_partitioning=Hash([Column { name: "o_custkey", index: 1 }], 2))
   ProjectionExec: expr=[o_orderkey@0 as o_orderkey, o_custkey@1 as o_custkey]
     CoalesceBatchesExec: target_batch_size=8192
       FilterExec: o_orderdate@2 >= 1994-01-01 AND o_orderdate@2 < 1995-01-01
         ParquetExec: file_groups={ ... }, projection=[o_orderkey, o_custkey, o_orderdate], predicate=o_orderdate@4 >= 1994-01-01 AND o_orderdate@4 < 1995-01-01, pruning_predicate=CASE WHEN o_orderdate_null_count@1 = o_orderdate_row_count@2 THEN false ELSE o_orderdate_max@0 >= 1994-01-01 END AND CASE WHEN o_orderdate_null_count@1 = o_orderdate_row_count@2 THEN false ELSE o_orderdate_min@3 < 1995-01-01 END, required_guarantees=[]
 
 Query Stage #5 (2 -> 2):
-ShuffleWriterExec(stage_id=5, output_partitioning=Hash([Column { name: "o_orderkey", index: 1 }], 2))
+RayShuffleWriterExec(stage_id=5, output_partitioning=Hash([Column { name: "o_orderkey", index: 1 }], 2))
   CoalesceBatchesExec: target_batch_size=8192
     HashJoinExec: mode=Partitioned, join_type=Inner, on=[(c_custkey@0, o_custkey@1)], projection=[c_nationkey@1, o_orderkey@2]
       CoalesceBatchesExec: target_batch_size=8192
-        ShuffleReaderExec(stage_id=3, input_partitioning=Hash([Column { name: "c_custkey", index: 0 }], 2))
+        RayShuffleReaderExec(stage_id=3, input_partitioning=Hash([Column { name: "c_custkey", index: 0 }], 2))
       CoalesceBatchesExec: target_batch_size=8192
-        ShuffleReaderExec(stage_id=4, input_partitioning=Hash([Column { name: "o_custkey", index: 1 }], 2))
+        RayShuffleReaderExec(stage_id=4, input_partitioning=Hash([Column { name: "o_custkey", index: 1 }], 2))
 
 Query Stage #6 (2 -> 2):
-ShuffleWriterExec(stage_id=6, output_partitioning=Hash([Column { name: "l_orderkey", index: 0 }], 2))
+RayShuffleWriterExec(stage_id=6, output_partitioning=Hash([Column { name: "l_orderkey", index: 0 }], 2))
   ParquetExec: file_groups={ ... }, projection=[l_orderkey, l_suppkey, l_extendedprice, l_discount]
 
 Query Stage #7 (2 -> 2):
-ShuffleWriterExec(stage_id=7, output_partitioning=Hash([Column { name: "l_suppkey", index: 1 }, Column { name: "c_nationkey", index: 0 }], 2))
+RayShuffleWriterExec(stage_id=7, output_partitioning=Hash([Column { name: "l_suppkey", index: 1 }, Column { name: "c_nationkey", index: 0 }], 2))
   CoalesceBatchesExec: target_batch_size=8192
     HashJoinExec: mode=Partitioned, join_type=Inner, on=[(o_orderkey@1, l_orderkey@0)], projection=[c_nationkey@0, l_suppkey@3, l_extendedprice@4, l_discount@5]
       CoalesceBatchesExec: target_batch_size=8192
-        ShuffleReaderExec(stage_id=5, input_partitioning=Hash([Column { name: "o_orderkey", index: 1 }], 2))
+        RayShuffleReaderExec(stage_id=5, input_partitioning=Hash([Column { name: "o_orderkey", index: 1 }], 2))
       CoalesceBatchesExec: target_batch_size=8192
-        ShuffleReaderExec(stage_id=6, input_partitioning=Hash([Column { name: "l_orderkey", index: 0 }], 2))
+        RayShuffleReaderExec(stage_id=6, input_partitioning=Hash([Column { name: "l_orderkey", index: 0 }], 2))
 
 Query Stage #8 (2 -> 2):
-ShuffleWriterExec(stage_id=8, output_partitioning=Hash([Column { name: "s_nationkey", index: 2 }], 2))
+RayShuffleWriterExec(stage_id=8, output_partitioning=Hash([Column { name: "s_nationkey", index: 2 }], 2))
   ProjectionExec: expr=[l_extendedprice@1 as l_extendedprice, l_discount@2 as l_discount, s_nationkey@0 as s_nationkey]
     CoalesceBatchesExec: target_batch_size=8192
       HashJoinExec: mode=Partitioned, join_type=Inner, on=[(s_suppkey@0, l_suppkey@1), (s_nationkey@1, c_nationkey@0)], projection=[s_nationkey@1, l_extendedprice@4, l_discount@5]
         CoalesceBatchesExec: target_batch_size=8192
-          ShuffleReaderExec(stage_id=2, input_partitioning=Hash([Column { name: "s_suppkey", index: 0 }, Column { name: "s_nationkey", index: 1 }], 2))
+          RayShuffleReaderExec(stage_id=2, input_partitioning=Hash([Column { name: "s_suppkey", index: 0 }, Column { name: "s_nationkey", index: 1 }], 2))
         CoalesceBatchesExec: target_batch_size=8192
-          ShuffleReaderExec(stage_id=7, input_partitioning=Hash([Column { name: "l_suppkey", index: 1 }, Column { name: "c_nationkey", index: 0 }], 2))
+          RayShuffleReaderExec(stage_id=7, input_partitioning=Hash([Column { name: "l_suppkey", index: 1 }, Column { name: "c_nationkey", index: 0 }], 2))
 
 Query Stage #9 (2 -> 2):
-ShuffleWriterExec(stage_id=9, output_partitioning=Hash([Column { name: "n_regionkey", index: 3 }], 2))
+RayShuffleWriterExec(stage_id=9, output_partitioning=Hash([Column { name: "n_regionkey", index: 3 }], 2))
   ProjectionExec: expr=[l_extendedprice@2 as l_extendedprice, l_discount@3 as l_discount, n_name@0 as n_name, n_regionkey@1 as n_regionkey]
     CoalesceBatchesExec: target_batch_size=8192
       HashJoinExec: mode=Partitioned, join_type=Inner, on=[(n_nationkey@0, s_nationkey@2)], projection=[n_name@1, n_regionkey@2, l_extendedprice@3, l_discount@4]
         CoalesceBatchesExec: target_batch_size=8192
-          ShuffleReaderExec(stage_id=1, input_partitioning=Hash([Column { name: "n_nationkey", index: 0 }], 2))
+          RayShuffleReaderExec(stage_id=1, input_partitioning=Hash([Column { name: "n_nationkey", index: 0 }], 2))
         CoalesceBatchesExec: target_batch_size=8192
-          ShuffleReaderExec(stage_id=8, input_partitioning=Hash([Column { name: "s_nationkey", index: 2 }], 2))
+          RayShuffleReaderExec(stage_id=8, input_partitioning=Hash([Column { name: "s_nationkey", index: 2 }], 2))
 
 Query Stage #10 (2 -> 2):
-ShuffleWriterExec(stage_id=10, output_partitioning=Hash([Column { name: "n_name", index: 0 }], 2))
+RayShuffleWriterExec(stage_id=10, output_partitioning=Hash([Column { name: "n_name", index: 0 }], 2))
   AggregateExec: mode=Partial, gby=[n_name@2 as n_name], aggr=[sum(lineitem.l_extendedprice * Int64(1) - lineitem.l_discount)]
     CoalesceBatchesExec: target_batch_size=8192
       HashJoinExec: mode=Partitioned, join_type=Inner, on=[(r_regionkey@0, n_regionkey@3)], projection=[l_extendedprice@1, l_discount@2, n_name@3]
         CoalesceBatchesExec: target_batch_size=8192
-          ShuffleReaderExec(stage_id=0, input_partitioning=Hash([Column { name: "r_regionkey", index: 0 }], 2))
+          RayShuffleReaderExec(stage_id=0, input_partitioning=Hash([Column { name: "r_regionkey", index: 0 }], 2))
         CoalesceBatchesExec: target_batch_size=8192
-          ShuffleReaderExec(stage_id=9, input_partitioning=Hash([Column { name: "n_regionkey", index: 3 }], 2))
+          RayShuffleReaderExec(stage_id=9, input_partitioning=Hash([Column { name: "n_regionkey", index: 3 }], 2))
 
 Query Stage #11 (2 -> 2):
-ShuffleWriterExec(stage_id=11, output_partitioning=Hash([Column { name: "n_name", index: 0 }], 2))
+RayShuffleWriterExec(stage_id=11, output_partitioning=Hash([Column { name: "n_name", index: 0 }], 2))
   SortExec: expr=[revenue@1 DESC], preserve_partitioning=[true]
     ProjectionExec: expr=[n_name@0 as n_name, sum(lineitem.l_extendedprice * Int64(1) - lineitem.l_discount)@1 as revenue]
       AggregateExec: mode=FinalPartitioned, gby=[n_name@0 as n_name], aggr=[sum(lineitem.l_extendedprice * Int64(1) - lineitem.l_discount)]
         CoalesceBatchesExec: target_batch_size=8192
-          ShuffleReaderExec(stage_id=10, input_partitioning=Hash([Column { name: "n_name", index: 0 }], 2))
+          RayShuffleReaderExec(stage_id=10, input_partitioning=Hash([Column { name: "n_name", index: 0 }], 2))
 
 Query Stage #12 (2 -> 1):
 SortPreservingMergeExec: [revenue@1 DESC]
-  ShuffleReaderExec(stage_id=11, input_partitioning=Hash([Column { name: "n_name", index: 0 }], 2))
+  RayShuffleReaderExec(stage_id=11, input_partitioning=Hash([Column { name: "n_name", index: 0 }], 2))
 
