@@ -2,9 +2,28 @@
 
 This guide explains how to test on k8s during development of DataFusion Ray.
 
+## Setting up a Kubernetes cluster
+
+Install k3s.
+
 ## Setting up a Ray cluster
 
 Follow instructions from https://docs.ray.io/en/latest/cluster/kubernetes/getting-started/raycluster-quick-start.html#kuberay-raycluster-quickstart
+
+Manually update the ray image version from `2.9.0` to `2.37.0.cabc24-py312`
+
+Install podman on the nodes. We need this to use Ray's experimental custom Docker container support.
+
+```shell
+sudo apt update
+sudo apt install -y podman
+```
+
+Set up port forwarding.
+
+```shell
+kubectl port-forward service/raycluster-kuberay-head-svc 8265:8265
+```
 
 ## Build Custom Docker Image
 
@@ -39,11 +58,34 @@ From the `examples` directory:
 ray job submit --runtime-env-json='{"container": {"image": "dfray"}}' -- python3 tips.py
 ```
 
-This fails with:
+This currently fails with:
 
-```text
- 'The 'container' field currently cannot be used together with other fields of runtime_env. Specified fields: dict_keys(['container', 'env_vars'])'
+```shell
+
+-------------------------------------------------------
+Job 'raysubmit_nsmAj16vXAtMc2Dm' submitted successfully
+-------------------------------------------------------
+
+Next steps
+  Query the logs of the job:
+    ray job logs raysubmit_nsmAj16vXAtMc2Dm
+  Query the status of the job:
+    ray job status raysubmit_nsmAj16vXAtMc2Dm
+  Request the job to be stopped:
+    ray job stop raysubmit_nsmAj16vXAtMc2Dm
+
+Tailing logs until the job exits (disable with --no-wait):
+
+---------------------------------------
+Job 'raysubmit_nsmAj16vXAtMc2Dm' failed
+---------------------------------------
+
+Status message: runtime_env setup failed: Failed to set up runtime environment.
+Could not create the actor because its associated runtime env failed to be created.
 ```
 
-The fix (https://github.com/ray-project/ray/pull/42121) went into Ray 2.37.0 but there is not a version of the 
-kuberay operator yet that uses this version.
+The root cause appears to be:
+
+```shell
+FileNotFoundError: [Errno 2] No such file or directory: 'podman'
+```
