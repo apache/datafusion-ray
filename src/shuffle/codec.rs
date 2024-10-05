@@ -142,27 +142,3 @@ fn encode_partitioning_scheme(partitioning: &Partitioning) -> Result<PhysicalHas
         ))),
     }
 }
-
-struct RaySqlFunctionRegistry {}
-
-impl FunctionRegistry for RaySqlFunctionRegistry {
-    fn udfs(&self) -> HashSet<String> {
-        HashSet::new()
-    }
-
-    fn udf(&self, name: &str) -> datafusion::common::Result<Arc<ScalarUDF>> {
-        Err(DataFusionError::Plan(format!("Invalid UDF: {name}")))
-    }
-
-    fn udaf(&self, name: &str) -> datafusion::common::Result<Arc<AggregateUDF>> {
-        Err(DataFusionError::Plan(format!("Invalid UDAF: {name}")))
-    }
-
-    fn udwf(&self, name: &str) -> datafusion::common::Result<Arc<WindowUDF>> {
-        Err(DataFusionError::Plan(format!("Invalid UDAWF: {name}")))
-    }
-
-    fn expr_planners(&self) -> Vec<Arc<dyn datafusion::logical_expr::planner::ExprPlanner>> {
-        todo!()
-    }
-}
