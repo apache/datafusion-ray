@@ -77,6 +77,8 @@ def schedule_execution(
     plan_bytes = datafusion_ray.serialize_execution_plan(stage.get_execution_plan())
     futures = []
     opt = {}
+    # TODO not sure why we had this but my Ray cluster could not find suitable resource
+    # until I commented this out
     # opt["resources"] = {"worker": 1e-3}
     opt["num_returns"] = output_partitions_count
     for part in range(concurrency):
@@ -150,6 +152,8 @@ def execute_query_stage(
     plan_bytes = datafusion_ray.serialize_execution_plan(stage.get_execution_plan())
     futures = []
     opt = {}
+    # TODO not sure why we had this but my Ray cluster could not find suitable resource
+    # until I commented this out
     #opt["resources"] = {"worker": 1e-3}
     opt["num_returns"] = output_partitions_count
     for part in range(concurrency):
