@@ -16,7 +16,6 @@
 # under the License.
 
 import os
-import pandas as pd
 import ray
 
 from datafusion_ray import DatafusionRayContext
@@ -24,7 +23,10 @@ from datafusion_ray import DatafusionRayContext
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 
 # Start a local cluster
-ray.init(resources={"worker": 1})
+# ray.init(resources={"worker": 1})
+
+# Connect to a cluster
+ray.init()
 
 # Create a context and register a table
 ctx = DatafusionRayContext(2, use_ray_shuffle=True)

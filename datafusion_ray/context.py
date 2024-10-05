@@ -77,7 +77,7 @@ def schedule_execution(
     plan_bytes = datafusion_ray.serialize_execution_plan(stage.get_execution_plan())
     futures = []
     opt = {}
-    opt["resources"] = {"worker": 1e-3}
+    # opt["resources"] = {"worker": 1e-3}
     opt["num_returns"] = output_partitions_count
     for part in range(concurrency):
         ids, inputs = _get_worker_inputs(part)
@@ -93,7 +93,6 @@ def schedule_execution(
 def execute_query_stage(
     query_stages: list[QueryStage],
     stage_id: int,
-    use_ray_shuffle: bool,
 ) -> tuple[int, list[ray.ObjectRef]]:
     """
     Execute a query stage on the workers.
@@ -106,7 +105,7 @@ def execute_query_stage(
     child_futures = []
     for child_id in stage.get_child_stage_ids():
         child_futures.append(
-            execute_query_stage.remote(query_stages, child_id, use_ray_shuffle)
+            execute_query_stage.remote(query_stages, child_id)
         )
 
     # if the query stage has a single output partition then we need to execute for the output
@@ -133,33 +132,26 @@ def execute_query_stage(
     ) -> tuple[list[tuple[int, int, int]], list[ray.ObjectRef]]:
         ids = []
         futures = []
-        if use_ray_shuffle:
-            for child_stage_id, child_futures in child_outputs:
-                for i, lst in enumerate(child_futures):
-                    if isinstance(lst, list):
-                        for j, f in enumerate(lst):
-                            if concurrency == 1 or j == part:
-                                # If concurrency is 1, pass in all shuffle partitions. Otherwise,
-                                # only pass in the partitions that match the current worker partition.
-                                ids.append((child_stage_id, i, j))
-                                futures.append(f)
-                    elif concurrency == 1 or part == 0:
-                        ids.append((child_stage_id, i, 0))
-                        futures.append(lst)
+        for child_stage_id, child_futures in child_outputs:
+            for i, lst in enumerate(child_futures):
+                if isinstance(lst, list):
+                    for j, f in enumerate(lst):
+                        if concurrency == 1 or j == part:
+                            # If concurrency is 1, pass in all shuffle partitions. Otherwise,
+                            # only pass in the partitions that match the current worker partition.
+                            ids.append((child_stage_id, i, j))
+                            futures.append(f)
+                elif concurrency == 1 or part == 0:
+                    ids.append((child_stage_id, i, 0))
+                    futures.append(lst)
         return ids, futures
-
-    # if we are using disk-based shuffle, wait until the child stages to finish
-    # writing the shuffle files to disk first.
-    if not use_ray_shuffle:
-        ray.get([f for _, lst in child_outputs for f in lst])
 
     # schedule the actual execution workers
     plan_bytes = datafusion_ray.serialize_execution_plan(stage.get_execution_plan())
     futures = []
     opt = {}
-    opt["resources"] = {"worker": 1e-3}
-    if use_ray_shuffle:
-        opt["num_returns"] = output_partitions_count
+    #opt["resources"] = {"worker": 1e-3}
+    opt["num_returns"] = output_partitions_count
     for part in range(concurrency):
         ids, inputs = _get_worker_inputs(part)
         futures.append(
@@ -210,10 +202,9 @@ def execute_query_partition(
 
 
 class DatafusionRayContext:
-    def __init__(self, num_workers: int = 1, use_ray_shuffle: bool = False):
-        self.ctx = Context(num_workers, use_ray_shuffle)
+    def __init__(self, num_workers: int = 1):
+        self.ctx = Context(num_workers)
         self.num_workers = num_workers
-        self.use_ray_shuffle = use_ray_shuffle
 
     def register_csv(self, table_name: str, path: str, has_header: bool):
         self.ctx.register_csv(table_name, path, has_header)
@@ -234,23 +225,7 @@ class DatafusionRayContext:
 
         graph = self.ctx.plan(sql)
         final_stage_id = graph.get_final_query_stage().id()
-        if self.use_ray_shuffle:
-            partitions = schedule_execution(graph, final_stage_id, True)
-        else:
-            # serialize the query stages and store in Ray object store
-            query_stages = [
-                datafusion_ray.serialize_execution_plan(
-                    graph.get_query_stage(i).get_execution_plan()
-                )
-                for i in range(final_stage_id + 1)
-            ]
-            # schedule execution
-            future = execute_query_stage.remote(
-                query_stages,
-                final_stage_id,
-                self.use_ray_shuffle,
-            )
-            _, partitions = ray.get(future)
+        partitions = schedule_execution(graph, final_stage_id, True)
         # assert len(partitions) == 1, len(partitions)
         result_set = ray.get(partitions[0])
         return result_set

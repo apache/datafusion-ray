@@ -31,9 +31,9 @@ QUERIES_DIR = os.path.join(SCRIPT_DIR, f"../sqlbench-h/queries/sf={SF}")
 RESULTS_DIR = f"results-sf{SF}"
 
 
-def setup_context(use_ray_shuffle: bool, num_workers: int = 2) -> DatafusionRayContext:
+def setup_context(num_workers: int = 2) -> DatafusionRayContext:
     print(f"Using {num_workers} workers")
-    ctx = DatafusionRayContext(num_workers, use_ray_shuffle)
+    ctx = DatafusionRayContext(num_workers)
     for table in [
         "customer",
         "lineitem",
@@ -103,10 +103,9 @@ def compare(q: int):
 def tpch_bench():
     ray.init(resources={"worker": 1})
     num_workers = int(ray.cluster_resources().get("worker", 1)) * NUM_CPUS_PER_WORKER
-    use_ray_shuffle = False
-    ctx = setup_context(use_ray_shuffle, num_workers)
+    ctx = setup_context(num_workers)
     # t = tpch_timing(ctx, 11, print_result=True)
-    # print(f"query,{t},{use_ray_shuffle},{num_workers}")
+    # print(f"query,{t},{num_workers}")
     # return
     run_id = time.strftime("%Y-%m-%d-%H-%M-%S")
     with open(f"results-sf{SF}-{run_id}.csv", "w") as fout:
