@@ -21,12 +21,10 @@ use crate::utils::wait_for_future;
 use datafusion::arrow::pyarrow::FromPyArrow;
 use datafusion::arrow::pyarrow::ToPyArrow;
 use datafusion::arrow::record_batch::RecordBatch;
-use datafusion::config::Extensions;
 use datafusion::error::{DataFusionError, Result};
 use datafusion::execution::context::TaskContext;
 use datafusion::execution::disk_manager::DiskManagerConfig;
 use datafusion::execution::memory_pool::FairSpillPool;
-use datafusion::execution::options::ReadOptions;
 use datafusion::execution::runtime_env::RuntimeEnv;
 use datafusion::physical_plan::{displayable, ExecutionPlan};
 use datafusion::prelude::*;
@@ -47,13 +45,12 @@ type PyResultSet = Vec<PyObject>;
 #[pyclass(name = "Context", module = "datafusion_ray", subclass)]
 pub struct PyContext {
     pub(crate) ctx: SessionContext,
-    use_ray_shuffle: bool,
 }
 
 #[pymethods]
 impl PyContext {
     #[new]
-    pub fn new(target_partitions: usize, use_ray_shuffle: bool) -> Result<Self> {
+    pub fn new(target_partitions: usize) -> Result<Self> {
         let config = SessionConfig::default()
             .with_target_partitions(target_partitions)
             .with_batch_size(16 * 1024)
@@ -67,11 +64,8 @@ impl PyContext {
             .with_memory_pool(Arc::new(FairSpillPool::new(mem_pool_size)))
             .with_disk_manager(DiskManagerConfig::new_specified(vec!["/tmp".into()]));
         let runtime = Arc::new(RuntimeEnv::new(runtime_config)?);
-        let ctx = SessionContext::with_config_rt(config, runtime);
-        Ok(Self {
-            ctx,
-            use_ray_shuffle,
-        })
+        let ctx = SessionContext::new_with_config_rt(config, runtime);
+        Ok(Self { ctx })
     }
 
     pub fn register_csv(
@@ -94,9 +88,9 @@ impl PyContext {
 
     pub fn register_datalake_table(
         &self,
-        name: &str,
-        path: Vec<String>,
-        py: Python,
+        _name: &str,
+        _path: Vec<String>,
+        _py: Python,
     ) -> PyResult<()> {
         // let options = ParquetReadOptions::default();
         // let listing_options = options.to_listing_options(&self.ctx.state().config());
@@ -119,7 +113,7 @@ impl PyContext {
         let df = wait_for_future(py, self.ctx.sql(sql))?;
         let plan = wait_for_future(py, df.create_physical_plan())?;
 
-        let graph = make_execution_graph(plan.clone(), self.use_ray_shuffle)?;
+        let graph = make_execution_graph(plan.clone())?;
 
         // debug logging
         let mut stages = graph.query_stages.values().collect::<Vec<_>>();

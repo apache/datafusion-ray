@@ -16,27 +16,19 @@
 // under the License.
 
 use crate::protobuf::ray_sql_exec_node::PlanType;
-use crate::protobuf::{
-    RayShuffleReaderExecNode, RayShuffleWriterExecNode, RaySqlExecNode, ShuffleReaderExecNode,
-    ShuffleWriterExecNode,
-};
-use crate::shuffle::{
-    RayShuffleReaderExec, RayShuffleWriterExec, ShuffleReaderExec, ShuffleWriterExec,
-};
+use crate::protobuf::{RayShuffleReaderExecNode, RayShuffleWriterExecNode, RaySqlExecNode};
+use crate::shuffle::{RayShuffleReaderExec, RayShuffleWriterExec};
 use datafusion::arrow::datatypes::SchemaRef;
 use datafusion::common::{DataFusionError, Result};
 use datafusion::execution::runtime_env::RuntimeEnv;
 use datafusion::execution::FunctionRegistry;
-use datafusion::logical_expr::{AggregateUDF, ScalarUDF, WindowUDF};
 use datafusion::physical_plan::{ExecutionPlan, Partitioning};
 use datafusion_proto::physical_plan::from_proto::parse_protobuf_hash_partitioning;
 use datafusion_proto::physical_plan::to_proto::serialize_physical_expr;
 use datafusion_proto::physical_plan::PhysicalExtensionCodec;
 use datafusion_proto::physical_plan::{AsExecutionPlan, DefaultPhysicalExtensionCodec};
-use datafusion_proto::protobuf::{self, PhysicalExprNode};
-use datafusion_proto::protobuf::{PhysicalHashRepartition, PhysicalPlanNode};
+use datafusion_proto::protobuf::{self, PhysicalHashRepartition, PhysicalPlanNode};
 use prost::Message;
-use std::collections::HashSet;
 use std::sync::Arc;
 
 #[derive(Debug)]
@@ -54,41 +46,6 @@ impl PhysicalExtensionCodec for ShuffleCodec {
             .map_err(|e| DataFusionError::Internal(format!("failed to decode plan: {e:?}")))?;
         let extension_codec = DefaultPhysicalExtensionCodec {};
         match node.plan_type {
-            Some(PlanType::ShuffleReader(reader)) => {
-                let schema = reader.schema.as_ref().unwrap();
-                let schema: SchemaRef = Arc::new(schema.try_into().unwrap());
-                let hash_part = parse_protobuf_hash_partitioning(
-                    reader.partitioning.as_ref(),
-                    registry,
-                    &schema,
-                    &extension_codec,
-                )?;
-                Ok(Arc::new(ShuffleReaderExec::new(
-                    reader.stage_id as usize,
-                    schema,
-                    hash_part.unwrap(),
-                    &reader.shuffle_dir,
-                )))
-            }
-            Some(PlanType::ShuffleWriter(writer)) => {
-                let plan = writer.plan.unwrap().try_into_physical_plan(
-                    registry,
-                    &RuntimeEnv::default(),
-                    self,
-                )?;
-                let hash_part = parse_protobuf_hash_partitioning(
-                    writer.partitioning.as_ref(),
-                    registry,
-                    plan.schema().as_ref(),
-                    &extension_codec,
-                )?;
-                Ok(Arc::new(ShuffleWriterExec::new(
-                    writer.stage_id as usize,
-                    plan,
-                    hash_part.unwrap(),
-                    &writer.shuffle_dir,
-                )))
-            }
             Some(PlanType::RayShuffleReader(reader)) => {
                 let schema = reader.schema.as_ref().unwrap();
                 let schema: SchemaRef = Arc::new(schema.try_into().unwrap());
@@ -131,29 +88,7 @@ impl PhysicalExtensionCodec for ShuffleCodec {
         node: Arc<dyn ExecutionPlan>,
         buf: &mut Vec<u8>,
     ) -> Result<(), DataFusionError> {
-        let plan = if let Some(reader) = node.as_any().downcast_ref::<ShuffleReaderExec>() {
-            let schema: protobuf::Schema = reader.schema().try_into().unwrap();
-            let partitioning =
-                encode_partitioning_scheme(reader.properties().output_partitioning())?;
-            let reader = ShuffleReaderExecNode {
-                stage_id: reader.stage_id as u32,
-                schema: Some(schema),
-                partitioning: Some(partitioning),
-                shuffle_dir: reader.shuffle_dir.clone(),
-            };
-            PlanType::ShuffleReader(reader)
-        } else if let Some(writer) = node.as_any().downcast_ref::<ShuffleWriterExec>() {
-            let plan = PhysicalPlanNode::try_from_physical_plan(writer.plan.clone(), self)?;
-            let partitioning =
-                encode_partitioning_scheme(writer.properties().output_partitioning())?;
-            let writer = ShuffleWriterExecNode {
-                stage_id: writer.stage_id as u32,
-                plan: Some(plan),
-                partitioning: Some(partitioning),
-                shuffle_dir: writer.shuffle_dir.clone(),
-            };
-            PlanType::ShuffleWriter(writer)
-        } else if let Some(reader) = node.as_any().downcast_ref::<RayShuffleReaderExec>() {
+        let plan = if let Some(reader) = node.as_any().downcast_ref::<RayShuffleReaderExec>() {
             let schema: protobuf::Schema = reader.schema().try_into().unwrap();
             let partitioning =
                 encode_partitioning_scheme(reader.properties().output_partitioning())?;
@@ -199,29 +134,5 @@ fn encode_partitioning_scheme(partitioning: &Partitioning) -> Result<PhysicalHas
         other => Err(DataFusionError::Plan(format!(
             "Unsupported shuffle partitioning scheme: {other:?}"
         ))),
-    }
-}
-
-struct RaySqlFunctionRegistry {}
-
-impl FunctionRegistry for RaySqlFunctionRegistry {
-    fn udfs(&self) -> HashSet<String> {
-        HashSet::new()
-    }
-
-    fn udf(&self, name: &str) -> datafusion::common::Result<Arc<ScalarUDF>> {
-        Err(DataFusionError::Plan(format!("Invalid UDF: {name}")))
-    }
-
-    fn udaf(&self, name: &str) -> datafusion::common::Result<Arc<AggregateUDF>> {
-        Err(DataFusionError::Plan(format!("Invalid UDAF: {name}")))
-    }
-
-    fn udwf(&self, name: &str) -> datafusion::common::Result<Arc<WindowUDF>> {
-        Err(DataFusionError::Plan(format!("Invalid UDAWF: {name}")))
-    }
-
-    fn expr_planners(&self) -> Vec<Arc<dyn datafusion::logical_expr::planner::ExprPlanner>> {
-        todo!()
     }
 }

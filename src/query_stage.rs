@@ -15,7 +15,7 @@
 // specific language governing permissions and limitations
 // under the License.
 
-use crate::shuffle::{RayShuffleReaderExec, ShuffleCodec, ShuffleReaderExec};
+use crate::shuffle::{RayShuffleReaderExec, ShuffleCodec};
 use datafusion::error::Result;
 use datafusion::physical_plan::{ExecutionPlan, Partitioning};
 use datafusion::prelude::SessionContext;
@@ -110,9 +110,7 @@ impl QueryStage {
 }
 
 fn collect_child_stage_ids(plan: &dyn ExecutionPlan, ids: &mut Vec<usize>) {
-    if let Some(shuffle_reader) = plan.as_any().downcast_ref::<ShuffleReaderExec>() {
-        ids.push(shuffle_reader.stage_id);
-    } else if let Some(shuffle_reader) = plan.as_any().downcast_ref::<RayShuffleReaderExec>() {
+    if let Some(shuffle_reader) = plan.as_any().downcast_ref::<RayShuffleReaderExec>() {
         ids.push(shuffle_reader.stage_id);
     } else {
         for child_plan in plan.children() {
