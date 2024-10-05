@@ -23,7 +23,7 @@ ray start --head --node-ip-address=10.0.0.23 --port=6379 --dashboard-host=0.0.0.
 ray start --address=10.0.0.23:6379 --redis-password='5241590000000000'
 ```
 
-## Install DataFusion Ray
+## Install DataFusion Ray (on each node)
 
 Clone the repo with the version that you want to test. Run `maturin build --release` in the virtual env.
 
@@ -37,7 +37,7 @@ pip3 install maturin
 ```
 
 ```shell
-git clone https://github.com/andygrove/datafusion-ray.git
+git clone https://github.com/apache/datafusion-ray.git
 cd datafusion-ray
 maturin develop --release
 ```
