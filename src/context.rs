@@ -174,7 +174,7 @@ pub fn deserialize_execution_plan(bytes: Vec<u8>) -> PyResult<PyExecutionPlan> {
 /// Iterate down an ExecutionPlan and set the input objects for RayShuffleReaderExec.
 fn _set_inputs_for_ray_shuffle_reader(
     plan: Arc<dyn ExecutionPlan>,
-    input_partitions: &PyList,
+    input_partitions: &Bound<'_, PyList>,
 ) -> Result<()> {
     if let Some(reader_exec) = plan.as_any().downcast_ref::<RayShuffleReaderExec>() {
         let exec_stage_id = reader_exec.stage_id;
@@ -201,7 +201,7 @@ fn _set_inputs_for_ray_shuffle_reader(
                 .extract::<usize>()
                 .map_err(|e| DataFusionError::Execution(format!("{}", e)))?;
             let batch = RecordBatch::from_pyarrow_bound(
-                pytuple
+                &pytuple
                     .get_item(2)
                     .map_err(|e| DataFusionError::Execution(format!("{}", e)))?,
             )
