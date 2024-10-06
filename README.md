@@ -43,7 +43,8 @@ of [Apache Arrow], [Apache DataFusion], and [Ray].
 
 ### Comparison to DataFusion Python
 
-- [DataFusion Python] provides 
+- [DataFusion Python] provides a Python DataFrame and SQL API for in-process execution. DataFusion Ray extends 
+  DataFusion Python to provide scalability across multiple nodes.
 
 [DataFusion Python]: https://github.com/apache/datafusion-python
 
@@ -83,24 +84,6 @@ for record_batch in result_set:
 
 - Mature SQL support (CTEs, joins, subqueries, etc) thanks to DataFusion
 - Support for CSV and Parquet files
-
-## Performance
-
-This chart shows the performance of DataFusion Ray compared to Apache Spark for
-[SQLBench-H](https://sqlbenchmarks.io/sqlbench-h/) at a very small data set (10GB), running on a desktop (Threadripper
-with 24 physical cores). Both DataFusion Ray and Spark are configured with 24 executors.
-
-### Overall Time
-
-DataFusion Ray is ~1.9x faster overall for this scale factor and environment with disk-based shuffle.
-
-![SQLBench-H Total](./docs/sqlbench-h-total.png)
-
-### Per Query Time
-
-Spark is much faster on some queries, likely due to broadcast exchanges, which DataFusion Ray hasn't implemented yet.
-
-![SQLBench-H Per Query](./docs/sqlbench-h-per-query.png)
 
 ## Building
 
