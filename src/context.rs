@@ -200,7 +200,7 @@ fn _set_inputs_for_ray_shuffle_reader(
                 .map_err(|e| DataFusionError::Execution(format!("{}", e)))?
                 .extract::<usize>()
                 .map_err(|e| DataFusionError::Execution(format!("{}", e)))?;
-            let batch = RecordBatch::from_pyarrow(
+            let batch = RecordBatch::from_pyarrow_bound(
                 pytuple
                     .get_item(2)
                     .map_err(|e| DataFusionError::Execution(format!("{}", e)))?,
