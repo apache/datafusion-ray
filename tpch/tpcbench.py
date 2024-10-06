@@ -70,8 +70,7 @@ def main(benchmark: str, data_path: str, query_path: str, concurrency: int):
                 sql = sql.strip()
                 if len(sql) > 0:
                     print(f"Executing: {sql}")
-                    df = ctx.sql(sql)
-                    rows = df.collect()
+                    rows = ctx.sql(sql)
 
                     print(f"Query {query} returned {len(rows)} rows")
             end_time = time.time()
