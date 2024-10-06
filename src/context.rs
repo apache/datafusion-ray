@@ -235,7 +235,7 @@ fn _execute_partition(
     ));
     Python::with_gil(|py| {
         let input_partitions = inputs
-            .as_ref(py)
+            .bind(py)
             .downcast::<PyList>()
             .map_err(|e| DataFusionError::Execution(format!("{}", e)))?;
         _set_inputs_for_ray_shuffle_reader(plan.plan.clone(), input_partitions)

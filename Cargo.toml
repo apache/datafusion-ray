@@ -37,12 +37,12 @@ datafusion-python = { git = "https://github.com/apache/datafusion-python" }
 
 futures = "0.3"
 log = "0.4"
-prost = "0.12"
+prost = "0.13"
 pyo3 = { version = "0.22", features = ["extension-module", "abi3", "abi3-py38"] }
 tokio = { version = "1.40", features = ["macros", "rt", "rt-multi-thread", "sync"] }
 
 [build-dependencies]
-prost-types = "0.12"
+prost-types = "0.13"
 rustc_version = "0.4.0"
 tonic-build = { version = "0.8", default-features = false, features = ["transport", "prost"] }
 
