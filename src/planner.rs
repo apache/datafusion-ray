@@ -388,7 +388,7 @@ mod test {
             displayable(plan.as_ref()).indent(false)
         ));
 
-        output.push_str("DataFusion Ray Distributed Plan\n===========\n\n");
+        output.push_str("DataFusion Ray Distributed Plan\n===============================\n\n");
         let graph = make_execution_graph(plan)?;
         for id in 0..=graph.get_final_query_stage().id {
             let query_stage = graph.query_stages.get(&id).unwrap();
