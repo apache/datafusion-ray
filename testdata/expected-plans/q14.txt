@@ -26,10 +26,9 @@ ProjectionExec: expr=[100 * CAST(sum(CASE WHEN part.p_type LIKE Utf8("PROMO%") T
                     ParquetExec: file_groups={ ... }, projection=[p_partkey, p_type]
               CoalesceBatchesExec: target_batch_size=8192
                 RepartitionExec: partitioning=Hash([l_partkey@0], 2), input_partitions=2
-                  ProjectionExec: expr=[l_partkey@0 as l_partkey, l_extendedprice@1 as l_extendedprice, l_discount@2 as l_discount]
-                    CoalesceBatchesExec: target_batch_size=8192
-                      FilterExec: l_shipdate@3 >= 1995-02-01 AND l_shipdate@3 < 1995-03-01
-                        ParquetExec: file_groups={ ... }, projection=[l_partkey, l_extendedprice, l_discount, l_shipdate], predicate=l_shipdate@10 >= 1995-02-01 AND l_shipdate@10 < 1995-03-01, pruning_predicate=CASE WHEN l_shipdate_null_count@1 = l_shipdate_row_count@2 THEN false ELSE l_shipdate_max@0 >= 1995-02-01 END AND CASE WHEN l_shipdate_null_count@1 = l_shipdate_row_count@2 THEN false ELSE l_shipdate_min@3 < 1995-03-01 END, required_guarantees=[]
+                  CoalesceBatchesExec: target_batch_size=8192
+                    FilterExec: l_shipdate@3 >= 1995-02-01 AND l_shipdate@3 < 1995-03-01, projection=[l_partkey@0, l_extendedprice@1, l_discount@2]
+                      ParquetExec: file_groups={ ... }, projection=[l_partkey, l_extendedprice, l_discount, l_shipdate], predicate=l_shipdate@10 >= 1995-02-01 AND l_shipdate@10 < 1995-03-01, pruning_predicate=CASE WHEN l_shipdate_null_count@1 = l_shipdate_row_count@2 THEN false ELSE l_shipdate_max@0 >= 1995-02-01 END AND CASE WHEN l_shipdate_null_count@1 = l_shipdate_row_count@2 THEN false ELSE l_shipdate_min@3 < 1995-03-01 END, required_guarantees=[]
 
 DataFusion Ray Distributed Plan
 ===========
@@ -40,10 +39,9 @@ RayShuffleWriterExec(stage_id=0, output_partitioning=Hash([Column { name: "p_par
 
 Query Stage #1 (2 -> 2):
 RayShuffleWriterExec(stage_id=1, output_partitioning=Hash([Column { name: "l_partkey", index: 0 }], 2))
-  ProjectionExec: expr=[l_partkey@0 as l_partkey, l_extendedprice@1 as l_extendedprice, l_discount@2 as l_discount]
-    CoalesceBatchesExec: target_batch_size=8192
-      FilterExec: l_shipdate@3 >= 1995-02-01 AND l_shipdate@3 < 1995-03-01
-        ParquetExec: file_groups={ ... }, projection=[l_partkey, l_extendedprice, l_discount, l_shipdate], predicate=l_shipdate@10 >= 1995-02-01 AND l_shipdate@10 < 1995-03-01, pruning_predicate=CASE WHEN l_shipdate_null_count@1 = l_shipdate_row_count@2 THEN false ELSE l_shipdate_max@0 >= 1995-02-01 END AND CASE WHEN l_shipdate_null_count@1 = l_shipdate_row_count@2 THEN false ELSE l_shipdate_min@3 < 1995-03-01 END, required_guarantees=[]
+  CoalesceBatchesExec: target_batch_size=8192
+    FilterExec: l_shipdate@3 >= 1995-02-01 AND l_shipdate@3 < 1995-03-01, projection=[l_partkey@0, l_extendedprice@1, l_discount@2]
+      ParquetExec: file_groups={ ... }, projection=[l_partkey, l_extendedprice, l_discount, l_shipdate], predicate=l_shipdate@10 >= 1995-02-01 AND l_shipdate@10 < 1995-03-01, pruning_predicate=CASE WHEN l_shipdate_null_count@1 = l_shipdate_row_count@2 THEN false ELSE l_shipdate_max@0 >= 1995-02-01 END AND CASE WHEN l_shipdate_null_count@1 = l_shipdate_row_count@2 THEN false ELSE l_shipdate_min@3 < 1995-03-01 END, required_guarantees=[]
 
 Query Stage #2 (2 -> 1):
 RayShuffleWriterExec(stage_id=2, output_partitioning=Hash([], 2))

@@ -40,10 +40,9 @@ SortPreservingMergeExec: [s_name@0 ASC NULLS LAST]
                 CoalesceBatchesExec: target_batch_size=8192
                   RepartitionExec: partitioning=Hash([n_nationkey@0], 2), input_partitions=2
                     RepartitionExec: partitioning=RoundRobinBatch(2), input_partitions=1
-                      ProjectionExec: expr=[n_nationkey@0 as n_nationkey]
-                        CoalesceBatchesExec: target_batch_size=8192
-                          FilterExec: n_name@1 = KENYA
-                            ParquetExec: file_groups={ ... }, projection=[n_nationkey, n_name], predicate=n_name@1 = KENYA, pruning_predicate=CASE WHEN n_name_null_count@2 = n_name_row_count@3 THEN false ELSE n_name_min@0 <= KENYA AND KENYA <= n_name_max@1 END, required_guarantees=[n_name in (KENYA)]
+                      CoalesceBatchesExec: target_batch_size=8192
+                        FilterExec: n_name@1 = KENYA, projection=[n_nationkey@0]
+                          ParquetExec: file_groups={ ... }, projection=[n_nationkey, n_name], predicate=n_name@1 = KENYA, pruning_predicate=CASE WHEN n_name_null_count@2 = n_name_row_count@3 THEN false ELSE n_name_min@0 <= KENYA AND KENYA <= n_name_max@1 END, required_guarantees=[n_name in (KENYA)]
                 CoalesceBatchesExec: target_batch_size=8192
                   RepartitionExec: partitioning=Hash([s_nationkey@3], 2), input_partitions=2
                     RepartitionExec: partitioning=RoundRobinBatch(2), input_partitions=1
@@ -58,11 +57,10 @@ SortPreservingMergeExec: [s_name@0 ASC NULLS LAST]
                       HashJoinExec: mode=Partitioned, join_type=RightSemi, on=[(p_partkey@0, ps_partkey@0)]
                         CoalesceBatchesExec: target_batch_size=8192
                           RepartitionExec: partitioning=Hash([p_partkey@0], 2), input_partitions=2
-                            ProjectionExec: expr=[p_partkey@0 as p_partkey]
-                              CoalesceBatchesExec: target_batch_size=8192
-                                FilterExec: p_name@1 LIKE blanched%
-                                  RepartitionExec: partitioning=RoundRobinBatch(2), input_partitions=1
-                                    ParquetExec: file_groups={ ... }, projection=[p_partkey, p_name], predicate=p_name@1 LIKE blanched%
+                            CoalesceBatchesExec: target_batch_size=8192
+                              FilterExec: p_name@1 LIKE blanched%, projection=[p_partkey@0]
+                                RepartitionExec: partitioning=RoundRobinBatch(2), input_partitions=1
+                                  ParquetExec: file_groups={ ... }, projection=[p_partkey, p_name], predicate=p_name@1 LIKE blanched%
                         CoalesceBatchesExec: target_batch_size=8192
                           RepartitionExec: partitioning=Hash([ps_partkey@0], 2), input_partitions=2
                             ParquetExec: file_groups={ ... }, projection=[ps_partkey, ps_suppkey, ps_availqty]
@@ -71,20 +69,18 @@ SortPreservingMergeExec: [s_name@0 ASC NULLS LAST]
                     CoalesceBatchesExec: target_batch_size=8192
                       RepartitionExec: partitioning=Hash([l_partkey@0, l_suppkey@1], 2), input_partitions=2
                         AggregateExec: mode=Partial, gby=[l_partkey@0 as l_partkey, l_suppkey@1 as l_suppkey], aggr=[sum(lineitem.l_quantity)]
-                          ProjectionExec: expr=[l_partkey@0 as l_partkey, l_suppkey@1 as l_suppkey, l_quantity@2 as l_quantity]
-                            CoalesceBatchesExec: target_batch_size=8192
-                              FilterExec: l_shipdate@3 >= 1993-01-01 AND l_shipdate@3 < 1994-01-01
-                                ParquetExec: file_groups={ ... }, projection=[l_partkey, l_suppkey, l_quantity, l_shipdate], predicate=l_shipdate@10 >= 1993-01-01 AND l_shipdate@10 < 1994-01-01, pruning_predicate=CASE WHEN l_shipdate_null_count@1 = l_shipdate_row_count@2 THEN false ELSE l_shipdate_max@0 >= 1993-01-01 END AND CASE WHEN l_shipdate_null_count@1 = l_shipdate_row_count@2 THEN false ELSE l_shipdate_min@3 < 1994-01-01 END, required_guarantees=[]
+                          CoalesceBatchesExec: target_batch_size=8192
+                            FilterExec: l_shipdate@3 >= 1993-01-01 AND l_shipdate@3 < 1994-01-01, projection=[l_partkey@0, l_suppkey@1, l_quantity@2]
+                              ParquetExec: file_groups={ ... }, projection=[l_partkey, l_suppkey, l_quantity, l_shipdate], predicate=l_shipdate@10 >= 1993-01-01 AND l_shipdate@10 < 1994-01-01, pruning_predicate=CASE WHEN l_shipdate_null_count@1 = l_shipdate_row_count@2 THEN false ELSE l_shipdate_max@0 >= 1993-01-01 END AND CASE WHEN l_shipdate_null_count@1 = l_shipdate_row_count@2 THEN false ELSE l_shipdate_min@3 < 1994-01-01 END, required_guarantees=[]
 
 DataFusion Ray Distributed Plan
 ===========
 
 Query Stage #0 (1 -> 2):
 RayShuffleWriterExec(stage_id=0, output_partitioning=Hash([Column { name: "n_nationkey", index: 0 }], 2))
-  ProjectionExec: expr=[n_nationkey@0 as n_nationkey]
-    CoalesceBatchesExec: target_batch_size=8192
-      FilterExec: n_name@1 = KENYA
-        ParquetExec: file_groups={ ... }, projection=[n_nationkey, n_name], predicate=n_name@1 = KENYA, pruning_predicate=CASE WHEN n_name_null_count@2 = n_name_row_count@3 THEN false ELSE n_name_min@0 <= KENYA AND KENYA <= n_name_max@1 END, required_guarantees=[n_name in (KENYA)]
+  CoalesceBatchesExec: target_batch_size=8192
+    FilterExec: n_name@1 = KENYA, projection=[n_nationkey@0]
+      ParquetExec: file_groups={ ... }, projection=[n_nationkey, n_name], predicate=n_name@1 = KENYA, pruning_predicate=CASE WHEN n_name_null_count@2 = n_name_row_count@3 THEN false ELSE n_name_min@0 <= KENYA AND KENYA <= n_name_max@1 END, required_guarantees=[n_name in (KENYA)]
 
 Query Stage #1 (1 -> 2):
 RayShuffleWriterExec(stage_id=1, output_partitioning=Hash([Column { name: "s_nationkey", index: 3 }], 2))
@@ -101,10 +97,9 @@ RayShuffleWriterExec(stage_id=2, output_partitioning=Hash([Column { name: "s_sup
 
 Query Stage #3 (1 -> 2):
 RayShuffleWriterExec(stage_id=3, output_partitioning=Hash([Column { name: "p_partkey", index: 0 }], 2))
-  ProjectionExec: expr=[p_partkey@0 as p_partkey]
-    CoalesceBatchesExec: target_batch_size=8192
-      FilterExec: p_name@1 LIKE blanched%
-        ParquetExec: file_groups={ ... }, projection=[p_partkey, p_name], predicate=p_name@1 LIKE blanched%
+  CoalesceBatchesExec: target_batch_size=8192
+    FilterExec: p_name@1 LIKE blanched%, projection=[p_partkey@0]
+      ParquetExec: file_groups={ ... }, projection=[p_partkey, p_name], predicate=p_name@1 LIKE blanched%
 
 Query Stage #4 (2 -> 2):
 RayShuffleWriterExec(stage_id=4, output_partitioning=Hash([Column { name: "ps_partkey", index: 0 }], 2))
@@ -122,10 +117,9 @@ RayShuffleWriterExec(stage_id=5, output_partitioning=Hash([Column { name: "ps_pa
 Query Stage #6 (2 -> 2):
 RayShuffleWriterExec(stage_id=6, output_partitioning=Hash([Column { name: "l_partkey", index: 0 }, Column { name: "l_suppkey", index: 1 }], 2))
   AggregateExec: mode=Partial, gby=[l_partkey@0 as l_partkey, l_suppkey@1 as l_suppkey], aggr=[sum(lineitem.l_quantity)]
-    ProjectionExec: expr=[l_partkey@0 as l_partkey, l_suppkey@1 as l_suppkey, l_quantity@2 as l_quantity]
-      CoalesceBatchesExec: target_batch_size=8192
-        FilterExec: l_shipdate@3 >= 1993-01-01 AND l_shipdate@3 < 1994-01-01
-          ParquetExec: file_groups={ ... }, projection=[l_partkey, l_suppkey, l_quantity, l_shipdate], predicate=l_shipdate@10 >= 1993-01-01 AND l_shipdate@10 < 1994-01-01, pruning_predicate=CASE WHEN l_shipdate_null_count@1 = l_shipdate_row_count@2 THEN false ELSE l_shipdate_max@0 >= 1993-01-01 END AND CASE WHEN l_shipdate_null_count@1 = l_shipdate_row_count@2 THEN false ELSE l_shipdate_min@3 < 1994-01-01 END, required_guarantees=[]
+    CoalesceBatchesExec: target_batch_size=8192
+      FilterExec: l_shipdate@3 >= 1993-01-01 AND l_shipdate@3 < 1994-01-01, projection=[l_partkey@0, l_suppkey@1, l_quantity@2]
+        ParquetExec: file_groups={ ... }, projection=[l_partkey, l_suppkey, l_quantity, l_shipdate], predicate=l_shipdate@10 >= 1993-01-01 AND l_shipdate@10 < 1994-01-01, pruning_predicate=CASE WHEN l_shipdate_null_count@1 = l_shipdate_row_count@2 THEN false ELSE l_shipdate_max@0 >= 1993-01-01 END AND CASE WHEN l_shipdate_null_count@1 = l_shipdate_row_count@2 THEN false ELSE l_shipdate_min@3 < 1994-01-01 END, required_guarantees=[]
 
 Query Stage #7 (2 -> 2):
 RayShuffleWriterExec(stage_id=7, output_partitioning=Hash([Column { name: "ps_suppkey", index: 0 }], 2))

@@ -30,11 +30,10 @@ ProjectionExec: expr=[CAST(sum(lineitem.l_extendedprice)@0 AS Float64) / 7 as av
                 HashJoinExec: mode=Partitioned, join_type=Inner, on=[(p_partkey@0, l_partkey@0)], projection=[p_partkey@0, l_quantity@2, l_extendedprice@3]
                   CoalesceBatchesExec: target_batch_size=8192
                     RepartitionExec: partitioning=Hash([p_partkey@0], 2), input_partitions=2
-                      ProjectionExec: expr=[p_partkey@0 as p_partkey]
-                        CoalesceBatchesExec: target_batch_size=8192
-                          FilterExec: p_brand@1 = Brand#42 AND p_container@2 = LG BAG
-                            RepartitionExec: partitioning=RoundRobinBatch(2), input_partitions=1
-                              ParquetExec: file_groups={ ... }, projection=[p_partkey, p_brand, p_container], predicate=p_brand@3 = Brand#42 AND p_container@6 = LG BAG, pruning_predicate=CASE WHEN p_brand_null_count@2 = p_brand_row_count@3 THEN false ELSE p_brand_min@0 <= Brand#42 AND Brand#42 <= p_brand_max@1 END AND CASE WHEN p_container_null_count@6 = p_container_row_count@7 THEN false ELSE p_container_min@4 <= LG BAG AND LG BAG <= p_container_max@5 END, required_guarantees=[p_brand in (Brand#42), p_container in (LG BAG)]
+                      CoalesceBatchesExec: target_batch_size=8192
+                        FilterExec: p_brand@1 = Brand#42 AND p_container@2 = LG BAG, projection=[p_partkey@0]
+                          RepartitionExec: partitioning=RoundRobinBatch(2), input_partitions=1
+                            ParquetExec: file_groups={ ... }, projection=[p_partkey, p_brand, p_container], predicate=p_brand@3 = Brand#42 AND p_container@6 = LG BAG, pruning_predicate=CASE WHEN p_brand_null_count@2 = p_brand_row_count@3 THEN false ELSE p_brand_min@0 <= Brand#42 AND Brand#42 <= p_brand_max@1 END AND CASE WHEN p_container_null_count@6 = p_container_row_count@7 THEN false ELSE p_container_min@4 <= LG BAG AND LG BAG <= p_container_max@5 END, required_guarantees=[p_brand in (Brand#42), p_container in (LG BAG)]
                   CoalesceBatchesExec: target_batch_size=8192
                     RepartitionExec: partitioning=Hash([l_partkey@0], 2), input_partitions=2
                       ParquetExec: file_groups={ ... }, projection=[l_partkey, l_quantity, l_extendedprice]
@@ -50,10 +49,9 @@ DataFusion Ray Distributed Plan
 
 Query Stage #0 (1 -> 2):
 RayShuffleWriterExec(stage_id=0, output_partitioning=Hash([Column { name: "p_partkey", index: 0 }], 2))
-  ProjectionExec: expr=[p_partkey@0 as p_partkey]
-    CoalesceBatchesExec: target_batch_size=8192
-      FilterExec: p_brand@1 = Brand#42 AND p_container@2 = LG BAG
-        ParquetExec: file_groups={ ... }, projection=[p_partkey, p_brand, p_container], predicate=p_brand@3 = Brand#42 AND p_container@6 = LG BAG, pruning_predicate=CASE WHEN p_brand_null_count@2 = p_brand_row_count@3 THEN false ELSE p_brand_min@0 <= Brand#42 AND Brand#42 <= p_brand_max@1 END AND CASE WHEN p_container_null_count@6 = p_container_row_count@7 THEN false ELSE p_container_min@4 <= LG BAG AND LG BAG <= p_container_max@5 END, required_guarantees=[p_brand in (Brand#42), p_container in (LG BAG)]
+  CoalesceBatchesExec: target_batch_size=8192
+    FilterExec: p_brand@1 = Brand#42 AND p_container@2 = LG BAG, projection=[p_partkey@0]
+      ParquetExec: file_groups={ ... }, projection=[p_partkey, p_brand, p_container], predicate=p_brand@3 = Brand#42 AND p_container@6 = LG BAG, pruning_predicate=CASE WHEN p_brand_null_count@2 = p_brand_row_count@3 THEN false ELSE p_brand_min@0 <= Brand#42 AND Brand#42 <= p_brand_max@1 END AND CASE WHEN p_container_null_count@6 = p_container_row_count@7 THEN false ELSE p_container_min@4 <= LG BAG AND LG BAG <= p_container_max@5 END, required_guarantees=[p_brand in (Brand#42), p_container in (LG BAG)]
 
 Query Stage #1 (2 -> 2):
 RayShuffleWriterExec(stage_id=1, output_partitioning=Hash([Column { name: "l_partkey", index: 0 }], 2))

@@ -33,10 +33,9 @@ SortPreservingMergeExec: [custdist@1 DESC,c_count@0 DESC]
                           ParquetExec: file_groups={ ... }, projection=[c_custkey]
                       CoalesceBatchesExec: target_batch_size=8192
                         RepartitionExec: partitioning=Hash([o_custkey@1], 2), input_partitions=2
-                          ProjectionExec: expr=[o_orderkey@0 as o_orderkey, o_custkey@1 as o_custkey]
-                            CoalesceBatchesExec: target_batch_size=8192
-                              FilterExec: o_comment@2 NOT LIKE %express%requests%
-                                ParquetExec: file_groups={ ... }, projection=[o_orderkey, o_custkey, o_comment], predicate=o_comment@8 NOT LIKE %express%requests%
+                          CoalesceBatchesExec: target_batch_size=8192
+                            FilterExec: o_comment@2 NOT LIKE %express%requests%, projection=[o_orderkey@0, o_custkey@1]
+                              ParquetExec: file_groups={ ... }, projection=[o_orderkey, o_custkey, o_comment], predicate=o_comment@8 NOT LIKE %express%requests%
 
 DataFusion Ray Distributed Plan
 ===========
@@ -47,10 +46,9 @@ RayShuffleWriterExec(stage_id=0, output_partitioning=Hash([Column { name: "c_cus
 
 Query Stage #1 (2 -> 2):
 RayShuffleWriterExec(stage_id=1, output_partitioning=Hash([Column { name: "o_custkey", index: 1 }], 2))
-  ProjectionExec: expr=[o_orderkey@0 as o_orderkey, o_custkey@1 as o_custkey]
-    CoalesceBatchesExec: target_batch_size=8192
-      FilterExec: o_comment@2 NOT LIKE %express%requests%
-        ParquetExec: file_groups={ ... }, projection=[o_orderkey, o_custkey, o_comment], predicate=o_comment@8 NOT LIKE %express%requests%
+  CoalesceBatchesExec: target_batch_size=8192
+    FilterExec: o_comment@2 NOT LIKE %express%requests%, projection=[o_orderkey@0, o_custkey@1]
+      ParquetExec: file_groups={ ... }, projection=[o_orderkey, o_custkey, o_comment], predicate=o_comment@8 NOT LIKE %express%requests%
 
 Query Stage #2 (2 -> 2):
 RayShuffleWriterExec(stage_id=2, output_partitioning=Hash([Column { name: "c_count", index: 0 }], 2))
