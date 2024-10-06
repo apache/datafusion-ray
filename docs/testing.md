@@ -1,6 +1,6 @@
 # Distributed Testing
 
-Install Ray on at least two nodes. 
+Install Ray on at least one nodes. 
 
 https://docs.ray.io/en/latest/ray-overview/installation.html
 
@@ -14,13 +14,13 @@ pip3 install -U "ray[default]"
 ## Start Ray Head Node
 
 ```shell
-ray start --head --node-ip-address=10.0.0.23 --port=6379 --dashboard-host=0.0.0.0
+ ray start --head --dashboard-host 0.0.0.0 --include-dashboard true
 ```
 
-## Start Ray Worker Nodes(s)
+## Start Ray Worker Nodes(s) (Optional, and MacOS doesn't support multi-node cluster)
 
 ```shell
-ray start --address=10.0.0.23:6379 --redis-password='5241590000000000'
+ray start --address=127.0.0.1:6379
 ```
 
 ## Install DataFusion Ray (on each node)
@@ -44,7 +44,16 @@ maturin develop --release
 
 ## Submit Job
 
+1. If starting the cluster manually, simply connect to the existing cluster instead of reinitializing it.
+```
+# Start a local cluster
+# ray.init(resources={"worker": 1})
+
+# Connect to a cluster
+ray.init()
+```
+
+2. Submit the job to Ray Cluster
 ```shell
-cd examples
-RAY_ADDRESS='http://10.0.0.23:8265'  ray job submit --working-dir `pwd` -- python3 tips.py
+RAY_ADDRESS='http://10.0.0.23:8265'  ray job submit --working-dir examples -- python3 tips.py
 ```
