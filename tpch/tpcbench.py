@@ -81,7 +81,7 @@ def main(benchmark: str, data_path: str, query_path: str, concurrency: int):
 
     str = json.dumps(results, indent=4)
     current_time_millis = int(datetime.now().timestamp() * 1000)
-    results_path = f"datafusion-python-{benchmark}-{current_time_millis}.json"
+    results_path = f"datafusion-ray-{benchmark}-{current_time_millis}.json"
     print(f"Writing results to {results_path}")
     with open(results_path, "w") as f:
         f.write(str)
