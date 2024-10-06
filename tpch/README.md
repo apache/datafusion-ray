@@ -21,6 +21,8 @@
 
 ## Running Benchmarks
 
+Data and queries must be available on all nodes of the Ray cluster.
+
 ```shell
- RAY_ADDRESS='http://10.0.0.23:8265'  ray job submit --working-dir `pwd` -- python3 tpcbench.py --benchmark tpch --data /path/to/data --queries /path/to/tpch/queries --concurrency 16
+ RAY_ADDRESS='http://ray-cluster-ip-address:8265'  ray job submit --working-dir `pwd` -- python3 tpcbench.py --benchmark tpch --data /path/to/data --queries /path/to/tpch/queries --concurrency 4
 ```
