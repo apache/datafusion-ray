@@ -22,11 +22,8 @@ from datafusion_ray import DatafusionRayContext
 
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 
-# Start a local cluster
-ray.init(resources={"worker": 1})
-
 # Connect to a cluster
-# ray.init()
+ray.init()
 
 # Create a context and register a table
 ctx = DatafusionRayContext(2)
