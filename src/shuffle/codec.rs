@@ -121,9 +121,7 @@ fn encode_partitioning_scheme(partitioning: &Partitioning) -> Result<PhysicalHas
         Partitioning::Hash(expr, partition_count) => Ok(protobuf::PhysicalHashRepartition {
             hash_expr: expr
                 .iter()
-                .map(|expr| {
-                    serialize_physical_expr(expr.clone(), &DefaultPhysicalExtensionCodec {})
-                })
+                .map(|expr| serialize_physical_expr(expr, &DefaultPhysicalExtensionCodec {}))
                 .collect::<Result<Vec<_>, DataFusionError>>()?,
             partition_count: *partition_count as u64,
         }),

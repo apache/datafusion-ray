@@ -43,10 +43,9 @@ SortPreservingMergeExec: [value@1 DESC]
                     CoalesceBatchesExec: target_batch_size=8192
                       RepartitionExec: partitioning=Hash([n_nationkey@0], 2), input_partitions=2
                         RepartitionExec: partitioning=RoundRobinBatch(2), input_partitions=1
-                          ProjectionExec: expr=[n_nationkey@0 as n_nationkey]
-                            CoalesceBatchesExec: target_batch_size=8192
-                              FilterExec: n_name@1 = ALGERIA
-                                ParquetExec: file_groups={ ... }, projection=[n_nationkey, n_name], predicate=n_name@1 = ALGERIA, pruning_predicate=CASE WHEN n_name_null_count@2 = n_name_row_count@3 THEN false ELSE n_name_min@0 <= ALGERIA AND ALGERIA <= n_name_max@1 END, required_guarantees=[n_name in (ALGERIA)]
+                          CoalesceBatchesExec: target_batch_size=8192
+                            FilterExec: n_name@1 = ALGERIA, projection=[n_nationkey@0]
+                              ParquetExec: file_groups={ ... }, projection=[n_nationkey, n_name], predicate=n_name@1 = ALGERIA, pruning_predicate=CASE WHEN n_name_null_count@2 = n_name_row_count@3 THEN false ELSE n_name_min@0 <= ALGERIA AND ALGERIA <= n_name_max@1 END, required_guarantees=[n_name in (ALGERIA)]
                     CoalesceBatchesExec: target_batch_size=8192
                       RepartitionExec: partitioning=Hash([s_nationkey@2], 2), input_partitions=2
                         ProjectionExec: expr=[ps_availqty@1 as ps_availqty, ps_supplycost@2 as ps_supplycost, s_nationkey@0 as s_nationkey]
@@ -68,10 +67,9 @@ SortPreservingMergeExec: [value@1 DESC]
                     CoalesceBatchesExec: target_batch_size=8192
                       RepartitionExec: partitioning=Hash([n_nationkey@0], 2), input_partitions=2
                         RepartitionExec: partitioning=RoundRobinBatch(2), input_partitions=1
-                          ProjectionExec: expr=[n_nationkey@0 as n_nationkey]
-                            CoalesceBatchesExec: target_batch_size=8192
-                              FilterExec: n_name@1 = ALGERIA
-                                ParquetExec: file_groups={ ... }, projection=[n_nationkey, n_name], predicate=n_name@1 = ALGERIA, pruning_predicate=CASE WHEN n_name_null_count@2 = n_name_row_count@3 THEN false ELSE n_name_min@0 <= ALGERIA AND ALGERIA <= n_name_max@1 END, required_guarantees=[n_name in (ALGERIA)]
+                          CoalesceBatchesExec: target_batch_size=8192
+                            FilterExec: n_name@1 = ALGERIA, projection=[n_nationkey@0]
+                              ParquetExec: file_groups={ ... }, projection=[n_nationkey, n_name], predicate=n_name@1 = ALGERIA, pruning_predicate=CASE WHEN n_name_null_count@2 = n_name_row_count@3 THEN false ELSE n_name_min@0 <= ALGERIA AND ALGERIA <= n_name_max@1 END, required_guarantees=[n_name in (ALGERIA)]
                     CoalesceBatchesExec: target_batch_size=8192
                       RepartitionExec: partitioning=Hash([s_nationkey@3], 2), input_partitions=2
                         ProjectionExec: expr=[ps_partkey@1 as ps_partkey, ps_availqty@2 as ps_availqty, ps_supplycost@3 as ps_supplycost, s_nationkey@0 as s_nationkey]
@@ -90,10 +88,9 @@ DataFusion Ray Distributed Plan
 
 Query Stage #0 (1 -> 2):
 RayShuffleWriterExec(stage_id=0, output_partitioning=Hash([Column { name: "n_nationkey", index: 0 }], 2))
-  ProjectionExec: expr=[n_nationkey@0 as n_nationkey]
-    CoalesceBatchesExec: target_batch_size=8192
-      FilterExec: n_name@1 = ALGERIA
-        ParquetExec: file_groups={ ... }, projection=[n_nationkey, n_name], predicate=n_name@1 = ALGERIA, pruning_predicate=CASE WHEN n_name_null_count@2 = n_name_row_count@3 THEN false ELSE n_name_min@0 <= ALGERIA AND ALGERIA <= n_name_max@1 END, required_guarantees=[n_name in (ALGERIA)]
+  CoalesceBatchesExec: target_batch_size=8192
+    FilterExec: n_name@1 = ALGERIA, projection=[n_nationkey@0]
+      ParquetExec: file_groups={ ... }, projection=[n_nationkey, n_name], predicate=n_name@1 = ALGERIA, pruning_predicate=CASE WHEN n_name_null_count@2 = n_name_row_count@3 THEN false ELSE n_name_min@0 <= ALGERIA AND ALGERIA <= n_name_max@1 END, required_guarantees=[n_name in (ALGERIA)]
 
 Query Stage #1 (1 -> 2):
 RayShuffleWriterExec(stage_id=1, output_partitioning=Hash([Column { name: "s_suppkey", index: 0 }], 2))
@@ -125,10 +122,9 @@ RayShuffleWriterExec(stage_id=4, output_partitioning=Hash([], 2))
 
 Query Stage #5 (1 -> 2):
 RayShuffleWriterExec(stage_id=5, output_partitioning=Hash([Column { name: "n_nationkey", index: 0 }], 2))
-  ProjectionExec: expr=[n_nationkey@0 as n_nationkey]
-    CoalesceBatchesExec: target_batch_size=8192
-      FilterExec: n_name@1 = ALGERIA
-        ParquetExec: file_groups={ ... }, projection=[n_nationkey, n_name], predicate=n_name@1 = ALGERIA, pruning_predicate=CASE WHEN n_name_null_count@2 = n_name_row_count@3 THEN false ELSE n_name_min@0 <= ALGERIA AND ALGERIA <= n_name_max@1 END, required_guarantees=[n_name in (ALGERIA)]
+  CoalesceBatchesExec: target_batch_size=8192
+    FilterExec: n_name@1 = ALGERIA, projection=[n_nationkey@0]
+      ParquetExec: file_groups={ ... }, projection=[n_nationkey, n_name], predicate=n_name@1 = ALGERIA, pruning_predicate=CASE WHEN n_name_null_count@2 = n_name_row_count@3 THEN false ELSE n_name_min@0 <= ALGERIA AND ALGERIA <= n_name_max@1 END, required_guarantees=[n_name in (ALGERIA)]
 
 Query Stage #6 (1 -> 2):
 RayShuffleWriterExec(stage_id=6, output_partitioning=Hash([Column { name: "s_suppkey", index: 0 }], 2))
