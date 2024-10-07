@@ -30,5 +30,5 @@ RUN source venv/bin/activate && \
     maturin build --release
 
 FROM rayproject/ray:2.37.0.cabc24-py312
-COPY --from=0 /home/ray/target/wheels/datafusion_ray-0.6.0-cp38-abi3-manylinux_2_35_x86_64.whl /home/ray/datafusion_ray-0.6.0-cp38-abi3-manylinux_2_35_x86_64.whl
-RUN pip3 install /home/ray/datafusion_ray-0.6.0-cp38-abi3-manylinux_2_35_x86_64.whl
+COPY --from=0 /home/ray/target/wheels/*.whl /home/ray/
+RUN pip3 install /home/ray/*.whl
