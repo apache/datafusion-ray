@@ -19,6 +19,6 @@ import pytest
 from datafusion_ray import Context
 
 def test():
-    ctx = Context(1, False)
+    ctx = Context(1)
     ctx.register_csv('tips', 'examples/tips.csv', True)
     ctx.plan("SELECT * FROM tips")
