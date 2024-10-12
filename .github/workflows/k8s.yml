@@ -4,26 +4,23 @@ on:
   push:
   pull_request:
 
-env:
-  CARGO_TERM_COLOR: always
-  PYTHON_VERSION: 3.9
-  TPCH_SCALING_FACTOR: "1"
-  TPCH_TEST_PARTITIONS: "1"
-  TPCH_DATA_PATH: "data"
-
 jobs:
   build:
     runs-on: ubuntu-latest
 
     steps:
       - uses: actions/checkout@v3
-      - name: Set up Python
-        uses: actions/setup-python@v2
-        with:
-          python-version: ${{ env.PYTHON_VERSION }}
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build and push Docker image
         uses: docker/build-push-action@v6
@@ -31,3 +28,5 @@ jobs:
           context: .
           file: ./k8s/Dockerfile
           tags: username/repository:tag
+          # Push only on tags
+          push: ${{ startsWith(github.ref, 'refs/tags/') }}
