@@ -32,7 +32,6 @@ jobs:
         uses: docker/metadata-action@v5
         with:
           images: |
-            apache/datafusion-ray
             ghcr.io/apache/datafusion-ray
           tags: |
             type=ref,event=branch
