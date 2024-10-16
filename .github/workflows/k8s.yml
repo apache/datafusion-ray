@@ -68,12 +68,12 @@ jobs:
           load: true
 
       - name: Kind Cluster
-        uses: helm/kind-action@v1.10.0
+        uses: helm/kind-action@0025e74
         with:
           config: ./k8s/kind-config.yaml
 
       - name: Free Disk Space (Ubuntu)
-        uses: jlumbroso/free-disk-space@main
+        uses: jlumbroso/free-disk-space@ab7a4be
         with:
           # this might remove tools that are actually needed,
           # when set to "true" but frees about 6 GB
