@@ -206,8 +206,8 @@ def execute_query_partition(
 
 
 class DatafusionRayContext:
-    def __init__(self, num_workers: int = 1):
-        self.ctx = Context(num_workers)
+    def __init__(self, df_ctx, num_workers: int = 1):
+        self.ctx = Context(df_ctx)
         self.num_workers = num_workers
 
     def register_csv(self, table_name: str, path: str, has_header: bool):
