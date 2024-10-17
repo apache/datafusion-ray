@@ -6,6 +6,7 @@ option java_multiple_files = true;
 option java_package = "datafusion_ray.protobuf";
 option java_outer_classname = "RaySqlProto";
 
+import "datafusion_common.proto";
 import "datafusion.proto";
 
 message RaySqlExecNode {
@@ -19,7 +20,7 @@ message RayShuffleReaderExecNode {
   // stage to read from
   uint32 stage_id = 1;
   // schema of the shuffle stage
-  datafusion.Schema schema = 2;
+  datafusion_common.Schema schema = 2;
   // this must match the output partitioning of the writer we are reading from
   datafusion.PhysicalHashRepartition partitioning = 3;
 }
