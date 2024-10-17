@@ -28,7 +28,6 @@ pub mod context;
 pub mod planner;
 pub mod query_stage;
 pub mod shuffle;
-pub mod utils;
 
 /// A Python module implemented in Rust.
 #[pymodule]

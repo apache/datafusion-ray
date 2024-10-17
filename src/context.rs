@@ -17,27 +17,17 @@
 
 use crate::planner::{make_execution_graph, PyExecutionGraph};
 use crate::shuffle::{RayShuffleReaderExec, ShuffleCodec};
-use crate::utils::wait_for_future;
 use datafusion::arrow::pyarrow::FromPyArrow;
 use datafusion::arrow::pyarrow::ToPyArrow;
 use datafusion::arrow::record_batch::RecordBatch;
 use datafusion::error::{DataFusionError, Result};
 use datafusion::execution::context::TaskContext;
-use datafusion::execution::disk_manager::DiskManagerConfig;
-use datafusion::execution::memory_pool::FairSpillPool;
-use datafusion::execution::options::ReadOptions;
-use datafusion::execution::registry::MemoryFunctionRegistry;
 use datafusion::execution::runtime_env::RuntimeEnv;
-use datafusion::execution::FunctionRegistry;
 use datafusion::physical_plan::{displayable, ExecutionPlan};
 use datafusion::prelude::*;
-use datafusion_proto::bytes::{
-    physical_plan_from_bytes_with_extension_codec, physical_plan_to_bytes_with_extension_codec,
-};
-use datafusion_proto::physical_plan::{AsExecutionPlan, DefaultPhysicalExtensionCodec};
+use datafusion_proto::physical_plan::AsExecutionPlan;
 use datafusion_proto::protobuf;
 use futures::StreamExt;
-use prost::{DecodeError, Message};
 use pyo3::exceptions::PyRuntimeError;
 use pyo3::prelude::*;
 use pyo3::types::{PyList, PyLong, PyTuple};
