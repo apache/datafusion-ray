@@ -74,7 +74,7 @@ def schedule_execution(
         return ids, futures
 
     # schedule the actual execution workers
-    plan_bytes = datafusion_ray.serialize_execution_plan(stage.get_execution_plan())
+    plan_bytes = stage.get_execution_plan_bytes()
     futures = []
     opt = {}
     # TODO not sure why we had this but my Ray cluster could not find suitable resource
@@ -106,9 +106,7 @@ def execute_query_stage(
     # execute child stages first
     child_futures = []
     for child_id in stage.get_child_stage_ids():
-        child_futures.append(
-            execute_query_stage.remote(query_stages, child_id)
-        )
+        child_futures.append(execute_query_stage.remote(query_stages, child_id))
 
     # if the query stage has a single output partition then we need to execute for the output
     # partition, otherwise we need to execute in parallel for each input partition
@@ -149,12 +147,12 @@ def execute_query_stage(
         return ids, futures
 
     # schedule the actual execution workers
-    plan_bytes = datafusion_ray.serialize_execution_plan(stage.get_execution_plan())
+    plan_bytes = stage.get_execution_plan_bytes()
     futures = []
     opt = {}
     # TODO not sure why we had this but my Ray cluster could not find suitable resource
     # until I commented this out
-    #opt["resources"] = {"worker": 1e-3}
+    # opt["resources"] = {"worker": 1e-3}
     opt["num_returns"] = output_partitions_count
     for part in range(concurrency):
         ids, inputs = _get_worker_inputs(part)
@@ -176,7 +174,7 @@ def execute_query_partition(
     *input_partitions: list[pa.RecordBatch],
 ) -> Iterable[pa.RecordBatch]:
     start_time = time.time()
-    plan = datafusion_ray.deserialize_execution_plan(plan_bytes)
+    # plan = datafusion_ray.deserialize_execution_plan(plan_bytes)
     # print(
     #     "Worker executing plan {} partition #{} with shuffle inputs {}".format(
     #         plan.display(),
@@ -190,7 +188,7 @@ def execute_query_partition(
     # This is delegating to DataFusion for execution, but this would be a good place
     # to plug in other execution engines by translating the plan into another engine's plan
     # (perhaps via Substrait, once DataFusion supports converting a physical plan to Substrait)
-    ret = datafusion_ray.execute_partition(plan, part, partitions)
+    ret = datafusion_ray.execute_partition(plan_bytes, part, partitions)
     duration = time.time() - start_time
     event = {
         "cat": f"{stage_id}-{part}",

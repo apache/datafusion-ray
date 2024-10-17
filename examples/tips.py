@@ -29,7 +29,7 @@ ray.init()
 # Create a context and register a table
 df_ctx = SessionContext()
 
-ray_ctx = DatafusionRayContext(df_ctx, num_workers=2, use_ray_shuffle=True)
+ray_ctx = DatafusionRayContext(df_ctx, num_workers=2)
 # Register either a CSV or Parquet file
 # ctx.register_csv("tips", f"{SCRIPT_DIR}/tips.csv", True)
 df_ctx.register_parquet("tips", f"{SCRIPT_DIR}/tips.parquet")

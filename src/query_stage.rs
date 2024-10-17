@@ -15,12 +15,14 @@
 // specific language governing permissions and limitations
 // under the License.
 
+use crate::context::serialize_execution_plan;
 use crate::shuffle::{RayShuffleReaderExec, ShuffleCodec};
 use datafusion::error::Result;
 use datafusion::physical_plan::{ExecutionPlan, Partitioning};
 use datafusion::prelude::SessionContext;
 use datafusion_proto::bytes::physical_plan_from_bytes_with_extension_codec;
 use pyo3::prelude::*;
+use pyo3::types::PyBytes;
 use std::sync::Arc;
 
 #[pyclass(name = "QueryStage", module = "datafusion_ray", subclass)]
@@ -50,9 +52,9 @@ impl PyQueryStage {
         self.stage.id
     }
 
-    // pub fn get_execution_plan(&self) -> PyExecutionPlan {
-    //     PyExecutionPlan::new(self.stage.plan.clone())
-    // }
+    pub fn get_execution_plan_bytes<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyBytes>> {
+        serialize_execution_plan(self.stage.plan.clone(), py)
+    }
 
     pub fn get_child_stage_ids(&self) -> Vec<usize> {
         self.stage.get_child_stage_ids()

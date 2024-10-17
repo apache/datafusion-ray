@@ -28,9 +28,10 @@ use datafusion::prelude::*;
 use datafusion_proto::physical_plan::AsExecutionPlan;
 use datafusion_proto::protobuf;
 use futures::StreamExt;
+use prost::Message;
 use pyo3::exceptions::PyRuntimeError;
 use pyo3::prelude::*;
-use pyo3::types::{PyList, PyLong, PyTuple};
+use pyo3::types::{PyBytes, PyList, PyLong, PyTuple};
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::runtime::Runtime;
@@ -145,44 +146,68 @@ impl PyContext {
     /// Execute a partition of a query plan. This will typically be executing a shuffle write and write the results to disk
     pub fn execute_partition(
         &self,
-        plan: &Bound<'_, PyAny>,
+        plan: &Bound<'_, PyBytes>,
         part: usize,
         inputs: PyObject,
         py: Python,
-    ) -> PyResultSet {
+    ) -> PyResult<PyResultSet> {
         execute_partition(plan, part, inputs, py)
     }
 }
 
 #[pyfunction]
 pub fn execute_partition(
-    plan: &Bound<'_, PyAny>,
+    plan_bytes: &Bound<'_, PyBytes>,
     part: usize,
     inputs: PyObject,
     py: Python,
-) -> PyResultSet {
+) -> PyResult<PyResultSet> {
+    let plan = deserialize_execution_plan(plan_bytes)?;
     _execute_partition(plan, part, inputs)
         .unwrap()
         .into_iter()
-        .map(|batch| batch.to_pyarrow(py).unwrap()) // TODO(@lsf) handle error
+        .map(|batch| batch.to_pyarrow(py))
         .collect()
 }
 
-// TODO(@lsf) change this to use pickle
-// #[pyfunction]
-// pub fn serialize_execution_plan(plan: Py<PyAny>) -> PyResult<Vec<u8>> {
-//     let codec = ShuffleCodec {};
-//     Ok(physical_plan_to_bytes_with_extension_codec(plan.plan, &codec)?.to_vec())
-// }
+pub fn serialize_execution_plan(
+    plan: Arc<dyn ExecutionPlan>,
+    py: Python,
+) -> PyResult<Bound<'_, PyBytes>> {
+    let codec = ShuffleCodec {};
+    let proto =
+        datafusion_proto::protobuf::PhysicalPlanNode::try_from_physical_plan(plan.clone(), &codec)?;
 
-// #[pyfunction]
-// pub fn deserialize_execution_plan(bytes: Vec<u8>) -> PyResult<PyExecutionPlan> {
-//     let ctx = SessionContext::new();
-//     let codec = ShuffleCodec {};
-//     Ok(PyExecutionPlan::new(
-//         physical_plan_from_bytes_with_extension_codec(&bytes, &ctx, &codec)?,
-//     ))
-// }
+    let bytes = proto.encode_to_vec();
+    Ok(PyBytes::new_bound(py, &bytes))
+}
+
+pub fn deserialize_execution_plan(proto_msg: &Bound<PyBytes>) -> PyResult<Arc<dyn ExecutionPlan>> {
+    let bytes: &[u8] = proto_msg.extract()?;
+    let proto_plan =
+        datafusion_proto::protobuf::PhysicalPlanNode::try_decode(bytes).map_err(|e| {
+            PyRuntimeError::new_err(format!(
+                "Unable to decode logical node from serialized bytes: {}",
+                e
+            ))
+        })?;
+
+    let ctx = SessionContext::new();
+    let codec = ShuffleCodec {};
+    let plan = proto_plan
+        .try_into_physical_plan(&ctx, &ctx.runtime_env(), &codec)
+        .map_err(DataFusionError::from)?;
+    // Ok(Self::new(plan))
+
+    Ok(plan)
+    // let ctx = SessionContext::new();
+    // let codec = ShuffleCodec {};
+    // Ok(PyExecutionPlan::new(
+    //     physical_plan_from_bytes_with_extension_codec(&bytes, &ctx, &codec)?,
+    // ))
+
+    // Ok(())
+}
 
 /// Iterate down an ExecutionPlan and set the input objects for RayShuffleReaderExec.
 fn _set_inputs_for_ray_shuffle_reader(
@@ -233,7 +258,7 @@ fn _set_inputs_for_ray_shuffle_reader(
 /// write the results to disk, except for the final query stage, which will return the data.
 /// inputs is a list of tuples of (stage_id, partition_id, bytes) for each input partition.
 fn _execute_partition(
-    py_plan: &Bound<'_, PyAny>,
+    plan: Arc<dyn ExecutionPlan>,
     part: usize,
     inputs: PyObject,
 ) -> Result<Vec<RecordBatch>> {
@@ -247,8 +272,6 @@ fn _execute_partition(
         Arc::new(RuntimeEnv::default()),
     ));
 
-    let plan = execution_plan_from_pyany(py_plan)
-        .map_err(|e| DataFusionError::Execution(e.to_string()))?;
     Python::with_gil(|py| {
         let input_partitions = inputs
             .downcast_bound::<PyList>(py)
