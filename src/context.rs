@@ -73,37 +73,6 @@ impl PyContext {
         })
     }
 
-    // pub fn register_csv(
-    //     &self,
-    //     name: &str,
-    //     path: &str,
-    //     has_header: bool,
-    //     py: Python,
-    // ) -> PyResult<()> {
-    //     let options = CsvReadOptions::default().has_header(has_header);
-    //     wait_for_future(py, self.ctx.register_csv(name, path, options))?;
-    //     Ok(())
-    // }
-
-    // pub fn register_parquet(&self, name: &str, path: &str, py: Python) -> PyResult<()> {
-    //     let options = ParquetReadOptions::default();
-    //     wait_for_future(py, self.ctx.register_parquet(name, path, options))?;
-    //     Ok(())
-    // }
-
-    // pub fn register_datalake_table(
-    //     &self,
-    //     name: &str,
-    //     path: Vec<String>,
-    //     py: Python,
-    // ) -> PyResult<()> {
-    //     // let options = ParquetReadOptions::default();
-    //     // let listing_options = options.to_listing_options(&self.ctx.state().config());
-    //     // wait_for_future(py, self.ctx.register_listing_table(name, path, listing_options, None, None))?;
-    //     // Ok(())
-    //     unimplemented!()
-    // }
-
     /// Execute SQL directly against the DataFusion context. Useful for statements
     /// such as "create view" or "drop view"
     pub fn sql(&self, query: &str, py: Python) -> PyResult<()> {
@@ -197,16 +166,8 @@ pub fn deserialize_execution_plan(proto_msg: &Bound<PyBytes>) -> PyResult<Arc<dy
     let plan = proto_plan
         .try_into_physical_plan(&ctx, &ctx.runtime_env(), &codec)
         .map_err(DataFusionError::from)?;
-    // Ok(Self::new(plan))
 
     Ok(plan)
-    // let ctx = SessionContext::new();
-    // let codec = ShuffleCodec {};
-    // Ok(PyExecutionPlan::new(
-    //     physical_plan_from_bytes_with_extension_codec(&bytes, &ctx, &codec)?,
-    // ))
-
-    // Ok(())
 }
 
 /// Iterate down an ExecutionPlan and set the input objects for RayShuffleReaderExec.
