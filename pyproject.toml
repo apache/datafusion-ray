@@ -27,7 +27,11 @@ classifiers = [
     "Programming Language :: Python :: Implementation :: CPython",
     "Programming Language :: Python :: Implementation :: PyPy",
 ]
-
+dependencies = [
+    "datafusion>=42.0.0",
+    "pyarrow>=11.0.0",
+    "typing-extensions;python_version<'3.13'",
+]
 
 [tool.maturin]
 module-name = "datafusion_ray._datafusion_ray_internal"

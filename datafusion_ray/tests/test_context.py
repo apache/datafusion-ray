@@ -15,10 +15,12 @@
 # specific language governing permissions and limitations
 # under the License.
 
-import pytest
 from datafusion_ray import Context
+from datafusion import SessionContext
+
 
 def test():
-    ctx = Context(1)
-    ctx.register_csv('tips', 'examples/tips.csv', True)
+    df_ctx = SessionContext()
+    ctx = Context(df_ctx, False)
+    df_ctx.register_csv("tips", "examples/tips.csv", has_header=True)
     ctx.plan("SELECT * FROM tips")
