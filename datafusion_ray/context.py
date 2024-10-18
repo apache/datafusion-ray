@@ -25,7 +25,8 @@ import ray
 
 import datafusion_ray
 from datafusion_ray import Context, ExecutionGraph, QueryStage
-from typing import List
+from typing import List, Any
+from datafusion import SessionContext
 
 
 def schedule_execution(
@@ -204,9 +205,9 @@ def execute_query_partition(
 
 
 class DatafusionRayContext:
-    def __init__(self, df_ctx, num_workers: int = 1):
+    def __init__(self, df_ctx: SessionContext):
+        self.df_ctx = df_ctx
         self.ctx = Context(df_ctx)
-        self.num_workers = num_workers
 
     def register_csv(self, table_name: str, path: str, has_header: bool):
         self.ctx.register_csv(table_name, path, has_header)
@@ -225,7 +226,18 @@ class DatafusionRayContext:
             self.ctx.sql(sql)
             return []
 
-        graph = self.ctx.plan(sql)
+        df = self.df_ctx.sql(sql)
+        execution_plan = df.execution_plan()
+
+        graph = self.ctx.plan(execution_plan)
+        final_stage_id = graph.get_final_query_stage().id()
+        partitions = schedule_execution(graph, final_stage_id, True)
+        # assert len(partitions) == 1, len(partitions)
+        result_set = ray.get(partitions[0])
+        return result_set
+
+    def plan(self, physical_plan: Any) -> pa.RecordBatch:
+        graph = self.ctx.plan(physical_plan)
         final_stage_id = graph.get_final_query_stage().id()
         partitions = schedule_execution(graph, final_stage_id, True)
         # assert len(partitions) == 1, len(partitions)

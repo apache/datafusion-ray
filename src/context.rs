@@ -88,14 +88,14 @@ impl PyContext {
     }
 
     /// Plan a distributed SELECT query for executing against the Ray workers
-    pub fn plan(&self, sql: &str, py: Python) -> PyResult<PyExecutionGraph> {
-        println!("Planning {}", sql);
+    pub fn plan(&self, plan: &Bound<PyAny>) -> PyResult<PyExecutionGraph> {
+        // println!("Planning {}", sql);
         // let df = wait_for_future(py, self.ctx.sql(sql))?;
-        let py_df = self.run_sql(sql, py)?;
-        let py_plan = py_df.call_method0(py, "execution_plan")?;
-        let py_plan = py_plan.bind(py);
+        // let py_df = self.run_sql(sql, py)?;
+        // let py_plan = py_df.call_method0(py, "execution_plan")?;
+        // let py_plan = py_plan.bind(py);
 
-        let plan = execution_plan_from_pyany(py_plan)?;
+        let plan = execution_plan_from_pyany(plan)?;
         let graph = make_execution_graph(plan.clone())?;
 
         // debug logging
