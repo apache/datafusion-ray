@@ -352,10 +352,8 @@ mod test {
 
     async fn do_test(n: u8) -> TestResult<()> {
         let tpch_path_env_var = "TPCH_DATA_PATH";
-        let data_path = env::var(tpch_path_env_var).expect(&format!(
-            "Environment variable {} not found",
-            tpch_path_env_var
-        ));
+        let data_path = env::var(tpch_path_env_var)
+            .unwrap_or_else(|_| panic!("Environment variable {} not found", tpch_path_env_var));
 
         let file = format!("testdata/queries/q{n}.sql");
         let sql = fs::read_to_string(&file)?;

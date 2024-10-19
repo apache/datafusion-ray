@@ -1,0 +1,34 @@
+# Ignore the target directory where Rust build artifacts are placed
+/target
+
+# Ignore the local Cargo registry and git db (cached crates)
+/cargo/.git
+/cargo/registry
+
+# Ignore build scripts or binaries
+*.exe
+*.dll
+*.so
+*.dylib
+
+# Ignore backup and swap files
+*.swp
+*.swo
+*.bak
+
+# Ignore any IDE-specific or editor-specific files (e.g., VSCode, IntelliJ, etc.)
+**/.vscode
+**/.idea
+**/.gdb_history
+**/.git
+**/.DS_Store
+
+# Ignore test result files
+/tests/results/
+
+# Ignore unnecessary temporary or system files
+**/node_modules
+*.log
+*.tmp
+*.lock
+!Cargo.lock
