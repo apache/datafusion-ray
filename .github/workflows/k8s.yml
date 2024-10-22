@@ -20,6 +20,11 @@ on:
   push:
   pull_request:
 
+env:
+  RAY_HELM_VERSION: 1.1.0
+  PYTHON_VERSION: 3.9
+  IMAGE_REPOSITORY: ghcr.io/apache/datafusion-ray
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -32,7 +37,7 @@ jobs:
         uses: docker/metadata-action@v5
         with:
           images: |
-            ghcr.io/apache/datafusion-ray
+            ${{ env.IMAGE_REPOSITORY }}
           tags: |
             type=ref,event=branch
             type=ref,event=pr
@@ -40,6 +45,7 @@ jobs:
             type=semver,pattern={{major}}.{{minor}}
             type=semver,pattern={{major}}
             type=sha
+
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
@@ -59,3 +65,59 @@ jobs:
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           push: ${{ startsWith(github.ref, 'refs/tags/') }}
+          load: true
+
+      - name: Kind Cluster
+        uses: helm/kind-action@v1.10.0
+        with:
+          config: ./k8s/kind-config.yaml
+
+      - name: Free Disk Space (Ubuntu)
+        uses: jlumbroso/free-disk-space@v1.3.1
+        with:
+          # this might remove tools that are actually needed,
+          # when set to "true" but frees about 6 GB
+          tool-cache: true
+          docker-images: false
+
+      - name: Extract short SHA
+        run: |
+          SHORT_SHA=$(echo "${GITHUB_SHA}" | cut -c1-7)
+          echo "IMAGE_TAG=sha-${SHORT_SHA}" >> "$GITHUB_ENV"
+          echo "Extracted short SHA tag: sha-${SHORT_SHA}"
+
+      - name: Load Docker image into Kind cluster
+        run: |
+          kind load docker-image ${{ env.IMAGE_REPOSITORY }}:${{ env.IMAGE_TAG }} -n chart-testing
+
+      - name: Install Helm
+        uses: azure/setup-helm@v4.2.0
+        with:
+          version: "3.16.0"
+
+      - name: Deploy helm chart
+        run: |
+          helm repo add kuberay https://ray-project.github.io/kuberay-helm/
+          helm install kuberay-operator kuberay/kuberay-operator --version ${{ env.RAY_HELM_VERSION }}
+          helm install raycluster kuberay/ray-cluster --version ${{ env.RAY_HELM_VERSION }} \
+            --set image.repository=${{ env.IMAGE_REPOSITORY }} \
+            --set image.tag=${{ env.IMAGE_TAG }} \
+            --set imagePullPolicy=Always
+          echo "Deployed Ray cluster with image repository: ${{ env.IMAGE_REPOSITORY }} and tag: ${{ env.IMAGE_TAG }}"
+
+      - name: Set up Python
+        uses: actions/setup-python@v3
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-in.txt
+
+      - name: Submit an example ray Job
+        run: |
+          kubectl port-forward service/raycluster-kuberay-head-svc 8265:8265 &
+          export RAY_ADDRESS="http://127.0.0.1:8265"
+          pip  install "ray[default]"
+          ray job submit --working-dir ./examples/ -- python3 tips.py
