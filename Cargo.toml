@@ -40,6 +40,7 @@ pyo3 = { version = "0.22", features = ["extension-module", "abi3", "abi3-py38"] 
 tokio = { version = "1.40", features = ["macros", "rt", "rt-multi-thread", "sync"] }
 uuid = "1.11.0"
 async-trait = "0.1.83"
+datafusion-table-providers = { version = "0.2.3", default-features = false, optional = true }
 
 [build-dependencies]
 prost-types = "0.13"
@@ -61,3 +62,6 @@ name = "datafusion_ray._datafusion_ray_internal"
 [profile.release]
 codegen-units = 1
 lto = true
+
+[features]
+flight-sql-tables = ["datafusion-table-providers/flight"]

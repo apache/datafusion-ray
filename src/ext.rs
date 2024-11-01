@@ -14,6 +14,9 @@ use std::sync::{Arc, OnceLock};
 
 mod built_in;
 
+#[cfg(feature = "flight-sql-tables")]
+mod flight;
+
 /// Creates a datafusion session context preconfigured with the enabled extensions
 /// that will register additional table providers, catalogs etc.
 /// If no extensions are required, the plain `datafusion.SessionContext()` will work just fine.
@@ -69,6 +72,8 @@ impl Extensions {
     fn new() -> Self {
         Self(Box::new([
             Box::new(built_in::DefaultExtension::default()),
+            #[cfg(feature = "flight-sql-tables")]
+            Box::new(flight::FlightSqlTables::default()),
         ]))
     }
 
