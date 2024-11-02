@@ -83,9 +83,9 @@ This process is not fully automated, so there are some additional manual steps:
 - Add the following content (copy from the previous version's changelog and update as appropriate:
 
 ```
-## [24.0.0](https://github.com/apache/datafusion-python/tree/24.0.0) (2023-05-06)
+## [24.0.0](https://github.com/apache/datafusion-ray/tree/24.0.0) (2023-05-06)
 
-[Full Changelog](https://github.com/apache/datafusion-python/compare/23.0.0...24.0.0)
+[Full Changelog](https://github.com/apache/datafusion-ray/compare/23.0.0...24.0.0)
 ```
 
 ### Preparing a Release Candidate
@@ -116,7 +116,7 @@ This section assumes some familiarity with publishing Python packages to PyPi. F
 
 Pushing an `rc` tag to the release branch will cause a GitHub Workflow to run that will build the Python wheels.
 
-Go to https://github.com/apache/datafusion-python/actions and look for an action named "Python Release Build"
+Go to https://github.com/apache/datafusion-ray/actions and look for an action named "Python Release Build"
 that has run against the pushed tag.
 
 Click on the action and scroll down to the bottom of the page titled "Artifacts". Download `dist.zip`. It should
@@ -163,8 +163,8 @@ Running the unit tests against a testpypi release candidate:
 
 ```bash
 # clone a fresh repo
-git clone https://github.com/apache/datafusion-python.git
-cd datafusion-python
+git clone https://github.com/apache/datafusion-ray.git
+cd datafusion-ray
 
 # checkout the release commit
 git fetch --tags
@@ -268,13 +268,13 @@ Release candidates should be deleted once the release is published.
 Get a list of DataFusion release candidates:
 
 ```bash
-svn ls https://dist.apache.org/repos/dist/dev/datafusion | grep datafusion-python
+svn ls https://dist.apache.org/repos/dist/dev/datafusion | grep datafusion-ray
 ```
 
 Delete a release candidate:
 
 ```bash
-svn delete -m "delete old DataFusion RC" https://dist.apache.org/repos/dist/dev/datafusion/apache-datafusion-python-7.1.0-rc1/
+svn delete -m "delete old DataFusion RC" https://dist.apache.org/repos/dist/dev/datafusion/apache-datafusion-ray-7.1.0-rc1/
 ```
 
 #### Deleting old releases from `release` svn
@@ -284,11 +284,11 @@ Only the latest release should be available. Delete old releases after publishin
 Get a list of DataFusion releases:
 
 ```bash
-svn ls https://dist.apache.org/repos/dist/release/datafusion | grep datafusion-python
+svn ls https://dist.apache.org/repos/dist/release/datafusion | grep datafusion-ray
 ```
 
 Delete a release:
 
 ```bash
-svn delete -m "delete old DataFusion release" https://dist.apache.org/repos/dist/release/datafusion/datafusion-python-7.0.0
+svn delete -m "delete old DataFusion release" https://dist.apache.org/repos/dist/release/datafusion/datafusion-ray-7.0.0
 ```

@@ -154,7 +154,7 @@ def cli(args=None):
     args = parser.parse_args()
 
     token = os.getenv("GITHUB_TOKEN")
-    project = "apache/datafusion-python"
+    project = "apache/datafusion-ray"
 
     g = Github(token)
     repo = g.get_repo(project)

@@ -45,7 +45,7 @@ download_dist_file() {
 }
 
 download_rc_file() {
-  download_dist_file apache-datafusion-python-${VERSION}-rc${RC_NUMBER}/$1
+  download_dist_file apache-datafusion-ray-${VERSION}-rc${RC_NUMBER}/$1
 }
 
 import_gpg_keys() {
@@ -142,11 +142,11 @@ test_source_distribution() {
 
 TEST_SUCCESS=no
 
-setup_tempdir "datafusion-python-${VERSION}"
+setup_tempdir "datafusion-ray-${VERSION}"
 echo "Working in sandbox ${DATAFUSION_PYTHON_TMPDIR}"
 cd ${DATAFUSION_PYTHON_TMPDIR}
 
-dist_name="apache-datafusion-python-${VERSION}"
+dist_name="apache-datafusion-ray-${VERSION}"
 import_gpg_keys
 fetch_archive ${dist_name}
 tar xf ${dist_name}.tar.gz
