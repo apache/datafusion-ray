@@ -56,7 +56,6 @@ def main(benchmark: str, data_path: str, query_path: str):
         'benchmark': benchmark,
         'data_path': data_path,
         'query_path': query_path,
-        'concurrency': concurrency,
     }
 
     for query in range(1, num_queries + 1):
