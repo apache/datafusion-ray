@@ -23,7 +23,7 @@ from datetime import datetime
 import json
 import time
 
-def main(benchmark: str, data_path: str, query_path: str, concurrency: int):
+def main(benchmark: str, data_path: str, query_path: str):
 
     # Register the tables
     if benchmark == "tpch":
@@ -96,4 +96,4 @@ if __name__ == "__main__":
     parser.add_argument("--queries", required=True, help="Path to query files")
     args = parser.parse_args()
 
-    main(args.benchmark, args.data, args.queries, int(args.concurrency))
+    main(args.benchmark, args.data, args.queries)

@@ -26,7 +26,7 @@
 Data and queries must be available on all nodes of the Ray cluster.
 
 ```shell
- RAY_ADDRESS='http://ray-cluster-ip-address:8265'  ray job submit --working-dir `pwd` -- python3 tpcbench.py --benchmark tpch --data /path/to/data --queries /path/to/tpch/queries --concurrency 4
+ RAY_ADDRESS='http://ray-cluster-ip-address:8265'  ray job submit --working-dir `pwd` -- python3 tpcbench.py --benchmark tpch --data /path/to/data --queries /path/to/tpch/queries
 ```
 
 ### Kubernetes
@@ -38,6 +38,8 @@ docker build -t YOURREPO/datafusion-ray-tpch .
 ```
 
 If the data files are local to the k8s nodes, then create a persistent volume and persistent volume claim.
+
+Create a `pv.yaml` with the following content and run `kubectl apply -f pv.yaml`.
 
 ```yaml
 apiVersion: v1
@@ -54,6 +56,8 @@ spec:
     path: "/mnt/bigdata"  # Adjust the path as needed
 ```
 
+Create a `pvc.yaml` with the following content and run `kubectl apply -f pvc.yaml`.
+
 ```yaml
 apiVersion: v1
 kind: PersistentVolumeClaim
@@ -69,6 +73,8 @@ spec:
 ```
 
 Create the Ray cluster using the custom image.
+
+Create a `ray-cluster.yaml` with the following content and run `kubectl apply -f ray-cluster.yaml`.
 
 ```yaml
 apiVersion: ray.io/v1alpha1
@@ -108,4 +114,10 @@ spec:
             - name: ray-storage
               persistentVolumeClaim:
                 claimName: ray-pvc
+```
+
+Run the benchmarks
+
+```shell
+ray job submit --working-dir `pwd` -- python3 tpcbench.py --benchmark tpch --queries /home/ray/datafusion-benchmarks/tpch/queries/ --data /mnt/bigdata/tpch/sf100
 ```
