@@ -89,6 +89,9 @@ def main(benchmark: str, data_path: str, query_path: str):
     with open(results_path, "w") as f:
         f.write(str)
 
+    # write results to stdout
+    print(str)
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="DataFusion benchmark derived from TPC-H / TPC-DS")
     parser.add_argument("--benchmark", required=True, help="Benchmark to run (tpch or tpcds)")
