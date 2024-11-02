@@ -75,10 +75,10 @@ echo ""
 echo "---------------------------------------------------------"
 cat <<MAIL
 To: dev@datafusion.apache.org
-Subject: [VOTE] Release DataFusion Python Bindings ${version} RC${rc}
+Subject: [VOTE] Release DataFusion Ray ${version} RC${rc}
 Hi,
 
-I would like to propose a release of the Apache DataFusion Python Bindings,
+I would like to propose a release of the Apache DataFusion Ray subproject,
 version ${version}.
 
 This release candidate is based on commit: ${release_hash} [1]
@@ -94,9 +94,9 @@ encouraged to test the release and vote with "(non-binding)".
 
 The standard verification procedure is documented at https://github.com/apache/datafusion-ray/blob/main/dev/release/README.md#verifying-release-candidates.
 
-[ ] +1 Release this as Apache DataFusion Python ${version}
+[ ] +1 Release this as Apache DataFusion Ray ${version}
 [ ] +0
-[ ] -1 Do not release this as Apache DataFusion Python ${version} because...
+[ ] -1 Do not release this as Apache DataFusion Ray ${version} because...
 
 Here is my vote:
 
@@ -105,7 +105,7 @@ Here is my vote:
 [1]: https://github.com/apache/datafusion-ray/tree/${release_hash}
 [2]: ${url}
 [3]: https://github.com/apache/datafusion-ray/blob/${release_hash}/CHANGELOG.md
-[4]: https://test.pypi.org/project/datafusion/${version}/
+[4]: https://test.pypi.org/project/datafusion-ray/${version}/
 MAIL
 echo "---------------------------------------------------------"
 
@@ -130,4 +130,4 @@ gpg --armor --output ${tarball}.asc --detach-sig ${tarball}
 echo "Uploading to datafusion dist/dev to ${url}"
 svn co --depth=empty https://dist.apache.org/repos/dist/dev/datafusion ${SOURCE_TOP_DIR}/dev/dist
 svn add ${distdir}
-svn ci -m "Apache DataFusion Python ${version} ${rc}" ${distdir}
+svn ci -m "Apache DataFusion Ray ${version} ${rc}" ${distdir}

@@ -32,8 +32,8 @@ set -x
 set -o pipefail
 
 SOURCE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
-DATAFUSION_PYTHON_DIR="$(dirname $(dirname ${SOURCE_DIR}))"
-DATAFUSION_PYTHON_DIST_URL='https://dist.apache.org/repos/dist/dev/datafusion'
+DATAFUSION_RAY_DIR="$(dirname $(dirname ${SOURCE_DIR}))"
+DATAFUSION_RAY_DIST_URL='https://dist.apache.org/repos/dist/dev/datafusion'
 
 download_dist_file() {
   curl \
@@ -41,7 +41,7 @@ download_dist_file() {
     --show-error \
     --fail \
     --location \
-    --remote-name $DATAFUSION_PYTHON_DIST_URL/$1
+    --remote-name $DATAFUSION_RAY_DIST_URL/$1
 }
 
 download_rc_file() {
@@ -89,19 +89,19 @@ verify_dir_artifact_signatures() {
 setup_tempdir() {
   cleanup() {
     if [ "${TEST_SUCCESS}" = "yes" ]; then
-      rm -fr "${DATAFUSION_PYTHON_TMPDIR}"
+      rm -fr "${DATAFUSION_RAY_TMPDIR}"
     else
-      echo "Failed to verify release candidate. See ${DATAFUSION_PYTHON_TMPDIR} for details."
+      echo "Failed to verify release candidate. See ${DATAFUSION_RAY_TMPDIR} for details."
     fi
   }
 
-  if [ -z "${DATAFUSION_PYTHON_TMPDIR}" ]; then
-    # clean up automatically if DATAFUSION_PYTHON_TMPDIR is not defined
-    DATAFUSION_PYTHON_TMPDIR=$(mktemp -d -t "$1.XXXXX")
+  if [ -z "${DATAFUSION_RAY_TMPDIR}" ]; then
+    # clean up automatically if DATAFUSION_RAY_TMPDIR is not defined
+    DATAFUSION_RAY_TMPDIR=$(mktemp -d -t "$1.XXXXX")
     trap cleanup EXIT
   else
     # don't clean up automatically
-    mkdir -p "${DATAFUSION_PYTHON_TMPDIR}"
+    mkdir -p "${DATAFUSION_RAY_TMPDIR}"
   fi
 }
 
@@ -121,14 +121,10 @@ test_source_distribution() {
   rustup component add rustfmt --toolchain stable
   cargo fmt --all -- --check
 
-  # Clone testing repositories into the expected location
-  git clone https://github.com/apache/arrow-testing.git testing
-  git clone https://github.com/apache/parquet-testing.git parquet-testing
-
   python3 -m venv venv
   source venv/bin/activate
   python3 -m pip install -U pip
-  python3 -m pip install -r requirements-310.txt
+  python3 -m pip install -r requirements-in.txt
   maturin develop
 
   #TODO: we should really run tests here as well
@@ -143,8 +139,8 @@ test_source_distribution() {
 TEST_SUCCESS=no
 
 setup_tempdir "datafusion-ray-${VERSION}"
-echo "Working in sandbox ${DATAFUSION_PYTHON_TMPDIR}"
-cd ${DATAFUSION_PYTHON_TMPDIR}
+echo "Working in sandbox ${DATAFUSION_RAY_TMPDIR}"
+cd ${DATAFUSION_RAY_TMPDIR}
 
 dist_name="apache-datafusion-ray-${VERSION}"
 import_gpg_keys
