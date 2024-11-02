@@ -111,7 +111,7 @@ specific language governing permissions and limitations
 under the License.
 -->\n""")
 
-    print(f"# Apache DataFusion Python {version} Changelog\n")
+    print(f"# Apache DataFusion Ray {version} Changelog\n")
 
     # get the number of commits
     commit_count = subprocess.check_output(f"git log --pretty=oneline {tag1}..{tag2} | wc -l", shell=True, text=True).strip()
