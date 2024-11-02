@@ -40,8 +40,8 @@ Next, deploy a RayCluster using the custom image.
 ```shell
 helm repo update
 helm install datafusion-ray kuberay/ray-cluster \
-    --set 'image.repository=[YOUR_REPOSITORY]' \
-    --set 'image.tag=[YOUR_TAG]' \
+    --set 'image.repository=andygrove/datafusion-ray' \
+    --set 'image.tag=latest' \
     --set 'imagePullPolicy=Always'
 ```
 Make sure you replace *[YOUR_REPOSITORY]* and *[YOUR_TAG]* with your actual container registry and image tag values.

@@ -17,6 +17,7 @@
 
 import argparse
 import ray
+from datafusion import SessionContext
 from datafusion_ray import DatafusionRayContext
 from datetime import datetime
 import json
@@ -41,12 +42,14 @@ def main(benchmark: str, data_path: str, query_path: str, concurrency: int):
     # use ray job submit
     ray.init()
 
-    ctx = DatafusionRayContext(concurrency)
+    df_ctx = SessionContext()
+
+    ray_ctx = DatafusionRayContext(df_ctx)
 
     for table in table_names:
         path = f"{data_path}/{table}.parquet"
         print(f"Registering table {table} using path {path}")
-        ctx.register_parquet(table, path)
+        df_ctx.register_parquet(table, path)
 
     results = {
         'engine': 'datafusion-python',
@@ -70,7 +73,7 @@ def main(benchmark: str, data_path: str, query_path: str, concurrency: int):
                 sql = sql.strip()
                 if len(sql) > 0:
                     print(f"Executing: {sql}")
-                    rows = ctx.sql(sql)
+                    rows = ray_ctx.sql(sql)
 
                     print(f"Query {query} returned {len(rows)} rows")
             end_time = time.time()
@@ -91,7 +94,6 @@ if __name__ == "__main__":
     parser.add_argument("--benchmark", required=True, help="Benchmark to run (tpch or tpcds)")
     parser.add_argument("--data", required=True, help="Path to data files")
     parser.add_argument("--queries", required=True, help="Path to query files")
-    parser.add_argument("--concurrency", required=True, help="Number of concurrent tasks")
     args = parser.parse_args()
 
     main(args.benchmark, args.data, args.queries, int(args.concurrency))
