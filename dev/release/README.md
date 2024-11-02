@@ -17,7 +17,7 @@
   under the License.
 -->
 
-# DataFusion Python Release Process
+# DataFusion Ray Release Process
 
 Development happens on the `main` branch, and most of the time, we depend on DataFusion using GitHub dependencies
 rather than using an official release from crates.io. This allows us to pick up new features and bug fixes frequently
@@ -26,11 +26,11 @@ required due to changes in DataFusion rather than having a large amount of work 
 is available.
 
 When there is a new official release of DataFusion, we update the `main` branch to point to that, update the version
-number, and create a new release branch, such as `branch-0.8`. Once this branch is created, we switch the `main` branch
+number, and create a new release branch, such as `branch-0.2`. Once this branch is created, we switch the `main` branch
 back to using GitHub dependencies. The release activity (such as generating the changelog) can then happen on the
 release branch without blocking ongoing development in the `main` branch.
 
-We can cherry-pick commits from the `main` branch into `branch-0.8` as needed and then create new patch releases
+We can cherry-pick commits from the `main` branch into `branch-0.2` as needed and then create new patch releases
 from that branch.
 
 ## Detailed Guide
@@ -46,7 +46,7 @@ to generate one if you do not already have one.
 You will need a PyPI API token. Create one at https://test.pypi.org/manage/account/#api-tokens, setting the “Scope” to
 “Entire account”.
 
-You will also need access to the [datafusion](https://test.pypi.org/project/datafusion/) project on testpypi.
+You will also need access to the [datafusion-ray](https://test.pypi.org/project/datafusion-ray/) project on testpypi.
 
 ### Preparing the `main` Branch
 
@@ -54,7 +54,7 @@ Before creating a new release:
 
 - We need to ensure that the main branch does not have any GitHub dependencies
 - a PR should be created and merged to update the major version number of the project
-- A new release branch should be created, such as `branch-0.8`
+- A new release branch should be created, such as `branch-0.2`
 
 ### Change Log
 
@@ -63,7 +63,7 @@ We maintain a `CHANGELOG.md` so our users know what has been changed between rel
 The changelog is generated using a Python script:
 
 ```bash
-$ GITHUB_TOKEN=<TOKEN> ./dev/release/generate-changelog.py 24.0.0 HEAD 25.0.0 > dev/changelog/25.0.0.md
+$ GITHUB_TOKEN=<TOKEN> ./dev/release/generate-changelog.py 0.1.0 HEAD 0.2.0 > dev/changelog/0.2.0.md
 ```
 
 This script creates a changelog from GitHub PRs based on the labels associated with them as well as looking for
@@ -76,31 +76,19 @@ Categorizing pull requests
 Generating changelog content
 ```
 
-This process is not fully automated, so there are some additional manual steps:
-
-- Add the ASF header to the generated file
-- Add a link to this changelog from the top-level `/datafusion/CHANGELOG.md`
-- Add the following content (copy from the previous version's changelog and update as appropriate:
-
-```
-## [24.0.0](https://github.com/apache/datafusion-ray/tree/24.0.0) (2023-05-06)
-
-[Full Changelog](https://github.com/apache/datafusion-ray/compare/23.0.0...24.0.0)
-```
-
 ### Preparing a Release Candidate
 
 ### Tag the Repository
 
 ```bash
-git tag 0.8.0-rc1
-git push apache 0.8.0-rc1
+git tag 0.2.0-rc1
+git push apache 0.2.0-rc1
 ```
 
 ### Create a source release
 
 ```bash
-./dev/release/create-tarball.sh 0.8.0 1
+./dev/release/create-tarball.sh 0.2.0 1
 ```
 
 This will also create the email template to send to the mailing list. 
@@ -123,10 +111,10 @@ Click on the action and scroll down to the bottom of the page titled "Artifacts"
 contain files such as:
 
 ```text
-datafusion-22.0.0-cp37-abi3-macosx_10_7_x86_64.whl
-datafusion-22.0.0-cp37-abi3-macosx_11_0_arm64.whl
-datafusion-22.0.0-cp37-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl
-datafusion-22.0.0-cp37-abi3-win_amd64.whl
+datafusion-ray-0.2.0-cp37-abi3-macosx_10_7_x86_64.whl
+datafusion-ray-0.2.0-cp37-abi3-macosx_11_0_arm64.whl
+datafusion-ray-0.2.0-cp37-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl
+datafusion-ray-0.2.0-cp37-abi3-win_amd64.whl
 ```
 
 Upload the wheels to testpypi.
@@ -134,7 +122,7 @@ Upload the wheels to testpypi.
 ```bash
 unzip dist.zip
 python3 -m pip install --upgrade setuptools twine build
-python3 -m twine upload --repository testpypi datafusion-22.0.0-cp37-abi3-*.whl
+python3 -m twine upload --repository testpypi datafusion-ray-0.2.0-cp37-abi3-*.whl
 ```
 
 When prompted for username, enter `__token__`. When prompted for a password, enter a valid GitHub Personal Access Token
@@ -147,10 +135,10 @@ Download the source tarball created in the previous step, untar it, and run:
 maturin sdist
 ```
 
-This will create a file named `dist/datafusion-0.7.0.tar.gz`. Upload this to testpypi:
+This will create a file named `dist/datafusion-ray-0.2.0.tar.gz`. Upload this to testpypi:
 
 ```bash
-python3 -m twine upload --repository testpypi dist/datafusion-0.7.0.tar.gz
+python3 -m twine upload --repository testpypi dist/datafusion-ray-0.2.0.tar.gz
 ```
 
 ### Send the Email
@@ -168,14 +156,14 @@ cd datafusion-ray
 
 # checkout the release commit
 git fetch --tags
-git checkout 40.0.0-rc1
+git checkout 0.2.0-rc1
 
 # create the env
 python3 -m venv venv
 source venv/bin/activate
 
 # install release candidate
-pip install --extra-index-url https://test.pypi.org/simple/ datafusion==40.0.0
+pip install --extra-index-url https://test.pypi.org/simple/ datafusion-ray==0.2.0
 
 # only dep needed to run tests is pytest
 pip install pytest
@@ -196,62 +184,31 @@ Once the vote passes, we can publish the release.
 Create the source release tarball:
 
 ```bash
-./dev/release/release-tarball.sh 0.8.0 1
-```
-
-### Publishing Rust Crate to crates.io
-
-Some projects depend on the Rust crate directly, so we publish this to crates.io
-
-```shell
-cargo publish
+./dev/release/release-tarball.sh 0.2.0 1
 ```
 
 ### Publishing Python Artifacts to PyPi
 
 Go to the Test PyPI page of Datafusion, and download
-[all published artifacts](https://test.pypi.org/project/datafusion/#files) under `dist-release/` directory. Then proceed
+[all published artifacts](https://test.pypi.org/project/datafusion-ray/#files) under `dist-release/` directory. Then proceed
 uploading them using `twine`:
 
 ```bash
 twine upload --repository pypi dist-release/*
 ```
 
-### Publish Python Artifacts to Anaconda
-
-Publishing artifacts to Anaconda is similar to PyPi. First, Download the source tarball created in the previous step and untar it.
-
-```bash
-# Assuming you have an existing conda environment named `datafusion-dev` if not see root README for instructions
-conda activate datafusion-dev
-conda build .
-```
-
-This will setup a virtual conda environment and build the artifacts inside of that virtual env. This step can take a few minutes as the entire build, host, and runtime environments are setup. Once complete a local filesystem path will be emitted for the location of the resulting package. Observe that path and copy to your clipboard.
-
-Ex: `/home/conda/envs/datafusion/conda-bld/linux-64/datafusion-0.7.0.tar.bz2`
-
-Now you are ready to publish this resulting package to anaconda.org. This can be accomplished in a few simple steps.
-
-```bash
-# First login to Anaconda with the datafusion credentials
-anaconda login
-# Upload the package
-anaconda upload /home/conda/envs/datafusion/conda-bld/linux-64/datafusion-0.7.0.tar.bz2
-```
-
 ### Push the Release Tag
 
 ```bash
-git checkout 0.8.0-rc1
-git tag 0.8.0
-git push apache 0.8.0
+git checkout 0.2.0-rc1
+git tag 0.2.0
+git push apache 0.2.0
 ```
 
 ### Add the release to Apache Reporter
 
-Add the release to https://reporter.apache.org/addrelease.html?datafusion with a version name prefixed with `DATAFUSION-PYTHON`,
-for example `DATAFUSION-PYTHON-31.0.0`.
+Add the release to https://reporter.apache.org/addrelease.html?datafusion with a version name prefixed with `DATAFUSION-RAY`,
+for example `DATAFUSION-RAY-0.2.0`.
 
 The release information is used to generate a template for a board report (see example from Apache Arrow 
 [here](https://github.com/apache/arrow/pull/14357)).
@@ -274,7 +231,7 @@ svn ls https://dist.apache.org/repos/dist/dev/datafusion | grep datafusion-ray
 Delete a release candidate:
 
 ```bash
-svn delete -m "delete old DataFusion RC" https://dist.apache.org/repos/dist/dev/datafusion/apache-datafusion-ray-7.1.0-rc1/
+svn delete -m "delete old DataFusion RC" https://dist.apache.org/repos/dist/dev/datafusion/apache-datafusion-ray-0.1.0-rc1/
 ```
 
 #### Deleting old releases from `release` svn
@@ -290,5 +247,5 @@ svn ls https://dist.apache.org/repos/dist/release/datafusion | grep datafusion-r
 Delete a release:
 
 ```bash
-svn delete -m "delete old DataFusion release" https://dist.apache.org/repos/dist/release/datafusion/datafusion-ray-7.0.0
+svn delete -m "delete old DataFusion release" https://dist.apache.org/repos/dist/release/datafusion/datafusion-ray-0.1.0
 ```
