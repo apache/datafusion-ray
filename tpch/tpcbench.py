@@ -17,13 +17,13 @@
 
 import argparse
 import ray
-from datafusion import SessionContext
+from datafusion import SessionContext, SessionConfig, RuntimeConfig
 from datafusion_ray import DatafusionRayContext
 from datetime import datetime
 import json
 import time
 
-def main(benchmark: str, data_path: str, query_path: str):
+def main(benchmark: str, data_path: str, query_path: str, concurrency: int):
 
     # Register the tables
     if benchmark == "tpch":
@@ -42,7 +42,15 @@ def main(benchmark: str, data_path: str, query_path: str):
     # use ray job submit
     ray.init()
 
-    df_ctx = SessionContext()
+    runtime = (
+        RuntimeConfig()
+    )
+    config = (
+        SessionConfig()
+        .with_target_partitions(concurrency)
+        .set("datafusion.execution.parquet.pushdown_filters", "true")
+    )
+    df_ctx = SessionContext(config, runtime)
 
     ray_ctx = DatafusionRayContext(df_ctx)
 
@@ -59,6 +67,7 @@ def main(benchmark: str, data_path: str, query_path: str):
     }
 
     for query in range(1, num_queries + 1):
+
         # read text file
         path = f"{query_path}/q{query}.sql"
         print(f"Reading query {query} using path {path}")
@@ -96,6 +105,7 @@ if __name__ == "__main__":
     parser.add_argument("--benchmark", required=True, help="Benchmark to run (tpch or tpcds)")
     parser.add_argument("--data", required=True, help="Path to data files")
     parser.add_argument("--queries", required=True, help="Path to query files")
+    parser.add_argument("--concurrency", required=True, help="Number of concurrent tasks")
     args = parser.parse_args()
 
-    main(args.benchmark, args.data, args.queries)
+    main(args.benchmark, args.data, args.queries, int(args.concurrency))
