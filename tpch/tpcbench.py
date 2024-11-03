@@ -17,6 +17,7 @@
 
 import argparse
 import ray
+from datafusion import SessionContext, SessionConfig, RuntimeConfig
 from datafusion_ray import DatafusionRayContext
 from datetime import datetime
 import json
@@ -41,22 +42,32 @@ def main(benchmark: str, data_path: str, query_path: str, concurrency: int):
     # use ray job submit
     ray.init()
 
-    ctx = DatafusionRayContext(concurrency)
+    runtime = (
+        RuntimeConfig()
+    )
+    config = (
+        SessionConfig()
+        .with_target_partitions(concurrency)
+        .set("datafusion.execution.parquet.pushdown_filters", "true")
+    )
+    df_ctx = SessionContext(config, runtime)
+
+    ray_ctx = DatafusionRayContext(df_ctx)
 
     for table in table_names:
         path = f"{data_path}/{table}.parquet"
         print(f"Registering table {table} using path {path}")
-        ctx.register_parquet(table, path)
+        df_ctx.register_parquet(table, path)
 
     results = {
         'engine': 'datafusion-python',
         'benchmark': benchmark,
         'data_path': data_path,
         'query_path': query_path,
-        'concurrency': concurrency,
     }
 
     for query in range(1, num_queries + 1):
+
         # read text file
         path = f"{query_path}/q{query}.sql"
         print(f"Reading query {query} using path {path}")
@@ -70,7 +81,7 @@ def main(benchmark: str, data_path: str, query_path: str, concurrency: int):
                 sql = sql.strip()
                 if len(sql) > 0:
                     print(f"Executing: {sql}")
-                    rows = ctx.sql(sql)
+                    rows = ray_ctx.sql(sql)
 
                     print(f"Query {query} returned {len(rows)} rows")
             end_time = time.time()
@@ -85,6 +96,9 @@ def main(benchmark: str, data_path: str, query_path: str, concurrency: int):
     print(f"Writing results to {results_path}")
     with open(results_path, "w") as f:
         f.write(str)
+
+    # write results to stdout
+    print(str)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="DataFusion benchmark derived from TPC-H / TPC-DS")
