@@ -25,6 +25,7 @@ from ._datafusion_ray_internal import (
     ExecutionGraph,
     QueryStage,
     execute_partition,
+    extended_session_context,
 )
 from .context import DatafusionRayContext
 

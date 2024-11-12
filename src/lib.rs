@@ -23,6 +23,9 @@ mod proto;
 use crate::context::execute_partition;
 pub use proto::generated::protobuf;
 
+mod ext;
+use crate::ext::extended_session_context;
+
 pub mod context;
 pub mod planner;
 pub mod query_stage;
@@ -36,5 +39,6 @@ fn _datafusion_ray_internal(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<planner::PyExecutionGraph>()?;
     m.add_class::<query_stage::PyQueryStage>()?;
     m.add_function(wrap_pyfunction!(execute_partition, m)?)?;
+    m.add_function(wrap_pyfunction!(extended_session_context, m)?)?;
     Ok(())
 }
