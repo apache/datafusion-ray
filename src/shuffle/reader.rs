@@ -15,7 +15,7 @@
 // specific language governing permissions and limitations
 // under the License.
 
-use crate::shuffle::ray_shuffle::CombinedRecordBatchStream;
+use crate::shuffle::CombinedRecordBatchStream;
 use datafusion::arrow::datatypes::SchemaRef;
 use datafusion::arrow::ipc::reader::FileReader;
 use datafusion::arrow::record_batch::RecordBatch;

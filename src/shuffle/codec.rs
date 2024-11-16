@@ -16,13 +16,8 @@
 // under the License.
 
 use crate::protobuf::ray_sql_exec_node::PlanType;
-use crate::protobuf::{
-    RaySqlExecNode, ShuffleReaderExecNode,
-    ShuffleWriterExecNode,
-};
-use crate::shuffle::{
-    ShuffleReaderExec, ShuffleWriterExec,
-};
+use crate::protobuf::{RaySqlExecNode, ShuffleReaderExecNode, ShuffleWriterExecNode};
+use crate::shuffle::{ShuffleReaderExec, ShuffleWriterExec};
 use datafusion::arrow::datatypes::SchemaRef;
 use datafusion::common::{DataFusionError, Result};
 use datafusion::execution::runtime_env::RuntimeEnv;

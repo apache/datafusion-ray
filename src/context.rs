@@ -16,8 +16,7 @@
 // under the License.
 
 use crate::planner::{make_execution_graph, PyExecutionGraph};
-use crate::shuffle::{RayShuffleReaderExec, ShuffleCodec};
-use datafusion::arrow::pyarrow::FromPyArrow;
+use crate::shuffle::{ShuffleCodec, ShuffleReaderExec};
 use datafusion::arrow::pyarrow::ToPyArrow;
 use datafusion::arrow::record_batch::RecordBatch;
 use datafusion::error::{DataFusionError, Result};
@@ -175,7 +174,7 @@ fn _set_inputs_for_ray_shuffle_reader(
     plan: Arc<dyn ExecutionPlan>,
     input_partitions: &Bound<'_, PyList>,
 ) -> Result<()> {
-    if let Some(reader_exec) = plan.as_any().downcast_ref::<RayShuffleReaderExec>() {
+    if let Some(reader_exec) = plan.as_any().downcast_ref::<ShuffleReaderExec>() {
         let exec_stage_id = reader_exec.stage_id;
         // iterate over inputs, wrap in PyBytes and set as input objects
         for item in input_partitions.iter() {
@@ -192,20 +191,20 @@ fn _set_inputs_for_ray_shuffle_reader(
             if stage_id != exec_stage_id {
                 continue;
             }
-            let part = pytuple
-                .get_item(1)
-                .map_err(|e| DataFusionError::Execution(format!("{}", e)))?
-                .downcast::<PyLong>()
-                .map_err(|e| DataFusionError::Execution(format!("{}", e)))?
-                .extract::<usize>()
-                .map_err(|e| DataFusionError::Execution(format!("{}", e)))?;
-            let batch = RecordBatch::from_pyarrow_bound(
-                &pytuple
-                    .get_item(2)
-                    .map_err(|e| DataFusionError::Execution(format!("{}", e)))?,
-            )
-            .map_err(|e| DataFusionError::Execution(format!("{}", e)))?;
-            reader_exec.add_input_partition(part, batch)?;
+            // let part = pytuple
+            //     .get_item(1)
+            //     .map_err(|e| DataFusionError::Execution(format!("{}", e)))?
+            //     .downcast::<PyLong>()
+            //     .map_err(|e| DataFusionError::Execution(format!("{}", e)))?
+            //     .extract::<usize>()
+            //     .map_err(|e| DataFusionError::Execution(format!("{}", e)))?;
+            // let batch = RecordBatch::from_pyarrow_bound(
+            //     &pytuple
+            //         .get_item(2)
+            //         .map_err(|e| DataFusionError::Execution(format!("{}", e)))?,
+            // )
+            // .map_err(|e| DataFusionError::Execution(format!("{}", e)))?;
+            //reader_exec.add_input_partition(part, batch)?;
         }
     } else {
         for child in plan.children() {
