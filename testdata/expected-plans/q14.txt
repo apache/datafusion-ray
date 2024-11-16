@@ -34,29 +34,29 @@ DataFusion Ray Distributed Plan
 ===========
 
 Query Stage #0 (1 -> 2):
-RayShuffleWriterExec(stage_id=0, output_partitioning=Hash([Column { name: "p_partkey", index: 0 }], 2))
+ShuffleWriterExec(stage_id=0, output_partitioning=Hash([Column { name: "p_partkey", index: 0 }], 2))
   ParquetExec: file_groups={ ... }, projection=[p_partkey, p_type]
 
 Query Stage #1 (2 -> 2):
-RayShuffleWriterExec(stage_id=1, output_partitioning=Hash([Column { name: "l_partkey", index: 0 }], 2))
+ShuffleWriterExec(stage_id=1, output_partitioning=Hash([Column { name: "l_partkey", index: 0 }], 2))
   CoalesceBatchesExec: target_batch_size=8192
     FilterExec: l_shipdate@3 >= 1995-02-01 AND l_shipdate@3 < 1995-03-01, projection=[l_partkey@0, l_extendedprice@1, l_discount@2]
       ParquetExec: file_groups={ ... }, projection=[l_partkey, l_extendedprice, l_discount, l_shipdate], predicate=l_shipdate@10 >= 1995-02-01 AND l_shipdate@10 < 1995-03-01, pruning_predicate=CASE WHEN l_shipdate_null_count@1 = l_shipdate_row_count@2 THEN false ELSE l_shipdate_max@0 >= 1995-02-01 END AND CASE WHEN l_shipdate_null_count@1 = l_shipdate_row_count@2 THEN false ELSE l_shipdate_min@3 < 1995-03-01 END, required_guarantees=[]
 
 Query Stage #2 (2 -> 1):
-RayShuffleWriterExec(stage_id=2, output_partitioning=Hash([], 2))
+ShuffleWriterExec(stage_id=2, output_partitioning=Hash([], 2))
   AggregateExec: mode=Partial, gby=[], aggr=[sum(CASE WHEN part.p_type LIKE Utf8("PROMO%") THEN lineitem.l_extendedprice * Int64(1) - lineitem.l_discount ELSE Int64(0) END), sum(lineitem.l_extendedprice * Int64(1) - lineitem.l_discount)]
     ProjectionExec: expr=[l_extendedprice@1 * (Some(1),20,0 - l_discount@2) as __common_expr_2, p_type@0 as p_type]
       CoalesceBatchesExec: target_batch_size=8192
         HashJoinExec: mode=Partitioned, join_type=Inner, on=[(p_partkey@0, l_partkey@0)], projection=[p_type@1, l_extendedprice@3, l_discount@4]
           CoalesceBatchesExec: target_batch_size=8192
-            RayShuffleReaderExec(stage_id=0, input_partitioning=Hash([Column { name: "p_partkey", index: 0 }], 2))
+            ShuffleReaderExec(stage_id=0, input_partitioning=Hash([Column { name: "p_partkey", index: 0 }], 2))
           CoalesceBatchesExec: target_batch_size=8192
-            RayShuffleReaderExec(stage_id=1, input_partitioning=Hash([Column { name: "l_partkey", index: 0 }], 2))
+            ShuffleReaderExec(stage_id=1, input_partitioning=Hash([Column { name: "l_partkey", index: 0 }], 2))
 
 Query Stage #3 (1 -> 1):
 ProjectionExec: expr=[100 * CAST(sum(CASE WHEN part.p_type LIKE Utf8("PROMO%") THEN lineitem.l_extendedprice * Int64(1) - lineitem.l_discount ELSE Int64(0) END)@0 AS Float64) / CAST(sum(lineitem.l_extendedprice * Int64(1) - lineitem.l_discount)@1 AS Float64) as promo_revenue]
   AggregateExec: mode=Final, gby=[], aggr=[sum(CASE WHEN part.p_type LIKE Utf8("PROMO%") THEN lineitem.l_extendedprice * Int64(1) - lineitem.l_discount ELSE Int64(0) END), sum(lineitem.l_extendedprice * Int64(1) - lineitem.l_discount)]
     CoalescePartitionsExec
-      RayShuffleReaderExec(stage_id=2, input_partitioning=Hash([], 2))
+      ShuffleReaderExec(stage_id=2, input_partitioning=Hash([], 2))
 

@@ -22,7 +22,7 @@ DataFusion Ray Distributed Plan
 ===========
 
 Query Stage #0 (2 -> 1):
-RayShuffleWriterExec(stage_id=0, output_partitioning=UnknownPartitioning(2))
+ShuffleWriterExec(stage_id=0, output_partitioning=UnknownPartitioning(2))
   AggregateExec: mode=Partial, gby=[], aggr=[sum(lineitem.l_extendedprice * lineitem.l_discount)]
     CoalesceBatchesExec: target_batch_size=8192
       FilterExec: l_shipdate@3 >= 1994-01-01 AND l_shipdate@3 < 1995-01-01 AND l_discount@2 >= Some(3),11,2 AND l_discount@2 <= Some(5),11,2 AND l_quantity@0 < Some(2400),11,2, projection=[l_extendedprice@1, l_discount@2]
@@ -32,5 +32,5 @@ Query Stage #1 (1 -> 1):
 ProjectionExec: expr=[sum(lineitem.l_extendedprice * lineitem.l_discount)@0 as revenue]
   AggregateExec: mode=Final, gby=[], aggr=[sum(lineitem.l_extendedprice * lineitem.l_discount)]
     CoalescePartitionsExec
-      RayShuffleReaderExec(stage_id=0, input_partitioning=UnknownPartitioning(2))
+      ShuffleReaderExec(stage_id=0, input_partitioning=UnknownPartitioning(2))
 
