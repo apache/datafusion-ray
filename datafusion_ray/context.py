@@ -67,26 +67,18 @@ def execute_query_stage(
     # Each list is a 2-D array of (input partitions, output partitions).
     child_outputs = ray.get(child_futures)
 
-    def _get_worker_inputs(
-        part: int,
-    ) -> tuple[list[tuple[int, int, int]], list[ray.ObjectRef]]:
-        ids = []
-        futures = []
-        return ids, futures
-
     # if we are using disk-based shuffle, wait until the child stages to finish
     # writing the shuffle files to disk first.
     ray.get([f for _, lst in child_outputs for f in lst])
 
     # schedule the actual execution workers
-    plan_bytes = datafusion_ray.serialize_execution_plan(stage.get_execution_plan())
+    plan_bytes = stage.get_execution_plan_bytes()
     futures = []
     opt = {}
     for part in range(concurrency):
-        ids, inputs = _get_worker_inputs(part)
         futures.append(
             execute_query_partition.options(**opt).remote(
-                stage_id, plan_bytes, part, ids, *inputs
+                stage_id, plan_bytes, part
             )
         )
 
@@ -97,9 +89,7 @@ def execute_query_stage(
 def execute_query_partition(
     stage_id: int,
     plan_bytes: bytes,
-    part: int,
-    input_partition_ids: list[tuple[int, int, int]],
-    *input_partitions: list[pa.RecordBatch],
+    part: int
 ) -> Iterable[pa.RecordBatch]:
     start_time = time.time()
     # plan = datafusion_ray.deserialize_execution_plan(plan_bytes)
@@ -110,13 +100,10 @@ def execute_query_partition(
     #         input_partition_ids,
     #     )
     # )
-    partitions = [
-        (s, j, p) for (s, _, j), p in zip(input_partition_ids, input_partitions)
-    ]
     # This is delegating to DataFusion for execution, but this would be a good place
     # to plug in other execution engines by translating the plan into another engine's plan
     # (perhaps via Substrait, once DataFusion supports converting a physical plan to Substrait)
-    ret = datafusion_ray.execute_partition(plan_bytes, part, partitions)
+    ret = datafusion_ray.execute_partition(plan_bytes, part)
     duration = time.time() - start_time
     event = {
         "cat": f"{stage_id}-{part}",
@@ -161,16 +148,13 @@ class DatafusionRayContext:
 
         # serialize the query stages and store in Ray object store
         query_stages = [
-            datafusion_ray.serialize_execution_plan(
-                graph.get_query_stage(i).get_execution_plan()
-            )
+                graph.get_query_stage(i).get_execution_plan_bytes()
             for i in range(final_stage_id + 1)
         ]
         # schedule execution
         future = execute_query_stage.remote(
             query_stages,
-            final_stage_id,
-            self.use_ray_shuffle,
+            final_stage_id
         )
         _, partitions = ray.get(future)
         # assert len(partitions) == 1, len(partitions)

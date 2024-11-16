@@ -116,10 +116,9 @@ impl PyContext {
         &self,
         plan: &Bound<'_, PyBytes>,
         part: usize,
-        inputs: PyObject,
         py: Python,
     ) -> PyResult<PyResultSet> {
-        execute_partition(plan, part, inputs, py)
+        execute_partition(plan, part, py)
     }
 }
 
@@ -127,11 +126,10 @@ impl PyContext {
 pub fn execute_partition(
     plan_bytes: &Bound<'_, PyBytes>,
     part: usize,
-    inputs: PyObject,
     py: Python,
 ) -> PyResult<PyResultSet> {
     let plan = deserialize_execution_plan(plan_bytes)?;
-    _execute_partition(plan, part, inputs)
+    _execute_partition(plan, part)
         .unwrap()
         .into_iter()
         .map(|batch| batch.to_pyarrow(py))
@@ -220,7 +218,6 @@ fn _set_inputs_for_ray_shuffle_reader(
 fn _execute_partition(
     plan: Arc<dyn ExecutionPlan>,
     part: usize,
-    inputs: PyObject,
 ) -> Result<Vec<RecordBatch>> {
     let ctx = Arc::new(TaskContext::new(
         Some("task_id".to_string()),
@@ -231,13 +228,6 @@ fn _execute_partition(
         HashMap::new(),
         Arc::new(RuntimeEnv::default()),
     ));
-
-    Python::with_gil(|py| {
-        let input_partitions = inputs
-            .downcast_bound::<PyList>(py)
-            .map_err(|e| DataFusionError::Execution(format!("{}", e)))?;
-        _set_inputs_for_ray_shuffle_reader(plan.clone(), input_partitions)
-    })?;
 
     // create a Tokio runtime to run the async code
     let rt = Runtime::new().unwrap();
