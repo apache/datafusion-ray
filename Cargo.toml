@@ -56,6 +56,6 @@ crate-type = ["cdylib", "rlib"]
 [package.metadata.maturin]
 name = "datafusion_ray._datafusion_ray_internal"
 
-#[profile.release]
-#codegen-units = 1
-#lto = true
+[profile.release]
+codegen-units = 1
+lto = true

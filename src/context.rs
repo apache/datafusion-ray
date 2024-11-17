@@ -16,7 +16,7 @@
 // under the License.
 
 use crate::planner::{make_execution_graph, PyExecutionGraph};
-use crate::shuffle::{ShuffleCodec, ShuffleReaderExec};
+use crate::shuffle::ShuffleCodec;
 use datafusion::arrow::pyarrow::ToPyArrow;
 use datafusion::arrow::record_batch::RecordBatch;
 use datafusion::error::{DataFusionError, Result};
@@ -30,7 +30,7 @@ use futures::StreamExt;
 use prost::Message;
 use pyo3::exceptions::PyRuntimeError;
 use pyo3::prelude::*;
-use pyo3::types::{PyBytes, PyList, PyLong, PyTuple};
+use pyo3::types::{PyBytes, PyTuple};
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::runtime::Runtime;
@@ -165,51 +165,6 @@ pub fn deserialize_execution_plan(proto_msg: &Bound<PyBytes>) -> PyResult<Arc<dy
         .map_err(DataFusionError::from)?;
 
     Ok(plan)
-}
-
-/// Iterate down an ExecutionPlan and set the input objects for RayShuffleReaderExec.
-fn _set_inputs_for_ray_shuffle_reader(
-    plan: Arc<dyn ExecutionPlan>,
-    input_partitions: &Bound<'_, PyList>,
-) -> Result<()> {
-    if let Some(reader_exec) = plan.as_any().downcast_ref::<ShuffleReaderExec>() {
-        let exec_stage_id = reader_exec.stage_id;
-        // iterate over inputs, wrap in PyBytes and set as input objects
-        for item in input_partitions.iter() {
-            let pytuple = item
-                .downcast::<PyTuple>()
-                .map_err(|e| DataFusionError::Execution(format!("{}", e)))?;
-            let stage_id = pytuple
-                .get_item(0)
-                .map_err(|e| DataFusionError::Execution(format!("{}", e)))?
-                .downcast::<PyLong>()
-                .map_err(|e| DataFusionError::Execution(format!("{}", e)))?
-                .extract::<usize>()
-                .map_err(|e| DataFusionError::Execution(format!("{}", e)))?;
-            if stage_id != exec_stage_id {
-                continue;
-            }
-            // let part = pytuple
-            //     .get_item(1)
-            //     .map_err(|e| DataFusionError::Execution(format!("{}", e)))?
-            //     .downcast::<PyLong>()
-            //     .map_err(|e| DataFusionError::Execution(format!("{}", e)))?
-            //     .extract::<usize>()
-            //     .map_err(|e| DataFusionError::Execution(format!("{}", e)))?;
-            // let batch = RecordBatch::from_pyarrow_bound(
-            //     &pytuple
-            //         .get_item(2)
-            //         .map_err(|e| DataFusionError::Execution(format!("{}", e)))?,
-            // )
-            // .map_err(|e| DataFusionError::Execution(format!("{}", e)))?;
-            //reader_exec.add_input_partition(part, batch)?;
-        }
-    } else {
-        for child in plan.children() {
-            _set_inputs_for_ray_shuffle_reader(child.to_owned(), input_partitions)?;
-        }
-    }
-    Ok(())
 }
 
 /// Execute a partition of a query plan. This will typically be executing a shuffle write and
