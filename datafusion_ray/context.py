@@ -141,11 +141,12 @@ class DatafusionRayContext:
             return []
 
         df = self.df_ctx.sql(sql)
-        execution_plan = df.execution_plan()
+        return self.plan(df.execution_plan())
+
+    def plan(self, execution_plan: Any) -> pa.RecordBatch:
 
         graph = self.ctx.plan(execution_plan)
         final_stage_id = graph.get_final_query_stage().id()
-
         # serialize the query stages and store in Ray object store
         query_stages = [
                 graph.get_query_stage(i).get_execution_plan_bytes()
@@ -160,3 +161,4 @@ class DatafusionRayContext:
         # assert len(partitions) == 1, len(partitions)
         result_set = ray.get(partitions[0])
         return result_set
+

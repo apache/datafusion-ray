@@ -170,10 +170,7 @@ pub fn deserialize_execution_plan(proto_msg: &Bound<PyBytes>) -> PyResult<Arc<dy
 /// Execute a partition of a query plan. This will typically be executing a shuffle write and
 /// write the results to disk, except for the final query stage, which will return the data.
 /// inputs is a list of tuples of (stage_id, partition_id, bytes) for each input partition.
-fn _execute_partition(
-    plan: Arc<dyn ExecutionPlan>,
-    part: usize,
-) -> Result<Vec<RecordBatch>> {
+fn _execute_partition(plan: Arc<dyn ExecutionPlan>, part: usize) -> Result<Vec<RecordBatch>> {
     let ctx = Arc::new(TaskContext::new(
         Some("task_id".to_string()),
         "session_id".to_string(),
