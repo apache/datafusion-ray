@@ -15,34 +15,39 @@
 // specific language governing permissions and limitations
 // under the License.
 
+use crate::shuffle::create_object_store;
+use bytes::Bytes;
 use datafusion::arrow::array::Int32Array;
 use datafusion::arrow::datatypes::{DataType, Field, Schema, SchemaRef};
 use datafusion::arrow::ipc::writer::FileWriter;
 use datafusion::arrow::record_batch::RecordBatch;
 use datafusion::arrow::util::pretty::pretty_format_batches;
-use datafusion::common::{Result, Statistics};
+use datafusion::common::{DataFusionError, Result, Statistics};
 use datafusion::execution::context::TaskContext;
+use datafusion::execution::RecordBatchStream;
 use datafusion::physical_expr::expressions::UnKnownColumn;
 use datafusion::physical_expr::EquivalenceProperties;
-use datafusion::physical_plan::common::IPCWriter;
 use datafusion::physical_plan::memory::MemoryStream;
 use datafusion::physical_plan::metrics::{ExecutionPlanMetricsSet, MetricBuilder};
 use datafusion::physical_plan::repartition::BatchPartitioner;
 use datafusion::physical_plan::stream::RecordBatchStreamAdapter;
 use datafusion::physical_plan::{
     metrics, DisplayAs, DisplayFormatType, ExecutionPlan, Partitioning, PlanProperties,
-    RecordBatchStream, SendableRecordBatchStream,
+    SendableRecordBatchStream,
 };
 use datafusion_proto::protobuf::PartitionStats;
 use futures::StreamExt;
 use futures::TryStreamExt;
 use log::debug;
+use object_store::{path::Path as ObjectStorePath, MultipartUpload, ObjectStore, PutPayload};
 use std::any::Any;
 use std::fmt::Formatter;
 use std::fs::File;
-use std::path::Path;
+use std::io::Read;
+use std::path::{Path, PathBuf};
 use std::pin::Pin;
 use std::sync::Arc;
+use std::time::Instant;
 
 #[derive(Debug)]
 pub struct ShuffleWriterExec {
@@ -122,7 +127,10 @@ impl ExecutionPlan for ShuffleWriterExec {
             self.stage_id
         );
 
+        let object_store = create_object_store()?;
+
         let mut stream = self.plan.execute(input_partition, context)?;
+
         let write_time =
             MetricBuilder::new(&self.metrics).subset_time("write_time", input_partition);
         let repart_time =
@@ -140,17 +148,31 @@ impl ExecutionPlan for ShuffleWriterExec {
                 }
                 Partitioning::UnknownPartitioning(_) => {
                     // stream the results from the query, preserving the input partitioning
-                    let file =
-                        format!("/{shuffle_dir}/shuffle_{stage_id}_{input_partition}_0.arrow");
-                    debug!("Executing query and writing results to {file}");
-                    let stats = write_stream_to_disk(&mut stream, &file, &write_time).await?;
+                    let path =
+                        format!("{shuffle_dir}/shuffle_{stage_id}_{input_partition}_0.arrow");
+                    let path = Path::new(&path);
+                    debug!(
+                        "ShuffleWriterExec[stage={}] Writing results to {:?}",
+                        stage_id, path
+                    );
+
+                    let mut rows = 0;
+                    let mut writer =
+                        IPCWriter::new(object_store.clone(), path, stream.schema().as_ref())?;
+                    while let Some(result) = stream.next().await {
+                        let input_batch = result?;
+                        rows += input_batch.num_rows();
+                        writer.write(&input_batch)?;
+                    }
+                    writer.finish().await?;
+
                     debug!(
                         "Query completed. Shuffle write time: {}. Rows: {}.",
-                        write_time, stats.num_rows
+                        write_time, rows
                     );
                 }
                 Partitioning::Hash(_, _) => {
-                    // we won't necessary produce output for every possible partition, so we
+                    // we won't necessarily produce output for every possible partition, so we
                     // create writers on demand
                     let mut writers: Vec<Option<IPCWriter>> = vec![];
                     for _ in 0..partition_count {
@@ -172,8 +194,6 @@ impl ExecutionPlan for ShuffleWriterExec {
                             pretty_format_batches(&[input_batch.clone()])?
                         );
 
-                        //write_metrics.input_rows.add(input_batch.num_rows());
-
                         partitioner.partition(input_batch, |output_partition, output_batch| {
                             match &mut writers[output_partition] {
                                 Some(w) => {
@@ -181,12 +201,12 @@ impl ExecutionPlan for ShuffleWriterExec {
                                 }
                                 None => {
                                     let path = format!(
-                                        "/{shuffle_dir}/shuffle_{stage_id}_{input_partition}_{output_partition}.arrow",
+                                        "{shuffle_dir}/shuffle_{stage_id}_{input_partition}_{output_partition}.arrow",
                                     );
                                     let path = Path::new(&path);
                                     debug!("ShuffleWriterExec[stage={}] Writing results to {:?}", stage_id, path);
 
-                                    let mut writer = IPCWriter::new(path, stream.schema().as_ref())?;
+                                    let mut writer = IPCWriter::new(object_store.clone(), path, stream.schema().as_ref())?;
 
                                     writer.write(&output_batch)?;
                                     writers[output_partition] = Some(writer);
@@ -199,7 +219,7 @@ impl ExecutionPlan for ShuffleWriterExec {
                     for (i, w) in writers.iter_mut().enumerate() {
                         match w {
                             Some(w) => {
-                                w.finish()?;
+                                w.finish().await?;
                                 debug!(
                                         "ShuffleWriterExec[stage={}] Finished writing shuffle partition {} at {:?}. Batches: {}. Rows: {}. Bytes: {}.",
                                         stage_id,
@@ -268,43 +288,140 @@ impl DisplayAs for ShuffleWriterExec {
     }
 }
 
-/// Stream data to disk in Arrow IPC format
-pub async fn write_stream_to_disk(
-    stream: &mut Pin<Box<dyn RecordBatchStream + Send>>,
-    path: &str,
-    disk_write_metric: &metrics::Time,
-) -> Result<PartitionStats> {
-    let file = File::create(path).unwrap();
+struct IPCWriter {
+    /// object store
+    object_store: Arc<dyn ObjectStore>,
+    /// path
+    pub path: PathBuf,
+    /// inner writer
+    pub writer: FileWriter<File>,
+    /// batches written
+    pub num_batches: usize,
+    /// rows written
+    pub num_rows: usize,
+    /// bytes written
+    pub num_bytes: usize,
+}
 
-    /*.map_err(|e| {
-        error!("Failed to create partition file at {}: {:?}", path, e);
-        BallistaError::IoError(e)
-    })?;*/
-
-    let mut num_rows = 0;
-    let mut num_batches = 0;
-    let mut num_bytes = 0;
-    let mut writer = FileWriter::try_new(file, stream.schema().as_ref())?;
-
-    while let Some(result) = stream.next().await {
-        let batch = result?;
-
-        let batch_size_bytes: usize = batch.get_array_memory_size();
-        num_batches += 1;
-        num_rows += batch.num_rows();
-        num_bytes += batch_size_bytes;
-
-        let timer = disk_write_metric.timer();
-        writer.write(&batch)?;
-        timer.done();
+impl IPCWriter {
+    /// Create new writer
+    pub fn new(object_store: Arc<dyn ObjectStore>, path: &Path, schema: &Schema) -> Result<Self> {
+        let file = File::create(path).map_err(|e| {
+            DataFusionError::Execution(format!(
+                "ShuffleWriterExec failed to create partition file at {path:?}: {e:?}"
+            ))
+        })?;
+        Ok(Self {
+            object_store,
+            num_batches: 0,
+            num_rows: 0,
+            num_bytes: 0,
+            path: path.into(),
+            writer: FileWriter::try_new(file, schema).map_err(|e| {
+                DataFusionError::Execution(format!(
+                    "ShuffleWriterExec failed to create IPC file: {e:?}"
+                ))
+            })?,
+        })
     }
-    let timer = disk_write_metric.timer();
-    writer.finish()?;
-    timer.done();
-    Ok(PartitionStats {
-        num_rows: num_rows as i64,
-        num_batches: num_batches as i64,
-        num_bytes: num_bytes as i64,
-        column_stats: vec![],
-    })
+
+    /// Write one single batch
+    pub fn write(&mut self, batch: &RecordBatch) -> Result<()> {
+        self.writer.write(batch).map_err(|e| {
+            DataFusionError::Execution(format!(
+                "ShuffleWriterExec failed to write IPC batch: {e:?}"
+            ))
+        })?;
+        self.num_batches += 1;
+        self.num_rows += batch.num_rows();
+        let num_bytes: usize = batch.get_array_memory_size();
+        self.num_bytes += num_bytes;
+        Ok(())
+    }
+
+    /// Finish the writer
+    pub async fn finish(&mut self) -> Result<()> {
+        self.writer.finish().map_err(|e| {
+            DataFusionError::Execution(format!(
+                "ShuffleWriterExec failed to finish writing IPC file: {e:?}"
+            ))
+        })?;
+
+        if self.num_batches > 0 {
+            // upload to object storage
+            let mut file = File::open(&self.path).map_err(|e| {
+                DataFusionError::Execution(format!(
+                    "ShuffleWriterExec failed to open file {}: {}",
+                    self.path.display(),
+                    e
+                ))
+            })?;
+
+            let object_store_path = ObjectStorePath::from_filesystem_path(&self.path)?;
+
+            const MULTIPART_CHUNK_SIZE: usize = 5 * 1024 * 1024;
+
+            let start = Instant::now();
+            if self.num_bytes > MULTIPART_CHUNK_SIZE {
+                // use multipart put for larger files
+                println!(
+                    "Uploading shuffle file {} containing {} bytes (put_multipart)",
+                    &self.path.display(),
+                    self.num_bytes
+                );
+                let mut buffer = vec![0; MULTIPART_CHUNK_SIZE];
+                let mut writer = self.object_store.put_multipart(&object_store_path).await?;
+                let mut total_bytes = 0;
+                loop {
+                    let bytes_read = read_full_buffer(&mut file, &mut buffer)?;
+                    total_bytes += bytes_read;
+                    if bytes_read == 0 {
+                        break;
+                    }
+                    let bytes = Bytes::copy_from_slice(&buffer[..bytes_read]);
+                    writer.put_part(PutPayload::from(bytes)).await?;
+                }
+                assert!(total_bytes > 0);
+                let _put_result = writer.complete().await?;
+            } else {
+                println!(
+                    "Uploading shuffle file {} containing {} bytes (put)",
+                    &self.path.display(),
+                    self.num_bytes
+                );
+
+                let mut buffer = Vec::with_capacity(self.num_bytes);
+                let bytes_read = file.read_to_end(&mut buffer)?;
+                assert!(bytes_read > 0);
+                let bytes = Bytes::copy_from_slice(&buffer[..bytes_read]);
+                self.object_store
+                    .put(&object_store_path, PutPayload::from(bytes))
+                    .await?;
+            }
+            let end = Instant::now();
+            println!("File upload took {:?}", end.duration_since(start));
+        }
+
+        std::fs::remove_file(&self.path).map_err(|e| {
+            println!("ShuffleWriterExec failed to delete file: {}", e);
+            e
+        })?;
+        Ok(())
+    }
+
+    /// Path write to
+    pub fn path(&self) -> &Path {
+        &self.path
+    }
+}
+
+fn read_full_buffer(file: &mut File, buffer: &mut [u8]) -> Result<usize> {
+    let mut total_read = 0;
+    while total_read < buffer.len() {
+        match file.read(&mut buffer[total_read..])? {
+            0 => break,
+            bytes_read => total_read += bytes_read,
+        }
+    }
+    Ok(total_read)
 }

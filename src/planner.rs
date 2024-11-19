@@ -18,7 +18,7 @@
 use crate::query_stage::PyQueryStage;
 use crate::query_stage::QueryStage;
 use crate::shuffle::{ShuffleReaderExec, ShuffleWriterExec};
-use datafusion::error::Result;
+use datafusion::error::{DataFusionError, Result};
 use datafusion::physical_plan::coalesce_partitions::CoalescePartitionsExec;
 use datafusion::physical_plan::repartition::RepartitionExec;
 use datafusion::physical_plan::sorts::sort_preserving_merge::SortPreservingMergeExec;
@@ -229,9 +229,14 @@ fn create_shuffle_exchange(
 
 fn create_temp_dir(stage_id: usize) -> Result<String> {
     let uuid = Uuid::new_v4();
-    let temp_dir = format!("/tmp/ray-sql-{uuid}-stage-{stage_id}");
+    let temp_dir = format!("/tmp/ray-sql-{uuid}/{stage_id}");
     debug!("Creating temp shuffle dir: {temp_dir}");
-    std::fs::create_dir(&temp_dir)?;
+    std::fs::create_dir_all(&temp_dir).map_err(|e| {
+        DataFusionError::Execution(format!(
+            "Failed to create shuffle directory {}: {:?}",
+            temp_dir, e
+        ))
+    })?;
     Ok(temp_dir)
 }
 

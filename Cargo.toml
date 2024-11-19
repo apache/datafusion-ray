@@ -29,11 +29,13 @@ rust-version = "1.62"
 build = "build.rs"
 
 [dependencies]
+bytes = "1.8.0"
 datafusion = { version = "42.0.0", features = ["pyarrow", "avro"] }
 datafusion-proto = "42.0.0"
 futures = "0.3"
 glob = "0.3.1"
 log = "0.4"
+object_store = { version = "0.11.1", features = ["aws"] }
 prost = "0.13"
 pyo3 = { version = "0.22", features = ["extension-module", "abi3", "abi3-py38"] }
 tokio = { version = "1.40", features = ["macros", "rt", "rt-multi-thread", "sync"] }

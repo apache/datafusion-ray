@@ -129,8 +129,7 @@ pub fn execute_partition(
     py: Python,
 ) -> PyResult<PyResultSet> {
     let plan = deserialize_execution_plan(plan_bytes)?;
-    _execute_partition(plan, part)
-        .unwrap()
+    _execute_partition(plan, part)?
         .into_iter()
         .map(|batch| batch.to_pyarrow(py))
         .collect()

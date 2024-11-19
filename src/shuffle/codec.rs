@@ -30,7 +30,6 @@ use datafusion_proto::physical_plan::{AsExecutionPlan, DefaultPhysicalExtensionC
 use datafusion_proto::protobuf::{self, PhysicalHashRepartition, PhysicalPlanNode};
 use prost::Message;
 use std::sync::Arc;
-
 #[derive(Debug)]
 pub struct ShuffleCodec {}
 
