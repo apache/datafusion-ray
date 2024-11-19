@@ -21,7 +21,10 @@ use datafusion::arrow::datatypes::SchemaRef;
 use datafusion::common::Result;
 use datafusion::physical_plan::{RecordBatchStream, SendableRecordBatchStream};
 use futures::Stream;
+use object_store::aws::AmazonS3Builder;
+use object_store::ObjectStore;
 use std::pin::Pin;
+use std::sync::Arc;
 use std::task::{Context, Poll};
 use tokio::macros::support::thread_rng_n;
 
@@ -95,4 +98,28 @@ impl Stream for CombinedRecordBatchStream {
             Pending
         }
     }
+}
+
+pub(crate) fn create_object_store() -> Result<Arc<dyn ObjectStore>> {
+    let access_key_id = std::env::var("AWS_ACCESS_KEY_ID").unwrap_or_default();
+    let secret_access_key = std::env::var("AWS_SECRET_ACCESS_KEY").unwrap_or_default();
+    if access_key_id.is_empty() || secret_access_key.is_empty() {
+        println!("Warning! AWS_ACCESS_KEY_ID and/or AWS_SECRET_ACCESS_KEY are not defined");
+    }
+
+    // TODO configs
+    let bucket_name = "dfray";
+    let region = "us-east-1";
+    let endpoint = "http://127.0.0.1:9000";
+
+    Ok(Arc::new(
+        AmazonS3Builder::new()
+            .with_endpoint(endpoint)
+            .with_allow_http(true)
+            .with_region(region)
+            .with_bucket_name(bucket_name)
+            .with_access_key_id(access_key_id)
+            .with_secret_access_key(secret_access_key)
+            .build()?,
+    ))
 }
