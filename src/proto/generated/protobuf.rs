@@ -1,7 +1,7 @@
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct RaySqlExecNode {
-    #[prost(oneof = "ray_sql_exec_node::PlanType", tags = "3, 4")]
+    #[prost(oneof = "ray_sql_exec_node::PlanType", tags = "1, 2")]
     pub plan_type: ::core::option::Option<ray_sql_exec_node::PlanType>,
 }
 /// Nested message and enum types in `RaySqlExecNode`.
@@ -9,15 +9,15 @@ pub mod ray_sql_exec_node {
     #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Oneof)]
     pub enum PlanType {
-        #[prost(message, tag = "3")]
-        RayShuffleReader(super::RayShuffleReaderExecNode),
-        #[prost(message, tag = "4")]
-        RayShuffleWriter(super::RayShuffleWriterExecNode),
+        #[prost(message, tag = "1")]
+        ShuffleReader(super::ShuffleReaderExecNode),
+        #[prost(message, tag = "2")]
+        ShuffleWriter(super::ShuffleWriterExecNode),
     }
 }
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
-pub struct RayShuffleReaderExecNode {
+pub struct ShuffleReaderExecNode {
     /// stage to read from
     #[prost(uint32, tag = "1")]
     pub stage_id: u32,
@@ -29,10 +29,13 @@ pub struct RayShuffleReaderExecNode {
     pub partitioning: ::core::option::Option<
         ::datafusion_proto::protobuf::PhysicalHashRepartition,
     >,
+    /// directory for shuffle files
+    #[prost(string, tag = "4")]
+    pub shuffle_dir: ::prost::alloc::string::String,
 }
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
-pub struct RayShuffleWriterExecNode {
+pub struct ShuffleWriterExecNode {
     /// stage that is writing the shuffle files
     #[prost(uint32, tag = "1")]
     pub stage_id: u32,
@@ -44,4 +47,7 @@ pub struct RayShuffleWriterExecNode {
     pub partitioning: ::core::option::Option<
         ::datafusion_proto::protobuf::PhysicalHashRepartition,
     >,
+    /// directory for shuffle files
+    #[prost(string, tag = "4")]
+    pub shuffle_dir: ::prost::alloc::string::String,
 }

@@ -15,8 +15,9 @@
 // specific language governing permissions and limitations
 // under the License.
 
-use crate::shuffle::ray_shuffle::CombinedRecordBatchStream;
+use crate::shuffle::CombinedRecordBatchStream;
 use datafusion::arrow::datatypes::SchemaRef;
+use datafusion::arrow::ipc::reader::FileReader;
 use datafusion::arrow::record_batch::RecordBatch;
 use datafusion::common::Statistics;
 use datafusion::error::{DataFusionError, Result};
@@ -28,30 +29,34 @@ use datafusion::physical_plan::{
     SendableRecordBatchStream,
 };
 use futures::Stream;
+use glob::glob;
+use log::debug;
 use std::any::Any;
-use std::collections::HashMap;
 use std::fmt::Formatter;
+use std::fs::File;
 use std::pin::Pin;
-use std::sync::{Arc, RwLock};
+use std::sync::Arc;
 use std::task::{Context, Poll};
 
-type PartitionId = usize;
-type StageId = usize;
-
 #[derive(Debug)]
-pub struct RayShuffleReaderExec {
+pub struct ShuffleReaderExec {
     /// Query stage to read from
-    pub stage_id: StageId,
+    pub stage_id: usize,
     /// The output schema of the query stage being read from
     schema: SchemaRef,
-    /// Input streams from Ray object store
-    input_partitions_map: RwLock<HashMap<PartitionId, Vec<RecordBatch>>>, // TODO(@lsf) can we not use Rwlock?
 
     properties: PlanProperties,
+    /// Directory to read shuffle files from
+    pub shuffle_dir: String,
 }
 
-impl RayShuffleReaderExec {
-    pub fn new(stage_id: StageId, schema: SchemaRef, partitioning: Partitioning) -> Self {
+impl ShuffleReaderExec {
+    pub fn new(
+        stage_id: usize,
+        schema: SchemaRef,
+        partitioning: Partitioning,
+        shuffle_dir: &str,
+    ) -> Self {
         let partitioning = match partitioning {
             Partitioning::Hash(expr, n) if expr.is_empty() => Partitioning::UnknownPartitioning(n),
             Partitioning::Hash(expr, n) => {
@@ -76,23 +81,12 @@ impl RayShuffleReaderExec {
             stage_id,
             schema,
             properties,
-            input_partitions_map: RwLock::new(HashMap::new()),
+            shuffle_dir: shuffle_dir.to_string(),
         }
-    }
-
-    pub fn add_input_partition(
-        &self,
-        partition: PartitionId,
-        input_batch: RecordBatch,
-    ) -> Result<(), DataFusionError> {
-        let mut map = self.input_partitions_map.write().unwrap();
-        let input_partitions = map.entry(partition).or_default();
-        input_partitions.push(input_batch);
-        Ok(())
     }
 }
 
-impl ExecutionPlan for RayShuffleReaderExec {
+impl ExecutionPlan for ShuffleReaderExec {
     fn as_any(&self) -> &dyn Any {
         self
     }
@@ -117,18 +111,27 @@ impl ExecutionPlan for RayShuffleReaderExec {
         partition: usize,
         _context: Arc<TaskContext>,
     ) -> datafusion::common::Result<SendableRecordBatchStream> {
-        let mut map = self.input_partitions_map.write().expect("got lock");
-        let input_objects = map.remove(&partition).unwrap_or_default();
-        println!(
-            "RayShuffleReaderExec[stage={}].execute(input_partition={partition}) with {} shuffle inputs",
-            self.stage_id,
-            input_objects.len(),
+        let pattern = format!(
+            "/{}/shuffle_{}_*_{partition}.arrow",
+            self.shuffle_dir, self.stage_id
         );
-        let mut streams = vec![];
-        for input in input_objects {
-            streams.push(
-                Box::pin(InMemoryShuffleStream::try_new(input)?) as SendableRecordBatchStream
+        let mut streams: Vec<SendableRecordBatchStream> = vec![];
+        for entry in glob(&pattern).expect("Failed to read glob pattern") {
+            let file = entry.unwrap();
+            debug!(
+                "ShuffleReaderExec partition {} reading from stage {} file {}",
+                partition,
+                self.stage_id,
+                file.display()
             );
+            let reader = FileReader::try_new(File::open(&file)?, None)?;
+            let stream = LocalShuffleStream::new(reader);
+            if self.schema != stream.schema() {
+                return Err(DataFusionError::Internal(
+                    "Not all shuffle files have the same schema".to_string(),
+                ));
+            }
+            streams.push(Box::pin(stream));
         }
         Ok(Box::pin(CombinedRecordBatchStream::new(
             self.schema.clone(),
@@ -141,7 +144,7 @@ impl ExecutionPlan for RayShuffleReaderExec {
     }
 
     fn name(&self) -> &str {
-        "ray suffle reader"
+        "shuffle reader"
     }
 
     fn properties(&self) -> &datafusion::physical_plan::PlanProperties {
@@ -149,46 +152,40 @@ impl ExecutionPlan for RayShuffleReaderExec {
     }
 }
 
-impl DisplayAs for RayShuffleReaderExec {
+impl DisplayAs for ShuffleReaderExec {
     fn fmt_as(&self, _t: DisplayFormatType, f: &mut Formatter) -> std::fmt::Result {
         write!(
             f,
-            "RayShuffleReaderExec(stage_id={}, input_partitioning={:?})",
+            "ShuffleReaderExec(stage_id={}, input_partitioning={:?})",
             self.stage_id,
             self.properties().partitioning
         )
     }
 }
 
-struct InMemoryShuffleStream {
-    batch: Arc<RecordBatch>,
-    read: bool,
+struct LocalShuffleStream {
+    reader: FileReader<File>,
 }
 
-impl InMemoryShuffleStream {
-    fn try_new(batch: RecordBatch) -> Result<Self, DataFusionError> {
-        Ok(Self {
-            batch: Arc::new(batch),
-            read: false,
-        })
+impl LocalShuffleStream {
+    pub fn new(reader: FileReader<File>) -> Self {
+        LocalShuffleStream { reader }
     }
 }
 
-impl Stream for InMemoryShuffleStream {
+impl Stream for LocalShuffleStream {
     type Item = datafusion::error::Result<RecordBatch>;
 
-    fn poll_next(mut self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
-        Poll::Ready(if self.read {
-            None
-        } else {
-            self.read = true;
-            Some(Ok(self.batch.as_ref().clone()))
-        })
+    fn poll_next(mut self: Pin<&mut Self>, _: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+        if let Some(batch) = self.reader.next() {
+            return Poll::Ready(Some(batch.map_err(|e| e.into())));
+        }
+        Poll::Ready(None)
     }
 }
 
-impl RecordBatchStream for InMemoryShuffleStream {
+impl RecordBatchStream for LocalShuffleStream {
     fn schema(&self) -> SchemaRef {
-        self.batch.schema()
+        self.reader.schema()
     }
 }

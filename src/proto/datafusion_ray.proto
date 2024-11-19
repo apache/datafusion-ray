@@ -11,25 +11,29 @@ import "datafusion.proto";
 
 message RaySqlExecNode {
   oneof PlanType {
-    RayShuffleReaderExecNode ray_shuffle_reader = 3;
-    RayShuffleWriterExecNode ray_shuffle_writer = 4;
+    ShuffleReaderExecNode shuffle_reader = 1;
+    ShuffleWriterExecNode shuffle_writer = 2;
   }
 }
 
-message RayShuffleReaderExecNode {
+message ShuffleReaderExecNode {
   // stage to read from
   uint32 stage_id = 1;
   // schema of the shuffle stage
   datafusion_common.Schema schema = 2;
   // this must match the output partitioning of the writer we are reading from
   datafusion.PhysicalHashRepartition partitioning = 3;
+  // directory for shuffle files
+  string shuffle_dir = 4;
 }
 
-message RayShuffleWriterExecNode {
+message ShuffleWriterExecNode {
   // stage that is writing the shuffle files
   uint32 stage_id = 1;
   // plan to execute
   datafusion.PhysicalPlanNode plan = 2;
   // output partitioning schema
   datafusion.PhysicalHashRepartition partitioning = 3;
+  // directory for shuffle files
+  string shuffle_dir = 4;
 }

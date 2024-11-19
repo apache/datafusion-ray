@@ -1130,6 +1130,7 @@ dependencies = [
  "datafusion",
  "datafusion-proto",
  "futures",
+ "glob",
  "log",
  "pretty_assertions",
  "prost 0.13.3",
@@ -1139,6 +1140,7 @@ dependencies = [
  "rustc_version",
  "tokio",
  "tonic-build",
+ "uuid",
 ]
 
 [[package]]

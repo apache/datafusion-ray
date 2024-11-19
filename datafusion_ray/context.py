@@ -29,23 +29,31 @@ from typing import List, Any
 from datafusion import SessionContext
 
 
-def schedule_execution(
-    graph: ExecutionGraph,
-    stage_id: int,
-    is_final_stage: bool,
-) -> list[ray.ObjectRef]:
-    stage = graph.get_query_stage(stage_id)
-    # execute child stages first
-    # A list of (stage ID, list of futures) for each child stage
-    # Each list is a 2-D array of (input partitions, output partitions).
-    child_outputs = []
-    for child_id in stage.get_child_stage_ids():
-        child_outputs.append((child_id, schedule_execution(graph, child_id, False)))
-        # child_outputs.append((child_id, schedule_execution(graph, child_id)))
+@ray.remote(num_cpus=0)
+def execute_query_stage(
+    query_stages: list[QueryStage],
+    stage_id: int
+) -> tuple[int, list[ray.ObjectRef]]:
+    """
+    Execute a query stage on the workers.
 
+    Returns the stage ID, and a list of futures for the output partitions of the query stage.
+    """
+    stage = QueryStage(stage_id, query_stages[stage_id])
+
+    # execute child stages first
+    child_futures = []
+    for child_id in stage.get_child_stage_ids():
+        child_futures.append(
+            execute_query_stage.remote(query_stages, child_id)
+        )
+
+    # if the query stage has a single output partition then we need to execute for the output
+    # partition, otherwise we need to execute in parallel for each input partition
     concurrency = stage.get_input_partition_count()
     output_partitions_count = stage.get_output_partition_count()
-    if is_final_stage:
+    if output_partitions_count == 1:
+        # reduce stage
         print("Forcing reduce stage concurrency from {} to 1".format(concurrency))
         concurrency = 1
 
@@ -55,50 +63,33 @@ def schedule_execution(
         )
     )
 
-    def _get_worker_inputs(
-        part: int,
-    ) -> tuple[list[tuple[int, int, int]], list[ray.ObjectRef]]:
-        ids = []
-        futures = []
-        for child_stage_id, child_futures in child_outputs:
-            for i, lst in enumerate(child_futures):
-                if isinstance(lst, list):
-                    for j, f in enumerate(lst):
-                        if concurrency == 1 or j == part:
-                            # If concurrency is 1, pass in all shuffle partitions. Otherwise,
-                            # only pass in the partitions that match the current worker partition.
-                            ids.append((child_stage_id, i, j))
-                            futures.append(f)
-                elif concurrency == 1 or part == 0:
-                    ids.append((child_stage_id, i, 0))
-                    futures.append(lst)
-        return ids, futures
+    # A list of (stage ID, list of futures) for each child stage
+    # Each list is a 2-D array of (input partitions, output partitions).
+    child_outputs = ray.get(child_futures)
+
+    # if we are using disk-based shuffle, wait until the child stages to finish
+    # writing the shuffle files to disk first.
+    ray.get([f for _, lst in child_outputs for f in lst])
 
     # schedule the actual execution workers
     plan_bytes = stage.get_execution_plan_bytes()
     futures = []
     opt = {}
-    # TODO not sure why we had this but my Ray cluster could not find suitable resource
-    # until I commented this out
-    # opt["resources"] = {"worker": 1e-3}
-    opt["num_returns"] = output_partitions_count
     for part in range(concurrency):
-        ids, inputs = _get_worker_inputs(part)
         futures.append(
             execute_query_partition.options(**opt).remote(
-                stage_id, plan_bytes, part, ids, *inputs
+                stage_id, plan_bytes, part
             )
         )
-    return futures
+
+    return stage_id, futures
 
 
 @ray.remote
 def execute_query_partition(
     stage_id: int,
     plan_bytes: bytes,
-    part: int,
-    input_partition_ids: list[tuple[int, int, int]],
-    *input_partitions: list[pa.RecordBatch],
+    part: int
 ) -> Iterable[pa.RecordBatch]:
     start_time = time.time()
     # plan = datafusion_ray.deserialize_execution_plan(plan_bytes)
@@ -109,13 +100,10 @@ def execute_query_partition(
     #         input_partition_ids,
     #     )
     # )
-    partitions = [
-        (s, j, p) for (s, _, j), p in zip(input_partition_ids, input_partitions)
-    ]
     # This is delegating to DataFusion for execution, but this would be a good place
     # to plug in other execution engines by translating the plan into another engine's plan
     # (perhaps via Substrait, once DataFusion supports converting a physical plan to Substrait)
-    ret = datafusion_ray.execute_partition(plan_bytes, part, partitions)
+    ret = datafusion_ray.execute_partition(plan_bytes, part)
     duration = time.time() - start_time
     event = {
         "cat": f"{stage_id}-{part}",
@@ -153,19 +141,24 @@ class DatafusionRayContext:
             return []
 
         df = self.df_ctx.sql(sql)
-        execution_plan = df.execution_plan()
+        return self.plan(df.execution_plan())
+
+    def plan(self, execution_plan: Any) -> pa.RecordBatch:
 
         graph = self.ctx.plan(execution_plan)
         final_stage_id = graph.get_final_query_stage().id()
-        partitions = schedule_execution(graph, final_stage_id, True)
+        # serialize the query stages and store in Ray object store
+        query_stages = [
+                graph.get_query_stage(i).get_execution_plan_bytes()
+            for i in range(final_stage_id + 1)
+        ]
+        # schedule execution
+        future = execute_query_stage.remote(
+            query_stages,
+            final_stage_id
+        )
+        _, partitions = ray.get(future)
         # assert len(partitions) == 1, len(partitions)
         result_set = ray.get(partitions[0])
         return result_set
 
-    def plan(self, physical_plan: Any) -> pa.RecordBatch:
-        graph = self.ctx.plan(physical_plan)
-        final_stage_id = graph.get_final_query_stage().id()
-        partitions = schedule_execution(graph, final_stage_id, True)
-        # assert len(partitions) == 1, len(partitions)
-        result_set = ray.get(partitions[0])
-        return result_set

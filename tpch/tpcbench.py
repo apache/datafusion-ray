@@ -40,7 +40,7 @@ def main(benchmark: str, data_path: str, query_path: str, concurrency: int):
 
     # Connect to a cluster
     # use ray job submit
-    ray.init()
+    ray.init(num_cpus=concurrency)
 
     runtime = (
         RuntimeConfig()

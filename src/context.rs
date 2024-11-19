@@ -16,8 +16,7 @@
 // under the License.
 
 use crate::planner::{make_execution_graph, PyExecutionGraph};
-use crate::shuffle::{RayShuffleReaderExec, ShuffleCodec};
-use datafusion::arrow::pyarrow::FromPyArrow;
+use crate::shuffle::ShuffleCodec;
 use datafusion::arrow::pyarrow::ToPyArrow;
 use datafusion::arrow::record_batch::RecordBatch;
 use datafusion::error::{DataFusionError, Result};
@@ -31,7 +30,7 @@ use futures::StreamExt;
 use prost::Message;
 use pyo3::exceptions::PyRuntimeError;
 use pyo3::prelude::*;
-use pyo3::types::{PyBytes, PyList, PyLong, PyTuple};
+use pyo3::types::{PyBytes, PyTuple};
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::runtime::Runtime;
@@ -117,10 +116,9 @@ impl PyContext {
         &self,
         plan: &Bound<'_, PyBytes>,
         part: usize,
-        inputs: PyObject,
         py: Python,
     ) -> PyResult<PyResultSet> {
-        execute_partition(plan, part, inputs, py)
+        execute_partition(plan, part, py)
     }
 }
 
@@ -128,11 +126,10 @@ impl PyContext {
 pub fn execute_partition(
     plan_bytes: &Bound<'_, PyBytes>,
     part: usize,
-    inputs: PyObject,
     py: Python,
 ) -> PyResult<PyResultSet> {
     let plan = deserialize_execution_plan(plan_bytes)?;
-    _execute_partition(plan, part, inputs)
+    _execute_partition(plan, part)
         .unwrap()
         .into_iter()
         .map(|batch| batch.to_pyarrow(py))
@@ -170,59 +167,10 @@ pub fn deserialize_execution_plan(proto_msg: &Bound<PyBytes>) -> PyResult<Arc<dy
     Ok(plan)
 }
 
-/// Iterate down an ExecutionPlan and set the input objects for RayShuffleReaderExec.
-fn _set_inputs_for_ray_shuffle_reader(
-    plan: Arc<dyn ExecutionPlan>,
-    input_partitions: &Bound<'_, PyList>,
-) -> Result<()> {
-    if let Some(reader_exec) = plan.as_any().downcast_ref::<RayShuffleReaderExec>() {
-        let exec_stage_id = reader_exec.stage_id;
-        // iterate over inputs, wrap in PyBytes and set as input objects
-        for item in input_partitions.iter() {
-            let pytuple = item
-                .downcast::<PyTuple>()
-                .map_err(|e| DataFusionError::Execution(format!("{}", e)))?;
-            let stage_id = pytuple
-                .get_item(0)
-                .map_err(|e| DataFusionError::Execution(format!("{}", e)))?
-                .downcast::<PyLong>()
-                .map_err(|e| DataFusionError::Execution(format!("{}", e)))?
-                .extract::<usize>()
-                .map_err(|e| DataFusionError::Execution(format!("{}", e)))?;
-            if stage_id != exec_stage_id {
-                continue;
-            }
-            let part = pytuple
-                .get_item(1)
-                .map_err(|e| DataFusionError::Execution(format!("{}", e)))?
-                .downcast::<PyLong>()
-                .map_err(|e| DataFusionError::Execution(format!("{}", e)))?
-                .extract::<usize>()
-                .map_err(|e| DataFusionError::Execution(format!("{}", e)))?;
-            let batch = RecordBatch::from_pyarrow_bound(
-                &pytuple
-                    .get_item(2)
-                    .map_err(|e| DataFusionError::Execution(format!("{}", e)))?,
-            )
-            .map_err(|e| DataFusionError::Execution(format!("{}", e)))?;
-            reader_exec.add_input_partition(part, batch)?;
-        }
-    } else {
-        for child in plan.children() {
-            _set_inputs_for_ray_shuffle_reader(child.to_owned(), input_partitions)?;
-        }
-    }
-    Ok(())
-}
-
 /// Execute a partition of a query plan. This will typically be executing a shuffle write and
 /// write the results to disk, except for the final query stage, which will return the data.
 /// inputs is a list of tuples of (stage_id, partition_id, bytes) for each input partition.
-fn _execute_partition(
-    plan: Arc<dyn ExecutionPlan>,
-    part: usize,
-    inputs: PyObject,
-) -> Result<Vec<RecordBatch>> {
+fn _execute_partition(plan: Arc<dyn ExecutionPlan>, part: usize) -> Result<Vec<RecordBatch>> {
     let ctx = Arc::new(TaskContext::new(
         Some("task_id".to_string()),
         "session_id".to_string(),
@@ -232,13 +180,6 @@ fn _execute_partition(
         HashMap::new(),
         Arc::new(RuntimeEnv::default()),
     ));
-
-    Python::with_gil(|py| {
-        let input_partitions = inputs
-            .downcast_bound::<PyList>(py)
-            .map_err(|e| DataFusionError::Execution(format!("{}", e)))?;
-        _set_inputs_for_ray_shuffle_reader(plan.clone(), input_partitions)
-    })?;
 
     // create a Tokio runtime to run the async code
     let rt = Runtime::new().unwrap();

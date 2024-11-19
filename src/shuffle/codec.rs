@@ -16,8 +16,8 @@
 // under the License.
 
 use crate::protobuf::ray_sql_exec_node::PlanType;
-use crate::protobuf::{RayShuffleReaderExecNode, RayShuffleWriterExecNode, RaySqlExecNode};
-use crate::shuffle::{RayShuffleReaderExec, RayShuffleWriterExec};
+use crate::protobuf::{RaySqlExecNode, ShuffleReaderExecNode, ShuffleWriterExecNode};
+use crate::shuffle::{ShuffleReaderExec, ShuffleWriterExec};
 use datafusion::arrow::datatypes::SchemaRef;
 use datafusion::common::{DataFusionError, Result};
 use datafusion::execution::runtime_env::RuntimeEnv;
@@ -46,7 +46,7 @@ impl PhysicalExtensionCodec for ShuffleCodec {
             .map_err(|e| DataFusionError::Internal(format!("failed to decode plan: {e:?}")))?;
         let extension_codec = DefaultPhysicalExtensionCodec {};
         match node.plan_type {
-            Some(PlanType::RayShuffleReader(reader)) => {
+            Some(PlanType::ShuffleReader(reader)) => {
                 let schema = reader.schema.as_ref().unwrap();
                 let schema: SchemaRef = Arc::new(schema.try_into().unwrap());
                 let hash_part = parse_protobuf_hash_partitioning(
@@ -55,13 +55,14 @@ impl PhysicalExtensionCodec for ShuffleCodec {
                     &schema,
                     &extension_codec,
                 )?;
-                Ok(Arc::new(RayShuffleReaderExec::new(
+                Ok(Arc::new(ShuffleReaderExec::new(
                     reader.stage_id as usize,
                     schema,
                     hash_part.unwrap(),
+                    &reader.shuffle_dir,
                 )))
             }
-            Some(PlanType::RayShuffleWriter(writer)) => {
+            Some(PlanType::ShuffleWriter(writer)) => {
                 let plan = writer.plan.unwrap().try_into_physical_plan(
                     registry,
                     &RuntimeEnv::default(),
@@ -73,10 +74,11 @@ impl PhysicalExtensionCodec for ShuffleCodec {
                     plan.schema().as_ref(),
                     &extension_codec,
                 )?;
-                Ok(Arc::new(RayShuffleWriterExec::new(
+                Ok(Arc::new(ShuffleWriterExec::new(
                     writer.stage_id as usize,
                     plan,
                     hash_part.unwrap(),
+                    &writer.shuffle_dir,
                 )))
             }
             _ => unreachable!(),
@@ -88,26 +90,28 @@ impl PhysicalExtensionCodec for ShuffleCodec {
         node: Arc<dyn ExecutionPlan>,
         buf: &mut Vec<u8>,
     ) -> Result<(), DataFusionError> {
-        let plan = if let Some(reader) = node.as_any().downcast_ref::<RayShuffleReaderExec>() {
+        let plan = if let Some(reader) = node.as_any().downcast_ref::<ShuffleReaderExec>() {
             let schema: protobuf::Schema = reader.schema().try_into().unwrap();
             let partitioning =
                 encode_partitioning_scheme(reader.properties().output_partitioning())?;
-            let reader = RayShuffleReaderExecNode {
+            let reader = ShuffleReaderExecNode {
                 stage_id: reader.stage_id as u32,
                 schema: Some(schema),
                 partitioning: Some(partitioning),
+                shuffle_dir: reader.shuffle_dir.clone(),
             };
-            PlanType::RayShuffleReader(reader)
-        } else if let Some(writer) = node.as_any().downcast_ref::<RayShuffleWriterExec>() {
+            PlanType::ShuffleReader(reader)
+        } else if let Some(writer) = node.as_any().downcast_ref::<ShuffleWriterExec>() {
             let plan = PhysicalPlanNode::try_from_physical_plan(writer.plan.clone(), self)?;
             let partitioning =
                 encode_partitioning_scheme(writer.properties().output_partitioning())?;
-            let writer = RayShuffleWriterExecNode {
+            let writer = ShuffleWriterExecNode {
                 stage_id: writer.stage_id as u32,
                 plan: Some(plan),
                 partitioning: Some(partitioning),
+                shuffle_dir: writer.shuffle_dir.clone(),
             };
-            PlanType::RayShuffleWriter(writer)
+            PlanType::ShuffleWriter(writer)
         } else {
             unreachable!()
         };
