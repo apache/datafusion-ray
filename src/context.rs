@@ -15,8 +15,8 @@
 // specific language governing permissions and limitations
 // under the License.
 
+use crate::ext::Extensions;
 use crate::planner::{make_execution_graph, PyExecutionGraph};
-use crate::shuffle::ShuffleCodec;
 use datafusion::arrow::pyarrow::ToPyArrow;
 use datafusion::arrow::record_batch::RecordBatch;
 use datafusion::error::{DataFusionError, Result};
@@ -26,6 +26,7 @@ use datafusion::physical_plan::{displayable, ExecutionPlan};
 use datafusion::prelude::*;
 use datafusion_proto::physical_plan::AsExecutionPlan;
 use datafusion_proto::protobuf;
+use datafusion_python::physical_plan::PyExecutionPlan;
 use futures::StreamExt;
 use prost::Message;
 use pyo3::exceptions::PyRuntimeError;
@@ -45,22 +46,30 @@ pub struct PyContext {
 
 pub(crate) fn execution_plan_from_pyany(
     py_plan: &Bound<PyAny>,
+    py: Python,
 ) -> PyResult<Arc<dyn ExecutionPlan>> {
-    let py_proto = py_plan.call_method0("to_proto")?;
-    let plan_bytes: &[u8] = py_proto.extract()?;
-    let plan_node = protobuf::PhysicalPlanNode::try_decode(plan_bytes).map_err(|e| {
-        PyRuntimeError::new_err(format!(
-            "Unable to decode physical plan protobuf message: {}",
-            e
-        ))
-    })?;
+    if let Ok(py_plan) = py_plan.to_object(py).downcast_bound::<PyExecutionPlan>(py) {
+        // For session contexts created with datafusion_ray.extended_session_context(), the inner
+        // execution plan can be used as such (and the enabled extensions are all available).
+        Ok(py_plan.borrow().plan.clone())
+    } else {
+        // The session context originates from outside our library, so we'll grab the protobuf plan
+        // by calling the python method with no extension codecs.
+        let py_proto = py_plan.call_method0("to_proto")?;
+        let plan_bytes: &[u8] = py_proto.extract()?;
+        let plan_node = protobuf::PhysicalPlanNode::try_decode(plan_bytes).map_err(|e| {
+            PyRuntimeError::new_err(format!(
+                "Unable to decode physical plan protobuf message: {}",
+                e
+            ))
+        })?;
 
-    let codec = ShuffleCodec {};
-    let runtime = RuntimeEnv::default();
-    let registry = SessionContext::new();
-    plan_node
-        .try_into_physical_plan(&registry, &runtime, &codec)
-        .map_err(|e| e.into())
+        let runtime = RuntimeEnv::default();
+        let registry = SessionContext::new();
+        plan_node
+            .try_into_physical_plan(&registry, &runtime, Extensions::codec())
+            .map_err(|e| e.into())
+    }
 }
 
 #[pymethods]
@@ -87,14 +96,14 @@ impl PyContext {
     }
 
     /// Plan a distributed SELECT query for executing against the Ray workers
-    pub fn plan(&self, plan: &Bound<PyAny>) -> PyResult<PyExecutionGraph> {
+    pub fn plan(&self, plan: &Bound<PyAny>, py: Python) -> PyResult<PyExecutionGraph> {
         // println!("Planning {}", sql);
         // let df = wait_for_future(py, self.ctx.sql(sql))?;
         // let py_df = self.run_sql(sql, py)?;
         // let py_plan = py_df.call_method0(py, "execution_plan")?;
         // let py_plan = py_plan.bind(py);
 
-        let plan = execution_plan_from_pyany(plan)?;
+        let plan = execution_plan_from_pyany(plan, py)?;
         let graph = make_execution_graph(plan.clone())?;
 
         // debug logging
@@ -140,9 +149,10 @@ pub fn serialize_execution_plan(
     plan: Arc<dyn ExecutionPlan>,
     py: Python,
 ) -> PyResult<Bound<'_, PyBytes>> {
-    let codec = ShuffleCodec {};
-    let proto =
-        datafusion_proto::protobuf::PhysicalPlanNode::try_from_physical_plan(plan.clone(), &codec)?;
+    let proto = datafusion_proto::protobuf::PhysicalPlanNode::try_from_physical_plan(
+        plan.clone(),
+        Extensions::codec(),
+    )?;
 
     let bytes = proto.encode_to_vec();
     Ok(PyBytes::new_bound(py, &bytes))
@@ -159,9 +169,8 @@ pub fn deserialize_execution_plan(proto_msg: &Bound<PyBytes>) -> PyResult<Arc<dy
         })?;
 
     let ctx = SessionContext::new();
-    let codec = ShuffleCodec {};
     let plan = proto_plan
-        .try_into_physical_plan(&ctx, &ctx.runtime_env(), &codec)
+        .try_into_physical_plan(&ctx, &ctx.runtime_env(), Extensions::codec())
         .map_err(DataFusionError::from)?;
 
     Ok(plan)

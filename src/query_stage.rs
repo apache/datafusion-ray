@@ -16,7 +16,8 @@
 // under the License.
 
 use crate::context::serialize_execution_plan;
-use crate::shuffle::{ShuffleCodec, ShuffleReaderExec};
+use crate::ext::Extensions;
+use crate::shuffle::ShuffleReaderExec;
 use datafusion::error::Result;
 use datafusion::physical_plan::{ExecutionPlan, Partitioning};
 use datafusion::prelude::SessionContext;
@@ -41,8 +42,8 @@ impl PyQueryStage {
     #[new]
     pub fn new(id: usize, bytes: Vec<u8>) -> Result<Self> {
         let ctx = SessionContext::new();
-        let codec = ShuffleCodec {};
-        let plan = physical_plan_from_bytes_with_extension_codec(&bytes, &ctx, &codec)?;
+        let plan =
+            physical_plan_from_bytes_with_extension_codec(&bytes, &ctx, Extensions::codec())?;
         Ok(PyQueryStage {
             stage: Arc::new(QueryStage { id, plan }),
         })
