@@ -15,12 +15,21 @@
 # specific language governing permissions and limitations
 # under the License.
 
-from datafusion_ray import Context
+from datafusion_ray.context import DatafusionRayContext
 from datafusion import SessionContext
+import pytest
 
 
-def test():
+def test_basic_query_succeed():
     df_ctx = SessionContext()
-    ctx = Context(df_ctx, False)
+    ctx = DatafusionRayContext(df_ctx)
     df_ctx.register_csv("tips", "examples/tips.csv", has_header=True)
-    ctx.plan("SELECT * FROM tips")
+    record_batch = ctx.sql("SELECT * FROM tips")
+    assert record_batch.num_rows == 244
+
+
+def test_no_result_query():
+    df_ctx = SessionContext()
+    ctx = DatafusionRayContext(df_ctx)
+    df_ctx.register_csv("tips", "examples/tips.csv", has_header=True)
+    ctx.sql("CREATE VIEW tips_view AS SELECT * FROM tips")
