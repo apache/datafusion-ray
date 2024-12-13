@@ -18,7 +18,7 @@
 use crate::context::serialize_execution_plan;
 use crate::shuffle::{ShuffleCodec, ShuffleReaderExec};
 use datafusion::error::Result;
-use datafusion::physical_plan::{ExecutionPlan, Partitioning};
+use datafusion::physical_plan::{ExecutionPlan, ExecutionPlanProperties, Partitioning};
 use datafusion::prelude::SessionContext;
 use datafusion_proto::bytes::physical_plan_from_bytes_with_extension_codec;
 use pyo3::prelude::*;
@@ -99,10 +99,7 @@ impl QueryStage {
     /// Get the input partition count. This is the same as the number of concurrent tasks
     /// when we schedule this query stage for execution
     pub fn get_input_partition_count(&self) -> usize {
-        self.plan.children()[0]
-            .properties()
-            .output_partitioning()
-            .partition_count()
+        self.plan.output_partitioning().partition_count()
     }
 
     pub fn get_output_partition_count(&self) -> usize {

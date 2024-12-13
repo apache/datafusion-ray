@@ -17,7 +17,6 @@
 
 from datafusion_ray.context import DatafusionRayContext
 from datafusion import SessionContext
-import pytest
 
 
 def test_basic_query_succeed():
