@@ -47,7 +47,7 @@ ProjectionExec: expr=[CAST(sum(lineitem.l_extendedprice)@0 AS Float64) / 7 as av
 DataFusion Ray Distributed Plan
 ===========
 
-Query Stage #0 (1 -> 2):
+Query Stage #0 (2 -> 2):
 ShuffleWriterExec(stage_id=0, output_partitioning=Hash([Column { name: "p_partkey", index: 0 }], 2))
   CoalesceBatchesExec: target_batch_size=8192
     FilterExec: p_brand@1 = Brand#42 AND p_container@2 = LG BAG, projection=[p_partkey@0]

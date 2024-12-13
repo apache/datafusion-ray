@@ -76,13 +76,13 @@ SortPreservingMergeExec: [s_name@0 ASC NULLS LAST]
 DataFusion Ray Distributed Plan
 ===========
 
-Query Stage #0 (1 -> 2):
+Query Stage #0 (2 -> 2):
 ShuffleWriterExec(stage_id=0, output_partitioning=Hash([Column { name: "n_nationkey", index: 0 }], 2))
   CoalesceBatchesExec: target_batch_size=8192
     FilterExec: n_name@1 = KENYA, projection=[n_nationkey@0]
       ParquetExec: file_groups={ ... }, projection=[n_nationkey, n_name], predicate=n_name@1 = KENYA, pruning_predicate=CASE WHEN n_name_null_count@2 = n_name_row_count@3 THEN false ELSE n_name_min@0 <= KENYA AND KENYA <= n_name_max@1 END, required_guarantees=[n_name in (KENYA)]
 
-Query Stage #1 (1 -> 2):
+Query Stage #1 (2 -> 2):
 ShuffleWriterExec(stage_id=1, output_partitioning=Hash([Column { name: "s_nationkey", index: 3 }], 2))
   ParquetExec: file_groups={ ... }, projection=[s_suppkey, s_name, s_address, s_nationkey]
 
@@ -95,7 +95,7 @@ ShuffleWriterExec(stage_id=2, output_partitioning=Hash([Column { name: "s_suppke
       CoalesceBatchesExec: target_batch_size=8192
         ShuffleReaderExec(stage_id=1, input_partitioning=Hash([Column { name: "s_nationkey", index: 3 }], 2))
 
-Query Stage #3 (1 -> 2):
+Query Stage #3 (2 -> 2):
 ShuffleWriterExec(stage_id=3, output_partitioning=Hash([Column { name: "p_partkey", index: 0 }], 2))
   CoalesceBatchesExec: target_batch_size=8192
     FilterExec: p_name@1 LIKE blanched%, projection=[p_partkey@0]
@@ -142,7 +142,7 @@ ShuffleWriterExec(stage_id=8, output_partitioning=Hash([], 2))
         CoalesceBatchesExec: target_batch_size=8192
           ShuffleReaderExec(stage_id=7, input_partitioning=Hash([Column { name: "ps_suppkey", index: 0 }], 2))
 
-Query Stage #9 (2 -> 1):
+Query Stage #9 (1 -> 1):
 SortPreservingMergeExec: [s_name@0 ASC NULLS LAST]
   ShuffleReaderExec(stage_id=8, input_partitioning=Hash([], 2))
 

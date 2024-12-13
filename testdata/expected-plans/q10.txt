@@ -60,7 +60,7 @@ SortPreservingMergeExec: [revenue@2 DESC], fetch=20
 DataFusion Ray Distributed Plan
 ===========
 
-Query Stage #0 (1 -> 2):
+Query Stage #0 (2 -> 2):
 ShuffleWriterExec(stage_id=0, output_partitioning=Hash([Column { name: "n_nationkey", index: 0 }], 2))
   ParquetExec: file_groups={ ... }, projection=[n_nationkey, n_name]
 
@@ -117,7 +117,7 @@ ShuffleWriterExec(stage_id=7, output_partitioning=Hash([Column { name: "c_custke
         CoalesceBatchesExec: target_batch_size=8192
           ShuffleReaderExec(stage_id=6, input_partitioning=Hash([Column { name: "c_custkey", index: 0 }, Column { name: "c_name", index: 1 }, Column { name: "c_acctbal", index: 2 }, Column { name: "c_phone", index: 3 }, Column { name: "n_name", index: 4 }, Column { name: "c_address", index: 5 }, Column { name: "c_comment", index: 6 }], 2))
 
-Query Stage #8 (2 -> 1):
+Query Stage #8 (1 -> 1):
 SortPreservingMergeExec: [revenue@2 DESC], fetch=20
   ShuffleReaderExec(stage_id=7, input_partitioning=Hash([Column { name: "c_custkey", index: 0 }, Column { name: "c_name", index: 1 }, Column { name: "c_acctbal", index: 3 }, Column { name: "c_phone", index: 6 }, Column { name: "n_name", index: 4 }, Column { name: "c_address", index: 5 }, Column { name: "c_comment", index: 7 }], 2))
 
