@@ -99,10 +99,11 @@ impl QueryStage {
     /// Get the input partition count. This is the same as the number of concurrent tasks
     /// when we schedule this query stage for execution
     pub fn get_input_partition_count(&self) -> usize {
-        self.plan.children()[0].output_partitioning().partition_count()
         if self.plan.as_any().is::<ShuffleWriterExec>() {
             // most query stages represent a shuffle write
-            self.plan.children()[0].output_partitioning().partition_count()
+            self.plan.children()[0]
+                .output_partitioning()
+                .partition_count()
         } else {
             // probably the final query stage
             self.plan.output_partitioning().partition_count()
