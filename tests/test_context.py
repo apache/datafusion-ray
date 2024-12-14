@@ -20,38 +20,39 @@ from datafusion import SessionContext, SessionConfig, RuntimeConfig, col, lit, f
 
 
 def test_basic_query_succeed():
-    df_ctx = SessionContext()
+    config = SessionConfig().with_target_partitions(4)
+    df_ctx = SessionContext(config=config)
     ctx = DatafusionRayContext(df_ctx)
     df_ctx.register_csv("tips", "examples/tips.csv", has_header=True)
     # TODO why does this return a single batch and not a list of batches?
     record_batches = ctx.sql("SELECT * FROM tips")
-    assert record_batches[0].num_rows == 244
+    assert len(record_batches) <= 4
+    num_rows = sum(batch.num_rows for batch in record_batches)
+    assert num_rows == 244
 
 def test_aggregate_csv():
-    df_ctx = SessionContext()
+    config = SessionConfig().with_target_partitions(4)
+    df_ctx = SessionContext(config=config)
     ctx = DatafusionRayContext(df_ctx)
     df_ctx.register_csv("tips", "examples/tips.csv", has_header=True)
     record_batches = ctx.sql("select sex, smoker, avg(tip/total_bill) as tip_pct from tips group by sex, smoker")
-    assert isinstance(record_batches, list)
-    # TODO why does this return many empty batches?
-    num_rows = 0
-    for record_batch in record_batches:
-        num_rows += record_batch.num_rows
+    assert len(record_batches) <= 4
+    num_rows = sum(batch.num_rows for batch in record_batches)
     assert num_rows == 4
 
 def test_aggregate_parquet():
-    df_ctx = SessionContext()
+    config = SessionConfig().with_target_partitions(4)
+    df_ctx = SessionContext(config=config)
     ctx = DatafusionRayContext(df_ctx)
     df_ctx.register_parquet("tips", "examples/tips.parquet")
     record_batches = ctx.sql("select sex, smoker, avg(tip/total_bill) as tip_pct from tips group by sex, smoker")
-    # TODO why does this return many empty batches?
-    num_rows = 0
-    for record_batch in record_batches:
-        num_rows += record_batch.num_rows
+    assert len(record_batches) <= 4
+    num_rows = sum(batch.num_rows for batch in record_batches)
     assert num_rows == 4
 
 def test_aggregate_parquet_dataframe():
-    df_ctx = SessionContext()
+    config = SessionConfig().with_target_partitions(4)
+    df_ctx = SessionContext(config=config)
     ray_ctx = DatafusionRayContext(df_ctx)
     df = df_ctx.read_parquet(f"examples/tips.parquet")
     df = (
@@ -67,7 +68,8 @@ def test_aggregate_parquet_dataframe():
 
 
 def test_no_result_query():
-    df_ctx = SessionContext()
+    config = SessionConfig().with_target_partitions(4)
+    df_ctx = SessionContext(config=config)
     ctx = DatafusionRayContext(df_ctx)
     df_ctx.register_csv("tips", "examples/tips.csv", has_header=True)
     ctx.sql("CREATE VIEW tips_view AS SELECT * FROM tips")
