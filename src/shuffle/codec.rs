@@ -102,7 +102,7 @@ impl PhysicalExtensionCodec for ShuffleCodec {
             };
             PlanType::ShuffleReader(reader)
         } else if let Some(writer) = node.as_any().downcast_ref::<ShuffleWriterExec>() {
-            let plan = PhysicalPlanNode::try_from_physical_plan(writer.plan.clone(), self)?;
+            let plan = PhysicalPlanNode::try_from_physical_plan(writer.input_plan.clone(), self)?;
             let partitioning =
                 encode_partitioning_scheme(writer.properties().output_partitioning())?;
             let writer = ShuffleWriterExecNode {

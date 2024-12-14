@@ -88,13 +88,11 @@ impl QueryStage {
 
     /// Get the number of partitions that can be executed in parallel
     pub fn get_execution_partition_count(&self) -> usize {
-        if self.plan.as_any().is::<ShuffleWriterExec>() {
+        if let Some(shuffle) = self.plan.as_any().downcast_ref::<ShuffleWriterExec>() {
             // use the partitioning of the input to the shuffle write because we are
             // really executing that and then using the shuffle writer to repartition
             // the output
-            self.plan.children()[0]
-                .output_partitioning()
-                .partition_count()
+            shuffle.input_plan.output_partitioning().partition_count()
         } else {
             // for any other plan, use its output partitioning
             self.plan.output_partitioning().partition_count()
