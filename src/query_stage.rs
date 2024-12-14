@@ -16,7 +16,7 @@
 // under the License.
 
 use crate::context::serialize_execution_plan;
-use crate::shuffle::{ShuffleCodec, ShuffleReaderExec};
+use crate::shuffle::{ShuffleCodec, ShuffleReaderExec, ShuffleWriterExec};
 use datafusion::error::Result;
 use datafusion::physical_plan::{ExecutionPlan, ExecutionPlanProperties, Partitioning};
 use datafusion::prelude::SessionContext;
@@ -61,7 +61,7 @@ impl PyQueryStage {
     }
 
     pub fn get_input_partition_count(&self) -> usize {
-        self.stage.get_input_partition_count()
+        self.stage.get_execution_partition_count()
     }
 
     pub fn get_output_partition_count(&self) -> usize {
@@ -86,16 +86,18 @@ impl QueryStage {
         ids
     }
 
-    /// Get the input partition count. This is the same as the number of concurrent tasks
-    /// when we schedule this query stage for execution
-    pub fn get_input_partition_count(&self) -> usize {
-        if self.plan.children().is_empty() {
-            // leaf node (file scan)
-            self.plan.output_partitioning().partition_count()
-        } else {
+    /// Get the number of partitions that can be executed in parallel
+    pub fn get_execution_partition_count(&self) -> usize {
+        if self.plan.as_any().is::<ShuffleWriterExec>() {
+            // use the partitioning of the input to the shuffle write because we are
+            // really executing that and then using the shuffle writer to repartition
+            // the output
             self.plan.children()[0]
                 .output_partitioning()
                 .partition_count()
+        } else {
+            // for any other plan, use its output partitioning
+            self.plan.output_partitioning().partition_count()
         }
     }
 
