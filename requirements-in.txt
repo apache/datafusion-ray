@@ -4,9 +4,9 @@ isort
 maturin
 mypy
 numpy
-pyarrow
+pyarrow>=18.0.0
 pytest
 ray==2.37.0
-datafusion>=42.0.0
+datafusion>=43.0.0
 toml
 importlib_metadata; python_version < "3.8"

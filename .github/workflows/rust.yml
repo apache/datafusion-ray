@@ -32,14 +32,14 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
       - name: Install protobuf compiler
         shell: bash
         run: sudo apt-get install protobuf-compiler
       - name: Build Rust code
         run: cargo build --verbose
       - name: Set up Python
-        uses: actions/setup-python@v2
+        uses: actions/setup-python@v5
         with:
           python-version: ${{ env.PYTHON_VERSION }}
       - name: Install test dependencies
@@ -49,5 +49,12 @@ jobs:
       - name: Generate test data
         run: |
           ./scripts/gen-test-data.sh
-      - name: Run tests
+      - name: Run Rust tests
         run: cargo test --verbose
+      - name: Run Python tests
+        run: |
+          python -m venv venv
+          source venv/bin/activate
+          pip install -r requirements-in.txt
+          maturin develop
+          python -m pytest

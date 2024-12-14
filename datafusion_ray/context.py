@@ -115,7 +115,7 @@ def execute_query_partition(
         "ph": "X",
     }
     print(json.dumps(event), end=",")
-    return ret[0] if len(ret) == 1 else ret
+    return ret
 
 
 class DatafusionRayContext:
@@ -143,7 +143,7 @@ class DatafusionRayContext:
         df = self.df_ctx.sql(sql)
         return self.plan(df.execution_plan())
 
-    def plan(self, execution_plan: Any) -> pa.RecordBatch:
+    def plan(self, execution_plan: Any) -> List[pa.RecordBatch]:
 
         graph = self.ctx.plan(execution_plan)
         final_stage_id = graph.get_final_query_stage().id()
@@ -161,4 +161,3 @@ class DatafusionRayContext:
         # assert len(partitions) == 1, len(partitions)
         result_set = ray.get(partitions[0])
         return result_set
-

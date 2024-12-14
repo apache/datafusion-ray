@@ -15,8 +15,8 @@ Sort: revenue DESC NULLS FIRST, fetch=20
                     Filter: orders.o_orderdate >= Date32("1993-07-01") AND orders.o_orderdate < Date32("1993-10-01")
                       TableScan: orders projection=[o_orderkey, o_custkey, o_orderdate], partial_filters=[orders.o_orderdate >= Date32("1993-07-01"), orders.o_orderdate < Date32("1993-10-01")]
               Projection: lineitem.l_orderkey, lineitem.l_extendedprice, lineitem.l_discount
-                Filter: lineitem.l_returnflag = Utf8("R")
-                  TableScan: lineitem projection=[l_orderkey, l_extendedprice, l_discount, l_returnflag], partial_filters=[lineitem.l_returnflag = Utf8("R")]
+                Filter: lineitem.l_returnflag = Utf8View("R")
+                  TableScan: lineitem projection=[l_orderkey, l_extendedprice, l_discount, l_returnflag], partial_filters=[lineitem.l_returnflag = Utf8View("R")]
           TableScan: nation projection=[n_nationkey, n_name]
 
 DataFusion Physical Plan
