@@ -276,6 +276,8 @@ mod test {
         do_test(6).await
     }
 
+    // see https://github.com/apache/datafusion/pull/13783
+    #[ignore = "non-deterministic IN clause"]
     #[tokio::test]
     async fn test_q7() -> TestResult<()> {
         do_test(7).await
@@ -301,6 +303,8 @@ mod test {
         do_test(11).await
     }
 
+    // see https://github.com/apache/datafusion/pull/13783
+    #[ignore = "non-deterministic IN clause"]
     #[tokio::test]
     async fn test_q12() -> TestResult<()> {
         do_test(12).await
@@ -322,6 +326,8 @@ mod test {
         do_test(15).await
     }
 
+    // see https://github.com/apache/datafusion/pull/13783
+    #[ignore = "non-deterministic IN clause"]
     #[tokio::test]
     async fn test_q16() -> TestResult<()> {
         do_test(16).await
@@ -337,6 +343,8 @@ mod test {
         do_test(18).await
     }
 
+    // see https://github.com/apache/datafusion/pull/13783
+    #[ignore = "non-deterministic IN clause"]
     #[tokio::test]
     async fn test_q19() -> TestResult<()> {
         do_test(19).await
