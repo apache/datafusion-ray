@@ -50,7 +50,7 @@ def execute_query_stage(
 
     # if the query stage has a single output partition then we need to execute for the output
     # partition, otherwise we need to execute in parallel for each input partition
-    concurrency = stage.get_input_partition_count()
+    concurrency = stage.get_execution_partition_count()
     output_partitions_count = stage.get_output_partition_count()
     if output_partitions_count == 1:
         # reduce stage

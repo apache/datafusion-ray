@@ -60,7 +60,7 @@ impl PyQueryStage {
         self.stage.get_child_stage_ids()
     }
 
-    pub fn get_input_partition_count(&self) -> usize {
+    pub fn get_execution_partition_count(&self) -> usize {
         self.stage.get_execution_partition_count()
     }
 
