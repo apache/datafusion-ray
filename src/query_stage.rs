@@ -16,7 +16,7 @@
 // under the License.
 
 use crate::context::serialize_execution_plan;
-use crate::shuffle::{ShuffleCodec, ShuffleReaderExec, ShuffleWriterExec};
+use crate::shuffle::{ShuffleCodec, ShuffleReaderExec};
 use datafusion::error::Result;
 use datafusion::physical_plan::{ExecutionPlan, ExecutionPlanProperties, Partitioning};
 use datafusion::prelude::SessionContext;

@@ -33,7 +33,7 @@ ProjectionExec: expr=[100 * CAST(sum(CASE WHEN part.p_type LIKE Utf8("PROMO%") T
 DataFusion Ray Distributed Plan
 ===========
 
-Query Stage #0 (2 -> 2):
+Query Stage #0 (1 -> 2):
 ShuffleWriterExec(stage_id=0, output_partitioning=Hash([Column { name: "p_partkey", index: 0 }], 2))
   ParquetExec: file_groups={ ... }, projection=[p_partkey, p_type]
 

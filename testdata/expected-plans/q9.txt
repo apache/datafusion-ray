@@ -82,7 +82,7 @@ SortPreservingMergeExec: [nation@0 ASC NULLS LAST,o_year@1 DESC]
 DataFusion Ray Distributed Plan
 ===========
 
-Query Stage #0 (2 -> 2):
+Query Stage #0 (1 -> 2):
 ShuffleWriterExec(stage_id=0, output_partitioning=Hash([Column { name: "n_nationkey", index: 0 }], 2))
   ParquetExec: file_groups={ ... }, projection=[n_nationkey, n_name]
 
@@ -94,11 +94,11 @@ Query Stage #2 (2 -> 2):
 ShuffleWriterExec(stage_id=2, output_partitioning=Hash([Column { name: "ps_suppkey", index: 1 }, Column { name: "ps_partkey", index: 0 }], 2))
   ParquetExec: file_groups={ ... }, projection=[ps_partkey, ps_suppkey, ps_supplycost]
 
-Query Stage #3 (2 -> 2):
+Query Stage #3 (1 -> 2):
 ShuffleWriterExec(stage_id=3, output_partitioning=Hash([Column { name: "s_suppkey", index: 0 }], 2))
   ParquetExec: file_groups={ ... }, projection=[s_suppkey, s_nationkey]
 
-Query Stage #4 (2 -> 2):
+Query Stage #4 (1 -> 2):
 ShuffleWriterExec(stage_id=4, output_partitioning=Hash([Column { name: "p_partkey", index: 0 }], 2))
   CoalesceBatchesExec: target_batch_size=8192
     FilterExec: p_name@1 LIKE %moccasin%, projection=[p_partkey@0]
@@ -166,7 +166,7 @@ ShuffleWriterExec(stage_id=11, output_partitioning=Hash([Column { name: "nation"
         CoalesceBatchesExec: target_batch_size=8192
           ShuffleReaderExec(stage_id=10, input_partitioning=Hash([Column { name: "nation", index: 0 }, Column { name: "o_year", index: 1 }], 2))
 
-Query Stage #12 (1 -> 1):
+Query Stage #12 (2 -> 1):
 SortPreservingMergeExec: [nation@0 ASC NULLS LAST,o_year@1 DESC]
   ShuffleReaderExec(stage_id=11, input_partitioning=Hash([Column { name: "nation", index: 0 }, Column { name: "o_year", index: 1 }], 2))
 

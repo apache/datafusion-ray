@@ -91,7 +91,7 @@ ShuffleWriterExec(stage_id=4, output_partitioning=Hash([Column { name: "cntrycod
         CoalesceBatchesExec: target_batch_size=8192
           ShuffleReaderExec(stage_id=3, input_partitioning=Hash([Column { name: "cntrycode", index: 0 }], 2))
 
-Query Stage #5 (1 -> 1):
+Query Stage #5 (2 -> 1):
 SortPreservingMergeExec: [cntrycode@0 ASC NULLS LAST]
   ShuffleReaderExec(stage_id=4, input_partitioning=Hash([Column { name: "cntrycode", index: 0 }], 2))
 

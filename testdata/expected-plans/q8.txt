@@ -114,17 +114,17 @@ SortPreservingMergeExec: [o_year@0 ASC NULLS LAST]
 DataFusion Ray Distributed Plan
 ===========
 
-Query Stage #0 (2 -> 2):
+Query Stage #0 (1 -> 2):
 ShuffleWriterExec(stage_id=0, output_partitioning=Hash([Column { name: "r_regionkey", index: 0 }], 2))
   CoalesceBatchesExec: target_batch_size=8192
     FilterExec: r_name@1 = MIDDLE EAST, projection=[r_regionkey@0]
       ParquetExec: file_groups={ ... }, projection=[r_regionkey, r_name], predicate=r_name@1 = MIDDLE EAST, pruning_predicate=CASE WHEN r_name_null_count@2 = r_name_row_count@3 THEN false ELSE r_name_min@0 <= MIDDLE EAST AND MIDDLE EAST <= r_name_max@1 END, required_guarantees=[r_name in (MIDDLE EAST)]
 
-Query Stage #1 (2 -> 2):
+Query Stage #1 (1 -> 2):
 ShuffleWriterExec(stage_id=1, output_partitioning=Hash([Column { name: "n_nationkey", index: 0 }], 2))
   ParquetExec: file_groups={ ... }, projection=[n_nationkey, n_name]
 
-Query Stage #2 (2 -> 2):
+Query Stage #2 (1 -> 2):
 ShuffleWriterExec(stage_id=2, output_partitioning=Hash([Column { name: "n_nationkey", index: 0 }], 2))
   ParquetExec: file_groups={ ... }, projection=[n_nationkey, n_regionkey]
 
@@ -138,11 +138,11 @@ ShuffleWriterExec(stage_id=4, output_partitioning=Hash([Column { name: "o_orderk
     FilterExec: o_orderdate@2 >= 1995-01-01 AND o_orderdate@2 <= 1996-12-31
       ParquetExec: file_groups={ ... }, projection=[o_orderkey, o_custkey, o_orderdate], predicate=o_orderdate@4 >= 1995-01-01 AND o_orderdate@4 <= 1996-12-31, pruning_predicate=CASE WHEN o_orderdate_null_count@1 = o_orderdate_row_count@2 THEN false ELSE o_orderdate_max@0 >= 1995-01-01 END AND CASE WHEN o_orderdate_null_count@1 = o_orderdate_row_count@2 THEN false ELSE o_orderdate_min@3 <= 1996-12-31 END, required_guarantees=[]
 
-Query Stage #5 (2 -> 2):
+Query Stage #5 (1 -> 2):
 ShuffleWriterExec(stage_id=5, output_partitioning=Hash([Column { name: "s_suppkey", index: 0 }], 2))
   ParquetExec: file_groups={ ... }, projection=[s_suppkey, s_nationkey]
 
-Query Stage #6 (2 -> 2):
+Query Stage #6 (1 -> 2):
 ShuffleWriterExec(stage_id=6, output_partitioning=Hash([Column { name: "p_partkey", index: 0 }], 2))
   CoalesceBatchesExec: target_batch_size=8192
     FilterExec: p_type@1 = LARGE PLATED STEEL, projection=[p_partkey@0]
@@ -230,7 +230,7 @@ ShuffleWriterExec(stage_id=15, output_partitioning=Hash([Column { name: "o_year"
         CoalesceBatchesExec: target_batch_size=8192
           ShuffleReaderExec(stage_id=14, input_partitioning=Hash([Column { name: "o_year", index: 0 }], 2))
 
-Query Stage #16 (1 -> 1):
+Query Stage #16 (2 -> 1):
 SortPreservingMergeExec: [o_year@0 ASC NULLS LAST]
   ShuffleReaderExec(stage_id=15, input_partitioning=Hash([Column { name: "o_year", index: 0 }], 2))
 
