@@ -17,43 +17,42 @@
 
 from datafusion_ray.context import DatafusionRayContext
 from datafusion import SessionContext, SessionConfig, RuntimeConfig, col, lit, functions as F
+import pytest
 
-
-def test_basic_query_succeed():
+@pytest.fixture
+def df_ctx():
+    """Fixture to create a DataFusion context."""
+    # used fixed partition count so that tests are deterministic on different environments
     config = SessionConfig().with_target_partitions(4)
-    df_ctx = SessionContext(config=config)
-    ctx = DatafusionRayContext(df_ctx)
+    return SessionContext(config=config)
+
+@pytest.fixture
+def ctx(df_ctx):
+    """Fixture to create a Datafusion Ray context."""
+    return DatafusionRayContext(df_ctx)
+
+def test_basic_query_succeed(df_ctx, ctx):
     df_ctx.register_csv("tips", "examples/tips.csv", has_header=True)
-    # TODO why does this return a single batch and not a list of batches?
     record_batches = ctx.sql("SELECT * FROM tips")
     assert len(record_batches) <= 4
     num_rows = sum(batch.num_rows for batch in record_batches)
     assert num_rows == 244
 
-def test_aggregate_csv():
-    config = SessionConfig().with_target_partitions(4)
-    df_ctx = SessionContext(config=config)
-    ctx = DatafusionRayContext(df_ctx)
+def test_aggregate_csv(df_ctx, ctx):
     df_ctx.register_csv("tips", "examples/tips.csv", has_header=True)
     record_batches = ctx.sql("select sex, smoker, avg(tip/total_bill) as tip_pct from tips group by sex, smoker")
     assert len(record_batches) <= 4
     num_rows = sum(batch.num_rows for batch in record_batches)
     assert num_rows == 4
 
-def test_aggregate_parquet():
-    config = SessionConfig().with_target_partitions(4)
-    df_ctx = SessionContext(config=config)
-    ctx = DatafusionRayContext(df_ctx)
+def test_aggregate_parquet(df_ctx, ctx):
     df_ctx.register_parquet("tips", "examples/tips.parquet")
     record_batches = ctx.sql("select sex, smoker, avg(tip/total_bill) as tip_pct from tips group by sex, smoker")
     assert len(record_batches) <= 4
     num_rows = sum(batch.num_rows for batch in record_batches)
     assert num_rows == 4
 
-def test_aggregate_parquet_dataframe():
-    config = SessionConfig().with_target_partitions(4)
-    df_ctx = SessionContext(config=config)
-    ray_ctx = DatafusionRayContext(df_ctx)
+def test_aggregate_parquet_dataframe(df_ctx, ctx):
     df = df_ctx.read_parquet(f"examples/tips.parquet")
     df = (
         df.aggregate(
@@ -63,13 +62,10 @@ def test_aggregate_parquet_dataframe():
         .filter(col("day") != lit("Dinner"))
         .aggregate([col("sex"), col("smoker")], [F.avg(col("tip_pct")).alias("avg_pct")])
     )
-    ray_results = ray_ctx.plan(df.execution_plan())
+    ray_results = ctx.plan(df.execution_plan())
     df_ctx.create_dataframe([ray_results]).show()
 
 
-def test_no_result_query():
-    config = SessionConfig().with_target_partitions(4)
-    df_ctx = SessionContext(config=config)
-    ctx = DatafusionRayContext(df_ctx)
+def test_no_result_query(df_ctx, ctx):
     df_ctx.register_csv("tips", "examples/tips.csv", has_header=True)
     ctx.sql("CREATE VIEW tips_view AS SELECT * FROM tips")

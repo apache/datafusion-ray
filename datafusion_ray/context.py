@@ -160,4 +160,5 @@ class DatafusionRayContext:
         _, partitions = ray.get(future)
         # assert len(partitions) == 1, len(partitions)
         record_batches = ray.get(partitions[0])
+        # filter out empty batches
         return [batch for batch in record_batches if batch.num_rows > 0]
