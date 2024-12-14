@@ -28,8 +28,8 @@ classifiers = [
     "Programming Language :: Python :: Implementation :: PyPy",
 ]
 dependencies = [
-    "datafusion>=42.0.0",
-    "pyarrow>=11.0.0",
+    "datafusion>=43.0.0",
+    "pyarrow>=18.0.0",
     "typing-extensions;python_version<'3.13'",
 ]
 

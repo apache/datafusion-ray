@@ -52,4 +52,4 @@ df = (
 )
 
 ray_results = ray_ctx.plan(df.execution_plan())
-df_ctx.create_dataframe([[ray_results]]).show()
+df_ctx.create_dataframe([ray_results]).show()

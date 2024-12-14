@@ -16,7 +16,7 @@
 # under the License.
 
 from datafusion_ray.context import DatafusionRayContext
-from datafusion import SessionContext
+from datafusion import SessionContext, SessionConfig, RuntimeConfig, col, lit, functions as F
 
 
 def test_basic_query_succeed():
@@ -27,7 +27,7 @@ def test_basic_query_succeed():
     record_batch = ctx.sql("SELECT * FROM tips")
     assert record_batch.num_rows == 244
 
-def test_aggregate():
+def test_aggregate_csv():
     df_ctx = SessionContext()
     ctx = DatafusionRayContext(df_ctx)
     df_ctx.register_csv("tips", "examples/tips.csv", has_header=True)
@@ -38,6 +38,36 @@ def test_aggregate():
     for record_batch in record_batches:
         num_rows += record_batch.num_rows
     assert num_rows == 4
+
+def test_aggregate_parquet():
+    runtime = RuntimeConfig()
+    config = SessionConfig().set('datafusion.execution.parquet.schema_force_view_types', 'true')
+    df_ctx = SessionContext(config, runtime)
+    ctx = DatafusionRayContext(df_ctx)
+    df_ctx.register_parquet("tips", "examples/tips.parquet")
+    record_batches = ctx.sql("select sex, smoker, avg(tip/total_bill) as tip_pct from tips group by sex, smoker")
+    assert isinstance(record_batches, list)
+    # TODO why does this return many empty batches?
+    num_rows = 0
+    for record_batch in record_batches:
+        num_rows += record_batch.num_rows
+    assert num_rows == 4
+
+def test_aggregate_parquet_dataframe():
+    df_ctx = SessionContext()
+    ray_ctx = DatafusionRayContext(df_ctx)
+    df = df_ctx.read_parquet(f"examples/tips.parquet")
+    df = (
+        df.aggregate(
+            [col("sex"), col("smoker"), col("day"), col("time")],
+            [F.avg(col("tip") / col("total_bill")).alias("tip_pct")],
+        )
+        .filter(col("day") != lit("Dinner"))
+        .aggregate([col("sex"), col("smoker")], [F.avg(col("tip_pct")).alias("avg_pct")])
+    )
+    ray_results = ray_ctx.plan(df.execution_plan())
+    df_ctx.create_dataframe([ray_results]).show()
+
 
 def test_no_result_query():
     df_ctx = SessionContext()
