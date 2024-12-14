@@ -75,16 +75,6 @@ pub struct QueryStage {
     pub plan: Arc<dyn ExecutionPlan>,
 }
 
-fn _get_output_partition_count(plan: &dyn ExecutionPlan) -> usize {
-    // UnknownPartitioning and HashPartitioning with empty expressions will
-    // both return 1 partition.
-    match plan.properties().output_partitioning() {
-        Partitioning::UnknownPartitioning(_) => 1,
-        Partitioning::Hash(expr, _) if expr.is_empty() => 1,
-        p => p.partition_count(),
-    }
-}
-
 impl QueryStage {
     pub fn new(id: usize, plan: Arc<dyn ExecutionPlan>) -> Self {
         Self { id, plan }
@@ -110,7 +100,13 @@ impl QueryStage {
     }
 
     pub fn get_output_partition_count(&self) -> usize {
-        _get_output_partition_count(self.plan.as_ref())
+        // UnknownPartitioning and HashPartitioning with empty expressions will
+        // both return 1 partition.
+        match self.plan.properties().output_partitioning() {
+            Partitioning::UnknownPartitioning(_) => 1,
+            Partitioning::Hash(expr, _) if expr.is_empty() => 1,
+            p => p.partition_count(),
+        }
     }
 }
 
