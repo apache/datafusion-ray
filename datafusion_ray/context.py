@@ -133,15 +133,11 @@ class DatafusionRayContext:
         self.ctx.register_datalake_table(table_name, paths)
 
     def sql(self, sql: str) -> pa.RecordBatch:
-        # TODO we should parse sql and inspect the plan rather than
-        # perform a string comparison here
-        sql_str = sql.lower()
-        if "create view" in sql_str or "drop view" in sql_str:
-            self.ctx.sql(sql)
-            return []
-
         df = self.df_ctx.sql(sql)
-        return self.plan(df.execution_plan())
+        execution_plan = df.execution_plan()
+        if execution_plan.display().strip() == "EmptyExec":
+            return [] # No ray scheduling for DDL statements
+        return self.plan(execution_plan)
 
     def plan(self, execution_plan: Any) -> List[pa.RecordBatch]:
 
