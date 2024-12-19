@@ -16,7 +16,7 @@
 // under the License.
 
 use crate::context::serialize_execution_plan;
-use crate::shuffle::{ShuffleCodec, ShuffleReaderExec};
+use crate::shuffle::{ShuffleCodec, ShuffleReaderExec, ShuffleWriterExec};
 use datafusion::error::Result;
 use datafusion::physical_plan::{ExecutionPlan, ExecutionPlanProperties, Partitioning};
 use datafusion::prelude::SessionContext;
@@ -60,8 +60,8 @@ impl PyQueryStage {
         self.stage.get_child_stage_ids()
     }
 
-    pub fn get_input_partition_count(&self) -> usize {
-        self.stage.get_input_partition_count()
+    pub fn get_execution_partition_count(&self) -> usize {
+        self.stage.get_execution_partition_count()
     }
 
     pub fn get_output_partition_count(&self) -> usize {
@@ -75,16 +75,6 @@ pub struct QueryStage {
     pub plan: Arc<dyn ExecutionPlan>,
 }
 
-fn _get_output_partition_count(plan: &dyn ExecutionPlan) -> usize {
-    // UnknownPartitioning and HashPartitioning with empty expressions will
-    // both return 1 partition.
-    match plan.properties().output_partitioning() {
-        Partitioning::UnknownPartitioning(_) => 1,
-        Partitioning::Hash(expr, _) if expr.is_empty() => 1,
-        p => p.partition_count(),
-    }
-}
-
 impl QueryStage {
     pub fn new(id: usize, plan: Arc<dyn ExecutionPlan>) -> Self {
         Self { id, plan }
@@ -96,21 +86,27 @@ impl QueryStage {
         ids
     }
 
-    /// Get the input partition count. This is the same as the number of concurrent tasks
-    /// when we schedule this query stage for execution
-    pub fn get_input_partition_count(&self) -> usize {
-        if self.plan.children().is_empty() {
-            // leaf node (file scan)
-            self.plan.output_partitioning().partition_count()
+    /// Get the number of partitions that can be executed in parallel
+    pub fn get_execution_partition_count(&self) -> usize {
+        if let Some(shuffle) = self.plan.as_any().downcast_ref::<ShuffleWriterExec>() {
+            // use the partitioning of the input to the shuffle write because we are
+            // really executing that and then using the shuffle writer to repartition
+            // the output
+            shuffle.input_plan.output_partitioning().partition_count()
         } else {
-            self.plan.children()[0]
-                .output_partitioning()
-                .partition_count()
+            // for any other plan, use its output partitioning
+            self.plan.output_partitioning().partition_count()
         }
     }
 
     pub fn get_output_partition_count(&self) -> usize {
-        _get_output_partition_count(self.plan.as_ref())
+        // UnknownPartitioning and HashPartitioning with empty expressions will
+        // both return 1 partition.
+        match self.plan.properties().output_partitioning() {
+            Partitioning::UnknownPartitioning(_) => 1,
+            Partitioning::Hash(expr, _) if expr.is_empty() => 1,
+            p => p.partition_count(),
+        }
     }
 }
 

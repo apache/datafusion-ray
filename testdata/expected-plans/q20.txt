@@ -142,7 +142,7 @@ ShuffleWriterExec(stage_id=8, output_partitioning=Hash([], 2))
         CoalesceBatchesExec: target_batch_size=8192
           ShuffleReaderExec(stage_id=7, input_partitioning=Hash([Column { name: "ps_suppkey", index: 0 }], 2))
 
-Query Stage #9 (2 -> 1):
+Query Stage #9 (1 -> 1):
 SortPreservingMergeExec: [s_name@0 ASC NULLS LAST]
   ShuffleReaderExec(stage_id=8, input_partitioning=Hash([], 2))
 

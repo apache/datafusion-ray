@@ -47,7 +47,7 @@ use std::sync::Arc;
 #[derive(Debug)]
 pub struct ShuffleWriterExec {
     pub stage_id: usize,
-    pub(crate) plan: Arc<dyn ExecutionPlan>,
+    pub(crate) input_plan: Arc<dyn ExecutionPlan>,
     /// Output partitioning
     properties: PlanProperties,
     /// Directory to write shuffle files from
@@ -84,7 +84,7 @@ impl ShuffleWriterExec {
 
         Self {
             stage_id,
-            plan,
+            input_plan: plan,
             properties,
             shuffle_dir: shuffle_dir.to_string(),
             metrics: ExecutionPlanMetricsSet::new(),
@@ -98,11 +98,11 @@ impl ExecutionPlan for ShuffleWriterExec {
     }
 
     fn schema(&self) -> SchemaRef {
-        self.plan.schema()
+        self.input_plan.schema()
     }
 
     fn children(&self) -> Vec<&Arc<dyn ExecutionPlan>> {
-        vec![&self.plan]
+        vec![&self.input_plan]
     }
 
     fn with_new_children(
@@ -122,7 +122,7 @@ impl ExecutionPlan for ShuffleWriterExec {
             self.stage_id
         );
 
-        let mut stream = self.plan.execute(input_partition, context)?;
+        let mut stream = self.input_plan.execute(input_partition, context)?;
         let write_time =
             MetricBuilder::new(&self.metrics).subset_time("write_time", input_partition);
         let repart_time =

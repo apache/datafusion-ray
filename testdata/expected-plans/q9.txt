@@ -166,7 +166,7 @@ ShuffleWriterExec(stage_id=11, output_partitioning=Hash([Column { name: "nation"
         CoalesceBatchesExec: target_batch_size=8192
           ShuffleReaderExec(stage_id=10, input_partitioning=Hash([Column { name: "nation", index: 0 }, Column { name: "o_year", index: 1 }], 2))
 
-Query Stage #12 (2 -> 1):
+Query Stage #12 (1 -> 1):
 SortPreservingMergeExec: [nation@0 ASC NULLS LAST, o_year@1 DESC]
   ShuffleReaderExec(stage_id=11, input_partitioning=Hash([Column { name: "nation", index: 0 }, Column { name: "o_year", index: 1 }], 2))
 

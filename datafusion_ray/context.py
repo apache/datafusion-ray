@@ -50,7 +50,7 @@ def execute_query_stage(
 
     # if the query stage has a single output partition then we need to execute for the output
     # partition, otherwise we need to execute in parallel for each input partition
-    concurrency = stage.get_input_partition_count()
+    concurrency = stage.get_execution_partition_count()
     output_partitions_count = stage.get_output_partition_count()
     if output_partitions_count == 1:
         # reduce stage
@@ -159,5 +159,6 @@ class DatafusionRayContext:
         )
         _, partitions = ray.get(future)
         # assert len(partitions) == 1, len(partitions)
-        result_set = ray.get(partitions[0])
-        return result_set
+        record_batches = ray.get(partitions[0])
+        # filter out empty batches
+        return [batch for batch in record_batches if batch.num_rows > 0]
