@@ -38,11 +38,6 @@ use tokio::task::JoinHandle;
 
 type PyResultSet = Vec<PyObject>;
 
-#[pyclass(name = "Context", module = "datafusion_ray", subclass)]
-pub struct PyContext {
-    pub(crate) py_ctx: PyObject,
-}
-
 pub(crate) fn execution_plan_from_pyany(
     py_plan: &Bound<PyAny>,
 ) -> PyResult<Arc<dyn ExecutionPlan>> {
@@ -61,65 +56,6 @@ pub(crate) fn execution_plan_from_pyany(
     plan_node
         .try_into_physical_plan(&registry, &runtime, &codec)
         .map_err(|e| e.into())
-}
-
-#[pymethods]
-impl PyContext {
-    #[new]
-    pub fn new(session_ctx: PyObject) -> Result<Self> {
-        Ok(Self {
-            py_ctx: session_ctx,
-        })
-    }
-
-    /// Execute SQL directly against the DataFusion context. Useful for statements
-    /// such as "create view" or "drop view"
-    pub fn sql(&self, query: &str, py: Python) -> PyResult<()> {
-        println!("Executing {}", query);
-        // let _df = wait_for_future(py, self.ctx.sql(sql))?;
-        let _df = self.run_sql(query, py);
-        Ok(())
-    }
-
-    fn run_sql(&self, query: &str, py: Python) -> PyResult<Py<PyAny>> {
-        let args = PyTuple::new_bound(py, [query]);
-        self.py_ctx.call_method1(py, "sql", args)
-    }
-
-    /// Plan a distributed SELECT query for executing against the Ray workers
-    pub fn plan(&self, plan: &Bound<PyAny>) -> PyResult<PyExecutionGraph> {
-        // println!("Planning {}", sql);
-        // let df = wait_for_future(py, self.ctx.sql(sql))?;
-        // let py_df = self.run_sql(sql, py)?;
-        // let py_plan = py_df.call_method0(py, "execution_plan")?;
-        // let py_plan = py_plan.bind(py);
-
-        let plan = execution_plan_from_pyany(plan)?;
-        let graph = make_execution_graph(plan.clone())?;
-
-        // debug logging
-        let mut stages = graph.query_stages.values().collect::<Vec<_>>();
-        stages.sort_by_key(|s| s.id);
-        for stage in stages {
-            println!(
-                "Query stage #{}:\n{}",
-                stage.id,
-                displayable(stage.plan.as_ref()).indent(false)
-            );
-        }
-
-        Ok(PyExecutionGraph::new(graph))
-    }
-
-    /// Execute a partition of a query plan. This will typically be executing a shuffle write and write the results to disk
-    pub fn execute_partition(
-        &self,
-        plan: &Bound<'_, PyBytes>,
-        part: usize,
-        py: Python,
-    ) -> PyResult<PyResultSet> {
-        execute_partition(plan, part, py)
-    }
 }
 
 #[pyfunction]
@@ -167,9 +103,7 @@ pub fn deserialize_execution_plan(proto_msg: &Bound<PyBytes>) -> PyResult<Arc<dy
     Ok(plan)
 }
 
-/// Execute a partition of a query plan. This will typically be executing a shuffle write and
-/// write the results to disk, except for the final query stage, which will return the data.
-/// inputs is a list of tuples of (stage_id, partition_id, bytes) for each input partition.
+/// Execute a partition of a query plan.
 fn _execute_partition(plan: Arc<dyn ExecutionPlan>, part: usize) -> Result<Vec<RecordBatch>> {
     let ctx = Arc::new(TaskContext::new(
         Some("task_id".to_string()),

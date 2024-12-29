@@ -17,7 +17,6 @@
 
 import time
 import os
-
 from pyarrow import csv as pacsv
 import ray
 from datafusion_ray import DatafusionRayContext
