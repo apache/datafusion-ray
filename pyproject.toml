@@ -23,15 +23,16 @@ build-backend = "maturin"
 name = "datafusion-ray"
 requires-python = ">=3.7"
 classifiers = [
-    "Programming Language :: Rust",
-    "Programming Language :: Python :: Implementation :: CPython",
-    "Programming Language :: Python :: Implementation :: PyPy",
+  "Programming Language :: Rust",
+  "Programming Language :: Python :: Implementation :: CPython",
+  "Programming Language :: Python :: Implementation :: PyPy",
 ]
 dependencies = [
-    "datafusion>=43.0.0",
-    "pyarrow>=18.0.0",
-    "typing-extensions;python_version<'3.13'",
+  "datafusion>=43.0.0",
+  "pyarrow>=18.0.0",
+  "typing-extensions;python_version<'3.13'",
 ]
+dynamic = ["version"]
 
 [tool.maturin]
 module-name = "datafusion_ray._datafusion_ray_internal"

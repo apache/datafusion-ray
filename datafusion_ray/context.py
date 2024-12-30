@@ -24,6 +24,41 @@ import pyarrow as pa
 import ray
 
 import datafusion_ray
-from datafusion_ray import Context, ExecutionGraph, QueryStage
+import datafusion
 from typing import List, Any
 from datafusion import SessionContext
+
+from datafusion_ray._datafusion_ray_internal import (
+    internal_execute_partition,
+    make_ray_context,
+)
+
+
+class RayContext:
+    def __init__(self):
+        self.ctx = make_ray_context(RayShuffler())
+
+    def register_parquet(self, name: str, path: str):
+        self.ctx.register_parquet(name, path)
+
+    def register_csv(self, name: str, path: str, has_header: bool):
+        self.ctx.register_csv(name, path, has_header)
+
+    def sql(
+        self, query: str, options: datafusion.SQLOptions | None = None
+    ) -> datafusion.DataFrame:
+        if options is None:
+            return datafusion.DataFrame(self.ctx.sql(query))
+        return datafusion.DataFrame(
+            self.ctx.sql_with_options(query, options.options_internal)
+        )
+
+
+class RayShuffler:
+    def __init__(self):
+        pass
+
+    def execution_partition(self, plan: bytes, partition: int) -> pa.RecordBatchReader:
+        print("ray shuffler executing partition")
+        ctx = SessionContext()
+        return _internal_execute_partition(plan, partition, ctx)

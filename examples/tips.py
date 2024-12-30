@@ -18,38 +18,22 @@
 import os
 import ray
 
-from datafusion import SessionContext, col, lit, functions as F
-from datafusion_ray import DatafusionRayContext
+from datafusion_ray import RayContext
 
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 
 # Connect to a cluster
-ray.init()
+# ray.init()
 
 # Create a context and register a table
-df_ctx = SessionContext()
+ctx = RayContext()
 
-ray_ctx = DatafusionRayContext(df_ctx)
 # Register either a CSV or Parquet file
 # ctx.register_csv("tips", f"{SCRIPT_DIR}/tips.csv", True)
-df_ctx.register_parquet("tips", f"{SCRIPT_DIR}/tips.parquet")
+ctx.register_parquet("tips", f"{SCRIPT_DIR}/tips.parquet")
 
-result_set = ray_ctx.sql(
+df = ctx.sql(
     "select sex, smoker, avg(tip/total_bill) as tip_pct from tips group by sex, smoker"
 )
-for record_batch in result_set:
-    print(record_batch.to_pandas())
 
-# Alternatively, to use the DataFrame API
-df = df_ctx.read_parquet(f"{SCRIPT_DIR}/tips.parquet")
-df = (
-    df.aggregate(
-        [col("sex"), col("smoker"), col("day"), col("time")],
-        [F.avg(col("tip") / col("total_bill")).alias("tip_pct")],
-    )
-    .filter(col("day") != lit("Dinner"))
-    .aggregate([col("sex"), col("smoker")], [F.avg(col("tip_pct")).alias("avg_pct")])
-)
-
-ray_results = ray_ctx.plan(df.execution_plan())
-df_ctx.create_dataframe([ray_results]).show()
+df.show()
