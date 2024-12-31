@@ -50,21 +50,34 @@ impl PhysicalOptimizerRule for RayShuffleOptimizerRule {
             displayable(plan.as_ref()).indent(false)
         );
 
-        let parents = RefCell::new(vec![]);
+        let parents: RefCell<Vec<Arc<dyn ExecutionPlan>>> = RefCell::new(vec![]);
 
         let down = |plan: Arc<dyn ExecutionPlan>| {
-            let my_parent = parents.borrow().last();
-
+            let mut my_parent = None;
+            {
+                let parents = parents.borrow();
+                if !parents.is_empty() {
+                    let par = &parents[parents.len() - 1];
+                    my_parent = Some(par.clone());
+                }
+            };
             let mut parents = parents.borrow_mut();
             parents.push(plan.clone());
+
+            println!(
+                "checking plan: {} parent:{} ",
+                displayable(plan.as_ref()).one_line(),
+                my_parent
+                    .as_ref()
+                    .map(|p| displayable(p.as_ref()).one_line().to_string())
+                    .unwrap_or("None".to_string())
+            );
 
             if let Some(parent) = my_parent {
                 if parent.as_any().downcast_ref::<RayShuffleExec>().is_some() {
                     return Ok(Transformed::no(plan));
                 }
             }
-
-            println!("checking plan: {}", displayable(plan.as_ref()).one_line());
 
             //if plan.as_any().downcast_ref::<RepartitionExec>().is_some() {
             if plan
@@ -79,6 +92,8 @@ impl PhysicalOptimizerRule for RayShuffleOptimizerRule {
                 let input = plan;
 
                 let new_plan = Arc::new(RayShuffleExec::new(input, self.py_inner.clone()));
+
+                parents.push(new_plan.clone());
                 Ok(Transformed::yes(new_plan as Arc<dyn ExecutionPlan>))
             } else {
                 Ok(Transformed::no(plan))

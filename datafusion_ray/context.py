@@ -58,7 +58,9 @@ class RayShuffler:
     def __init__(self):
         pass
 
-    def execution_partition(self, plan: bytes, partition: int) -> pa.RecordBatchReader:
+    def execute_partition(self, plan: bytes, partition: int) -> pa.RecordBatchReader:
         print("ray shuffler executing partition")
-        ctx = SessionContext()
-        return _internal_execute_partition(plan, partition, ctx)
+        reader: pa.RecordBatchReader = internal_execute_partition(plan, partition)
+        return reader
+        # for batch in reader:
+        #    print("GOT BATCH")

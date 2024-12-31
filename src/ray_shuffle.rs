@@ -1,3 +1,4 @@
+use std::future::Future;
 use std::pin::{self, Pin};
 use std::{fmt::Formatter, sync::Arc};
 
@@ -8,7 +9,7 @@ use async_stream::stream;
 use datafusion::arrow::pyarrow::{FromPyArrow, IntoPyArrow, ToPyArrow};
 use datafusion::common::internal_datafusion_err;
 use datafusion::error::Result;
-use datafusion::execution::TaskContext;
+use datafusion::execution::{SessionStateBuilder, TaskContext};
 use datafusion::physical_plan::stream::RecordBatchStreamAdapter;
 use datafusion::prelude::SessionContext;
 use datafusion::{
@@ -113,6 +114,7 @@ impl ExecutionPlan for RayShuffleExec {
                 .py_inner
                 .bind(py)
                 .call_method1("execute_partition", (proto_bytes, partition))?;
+            println!("done executing in python");
             let record_batch_reader = ArrowArrayStreamReader::from_pyarrow_bound(&py_obj)?;
             Ok::<ArrowArrayStreamReader, PyErr>(record_batch_reader)
         })
@@ -134,14 +136,12 @@ fn into_rust_stream(py_stream: ArrowArrayStreamReader) -> Result<SendableRecordB
 
 struct StreamIteratorAdapter<S: Stream<Item = T> + Unpin + Send, T> {
     stream: Pin<Box<S>>,
-    runtime: Runtime,
 }
 
 impl<S: Stream<Item = T> + Unpin + Send, T> StreamIteratorAdapter<S, T> {
     fn new(stream: S) -> Self {
         Self {
             stream: Pin::new(Box::new(stream)),
-            runtime: Runtime::new().unwrap(),
         }
     }
 }
@@ -149,7 +149,7 @@ impl<S: Stream<Item = T> + Unpin + Send, T> StreamIteratorAdapter<S, T> {
 impl<S: Stream<Item = T> + Unpin + Send, T> Iterator for StreamIteratorAdapter<S, T> {
     type Item = T;
     fn next(&mut self) -> Option<Self::Item> {
-        self.runtime.block_on(self.stream.next())
+        futures::executor::block_on(self.stream.next())
     }
 }
 
@@ -158,8 +158,10 @@ pub fn internal_execute_partition(
     py: Python,
     plan_bytes: Vec<u8>,
     partition: usize,
-    ctx: PySessionContext,
 ) -> PyResult<PyObject> {
+    let state = SessionStateBuilder::new().with_default_features().build();
+    let ctx = SessionContext::new_with_state(state);
+
     let proto_plan = datafusion_proto::protobuf::PhysicalPlanNode::try_decode(&plan_bytes)
         .map_err(|e| {
             PyRuntimeError::new_err(format!(
@@ -168,7 +170,6 @@ pub fn internal_execute_partition(
             ))
         })?;
 
-    let ctx = ctx.ctx;
     let codec = DefaultPhysicalExtensionCodec {};
     let plan = proto_plan.try_into_physical_plan(&ctx, &ctx.runtime_env(), &codec)?;
 
