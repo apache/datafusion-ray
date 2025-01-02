@@ -19,12 +19,13 @@ use datafusion::common::tree_node::{Transformed, TreeNode};
 use datafusion::error::Result;
 use datafusion::physical_optimizer::PhysicalOptimizerRule;
 use datafusion::physical_plan::repartition::RepartitionExec;
-use datafusion::physical_plan::{displayable, ExecutionPlan};
+use datafusion::physical_plan::{displayable, ExecutionPlan, ExecutionPlanProperties};
 use pyo3::prelude::*;
 use std::cell::RefCell;
 use std::sync::Arc;
 
 use crate::ray_shuffle::RayShuffleExec;
+use crate::shadow::ShadowPartitionExec;
 
 #[derive(Debug)]
 pub struct RayShuffleOptimizerRule {
@@ -57,6 +58,7 @@ impl PhysicalOptimizerRule for RayShuffleOptimizerRule {
             {
                 let parents = parents.borrow();
                 if !parents.is_empty() {
+                    //TODO: should this be parents.last()?
                     let par = &parents[parents.len() - 1];
                     my_parent = Some(par.clone());
                 }
@@ -73,25 +75,35 @@ impl PhysicalOptimizerRule for RayShuffleOptimizerRule {
                     .unwrap_or("None".to_string())
             );
 
-            if let Some(parent) = my_parent {
+            if let Some(ref parent) = my_parent {
                 if parent.as_any().downcast_ref::<RayShuffleExec>().is_some() {
                     return Ok(Transformed::no(plan));
                 }
             }
 
-            //if plan.as_any().downcast_ref::<RepartitionExec>().is_some() {
-            if plan
-                .as_any()
-                .downcast_ref::<datafusion::datasource::physical_plan::ParquetExec>()
-                .is_some()
-            {
-                //let input = plan.children();
-                // TODO: are there ever more than one child?
-                //assert_eq!(input.len(), 1);
-                //let input = input[0].clone();
-                let input = plan;
+            //if let Some(true) =
+            //    my_parent.map(|p| p.as_any().downcast_ref::<RepartitionExec>().is_some())
+            if plan.as_any().downcast_ref::<RepartitionExec>().is_some() {
+                let children = plan.children();
+                // TODO: generalize
+                assert_eq!(children.len(), 1);
+                let child = children[0].clone();
 
-                let new_plan = Arc::new(RayShuffleExec::new(input, self.py_inner.clone()));
+                // how many partitions there are before the repartition
+                let input_partitions = child.output_partitioning().partition_count();
+
+                // how many after the repartition
+                let output_partitions = plan.output_partitioning().partition_count();
+
+                let repartition =
+                    plan.with_new_children(vec![Arc::new(ShadowPartitionExec::new(child))])?;
+
+                let new_plan = Arc::new(RayShuffleExec::new(
+                    repartition,
+                    self.py_inner.clone(),
+                    output_partitions,
+                    input_partitions,
+                ));
 
                 parents.push(new_plan.clone());
                 Ok(Transformed::yes(new_plan as Arc<dyn ExecutionPlan>))

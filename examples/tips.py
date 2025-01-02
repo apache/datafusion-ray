@@ -23,17 +23,22 @@ from datafusion_ray import RayContext
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 
 # Connect to a cluster
-# ray.init()
+ray.init()
 
-# Create a context and register a table
 ctx = RayContext()
+ctx.set("datafusion.execution.parquet.pushdown_filters", "true")
 
-# Register either a CSV or Parquet file
-# ctx.register_csv("tips", f"{SCRIPT_DIR}/tips.csv", True)
-ctx.register_parquet("tips", f"{SCRIPT_DIR}/tips.parquet")
+# we could set this value to however many CPUs we plan to give each
+# ray task
+ctx.set("datafusion.optimizer.enable_round_robin_repartition", "false")
+ctx.set("datafusion.execution.target_partitions", "4")
+
+ctx.register_parquet("tips", f"{SCRIPT_DIR}/tips*.parquet")
 
 df = ctx.sql(
     "select sex, smoker, avg(tip/total_bill) as tip_pct from tips group by sex, smoker"
 )
+
+print(df.execution_plan().display_indent())
 
 df.show()

@@ -1,31 +1,32 @@
-use std::future::Future;
-use std::pin::{self, Pin};
+use std::pin::Pin;
 use std::{fmt::Formatter, sync::Arc};
 
-use arrow::array::RecordBatchIterator;
+use arrow::array::{RecordBatch, RecordBatchIterator};
 use arrow::error::ArrowError;
 use arrow::record_batch::RecordBatchReader;
-use async_stream::stream;
-use datafusion::arrow::pyarrow::{FromPyArrow, IntoPyArrow, ToPyArrow};
+use datafusion::arrow::pyarrow::{FromPyArrow, IntoPyArrow};
 use datafusion::common::internal_datafusion_err;
 use datafusion::error::Result;
-use datafusion::execution::{SessionStateBuilder, TaskContext};
+use datafusion::execution::SessionStateBuilder;
 use datafusion::physical_plan::stream::RecordBatchStreamAdapter;
-use datafusion::prelude::SessionContext;
+use datafusion::physical_plan::{displayable, ExecutionPlanProperties};
+use datafusion::prelude::{SessionConfig, SessionContext};
 use datafusion::{
-    arrow::{datatypes::SchemaRef, ffi_stream::ArrowArrayStreamReader},
+    arrow::datatypes::SchemaRef,
     execution::SendableRecordBatchStream,
     physical_plan::{DisplayAs, DisplayFormatType, ExecutionPlan, PlanProperties},
 };
-use datafusion_proto::physical_plan::{AsExecutionPlan, DefaultPhysicalExtensionCodec};
-use datafusion_python::context::PySessionContext;
-use futures::stream::{self, TryStreamExt};
+use datafusion_proto::physical_plan::AsExecutionPlan;
+use datafusion_python::utils::wait_for_future;
+use futures::stream::TryStreamExt;
 use futures::{Stream, StreamExt};
 use prost::Message;
 use pyo3::exceptions::PyRuntimeError;
 use pyo3::prelude::*;
-use pyo3::types::PyBytes;
-use tokio::runtime::Runtime;
+use pyo3::types::{PyBytes, PyIterator};
+use uuid::uuid;
+
+use crate::shadow::ShadowCodec;
 
 #[derive(Debug)]
 pub struct RayShuffleExec {
@@ -34,11 +35,20 @@ pub struct RayShuffleExec {
     /// Output partitioning
     properties: PlanProperties,
 
+    output_partitions: usize,
+    input_partitions: usize,
+
     py_inner: Arc<PyObject>,
+    unique_id: String,
 }
 
 impl RayShuffleExec {
-    pub fn new(input: Arc<dyn ExecutionPlan>, py_inner: Arc<PyObject>) -> Self {
+    pub fn new(
+        input: Arc<dyn ExecutionPlan>,
+        py_inner: Arc<PyObject>,
+        output_partitions: usize,
+        input_partitions: usize,
+    ) -> Self {
         let properties = input.properties().clone();
         println!("new ray shuffle exec");
 
@@ -46,6 +56,9 @@ impl RayShuffleExec {
             input,
             properties,
             py_inner,
+            output_partitions,
+            input_partitions,
+            unique_id: uuid!("67e55044-10b1-426f-9247-bb680e5fe0c8").to_string(),
         }
     }
 }
@@ -86,20 +99,23 @@ impl ExecutionPlan for RayShuffleExec {
         // TODO: handle more general case
         assert_eq!(children.len(), 1);
         let child = children[0].clone();
-        Ok(Arc::new(RayShuffleExec::new(child, self.py_inner.clone())))
+        Ok(Arc::new(RayShuffleExec::new(
+            child,
+            self.py_inner.clone(),
+            self.output_partitions,
+            self.input_partitions,
+        )))
     }
 
     /// We will spawn a Ray Task for our child inputs and consume their output stream.
     /// We will have to defer this functionality to python as Ray does not yet have Rust bindings.
-    ///
-
     fn execute(
         &self,
         partition: usize,
-        context: std::sync::Arc<datafusion::execution::TaskContext>,
+        _context: std::sync::Arc<datafusion::execution::TaskContext>,
     ) -> Result<SendableRecordBatchStream> {
         // serialize our input plan
-        let codec = DefaultPhysicalExtensionCodec {};
+        let codec = ShadowCodec {};
         let proto = datafusion_proto::protobuf::PhysicalPlanNode::try_from_physical_plan(
             self.input.clone(),
             &codec,
@@ -108,37 +124,64 @@ impl ExecutionPlan for RayShuffleExec {
 
         // defer execution to the python RayShuffle object which will spawn a Ray Task
         // to execute this partition and send us back a stream of the results
-        Python::with_gil(|py| {
+        let unbound_iterable = Python::with_gil(|py| {
             let proto_bytes = PyBytes::new_bound(py, &bytes);
-            let py_obj = self
-                .py_inner
-                .bind(py)
-                .call_method1("execute_partition", (proto_bytes, partition))?;
+            let py_obj = self.py_inner.bind(py).call_method1(
+                "execute_partition",
+                (
+                    proto_bytes,
+                    partition,
+                    self.output_partitions,
+                    self.input_partitions,
+                    self.unique_id.clone(),
+                ),
+            )?;
             println!("done executing in python");
-            let record_batch_reader = ArrowArrayStreamReader::from_pyarrow_bound(&py_obj)?;
-            Ok::<ArrowArrayStreamReader, PyErr>(record_batch_reader)
+            py_obj.iter().map(|i| i.unbind())
         })
-        .map_err(|e| internal_datafusion_err!("{e}"))
-        .and_then(|py_stream| into_rust_stream(py_stream))
+        .map_err(|e| internal_datafusion_err!("{e}"))?;
+
+        let sendable_iterator = SendableIterator::new(unbound_iterable);
+
+        let stream = futures::stream::iter(sendable_iterator);
+        Ok(Box::pin(RecordBatchStreamAdapter::new(
+            self.schema(),
+            stream,
+        )))
     }
 }
 
-/// Convert an ArrowArrayStreamReader from python to a rust SendableRecordBatchStream
-fn into_rust_stream(py_stream: ArrowArrayStreamReader) -> Result<SendableRecordBatchStream> {
-    let schema = py_stream.schema();
-
-    let the_stream = stream::iter(py_stream).map_err(|e| internal_datafusion_err!("{e}"));
-
-    let adapted_stream = RecordBatchStreamAdapter::new(schema, the_stream);
-
-    Ok(Box::pin(adapted_stream))
+struct SendableIterator {
+    /// our unbound python iterator.  When we are asked to produce
+    /// the next item, we'll rebind it to the GIL
+    inner: Py<PyIterator>,
 }
 
-struct StreamIteratorAdapter<S: Stream<Item = T> + Unpin + Send, T> {
+impl SendableIterator {
+    fn new(inner: Py<PyIterator>) -> Self {
+        Self { inner }
+    }
+}
+
+impl Iterator for SendableIterator {
+    type Item = Result<RecordBatch>;
+    fn next(&mut self) -> Option<Self::Item> {
+        Python::with_gil(|py| {
+            let inner = self.inner.clone_ref(py);
+            let mut bound = inner.into_bound(py);
+            bound.next().map(|next| {
+                next.and_then(|next| RecordBatch::from_pyarrow_bound(&next))
+                    .map_err(|e| internal_datafusion_err!("{e}"))
+            })
+        })
+    }
+}
+
+struct StreamToIteratorAdapter<S: Stream<Item = T> + Unpin + Send, T: Send> {
     stream: Pin<Box<S>>,
 }
 
-impl<S: Stream<Item = T> + Unpin + Send, T> StreamIteratorAdapter<S, T> {
+impl<S: Stream<Item = T> + Unpin + Send, T: Send> StreamToIteratorAdapter<S, T> {
     fn new(stream: S) -> Self {
         Self {
             stream: Pin::new(Box::new(stream)),
@@ -146,20 +189,28 @@ impl<S: Stream<Item = T> + Unpin + Send, T> StreamIteratorAdapter<S, T> {
     }
 }
 
-impl<S: Stream<Item = T> + Unpin + Send, T> Iterator for StreamIteratorAdapter<S, T> {
+impl<S: Stream<Item = T> + Unpin + Send, T: Send> Iterator for StreamToIteratorAdapter<S, T> {
     type Item = T;
     fn next(&mut self) -> Option<Self::Item> {
-        futures::executor::block_on(self.stream.next())
+        Python::with_gil(|py| wait_for_future(py, self.stream.next()))
     }
 }
+
+pub struct ShadowPartitionNumber(pub usize);
 
 #[pyfunction]
 pub fn internal_execute_partition(
     py: Python,
     plan_bytes: Vec<u8>,
     partition: usize,
+    shadow_partition: usize,
 ) -> PyResult<PyObject> {
-    let state = SessionStateBuilder::new().with_default_features().build();
+    let mut config =
+        SessionConfig::new().with_extension(Arc::new(ShadowPartitionNumber(shadow_partition)));
+    let state = SessionStateBuilder::new()
+        .with_default_features()
+        .with_config(config)
+        .build();
     let ctx = SessionContext::new_with_state(state);
 
     let proto_plan = datafusion_proto::protobuf::PhysicalPlanNode::try_decode(&plan_bytes)
@@ -170,13 +221,28 @@ pub fn internal_execute_partition(
             ))
         })?;
 
-    let codec = DefaultPhysicalExtensionCodec {};
+    let codec = ShadowCodec {};
     let plan = proto_plan.try_into_physical_plan(&ctx, &ctx.runtime_env(), &codec)?;
+
+    println!(
+        "internal execution partition {} plan:\n{}",
+        partition,
+        displayable(plan.as_ref()).indent(true)
+    );
+
+    let child = plan.children()[0].clone();
+
+    println!(
+        "child {} partitioning {}",
+        displayable(child.as_ref()).one_line(),
+        child.output_partitioning(),
+    );
 
     let stream_out = plan.execute(partition, ctx.task_ctx())?;
 
-    let py_out =
-        StreamIteratorAdapter::new(stream_out.map_err(|e| ArrowError::ExternalError(Box::new(e))));
+    let py_out = StreamToIteratorAdapter::new(
+        stream_out.map_err(|e| ArrowError::ExternalError(Box::new(e))),
+    );
 
     let py_out = RecordBatchIterator::new(py_out, plan.schema());
 
