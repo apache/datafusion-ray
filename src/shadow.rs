@@ -89,36 +89,3 @@ impl ExecutionPlan for ShadowPartitionExec {
         self.input.execute(actual_partition_number, context)
     }
 }
-
-#[derive(Debug)]
-pub struct ShadowCodec {}
-
-impl PhysicalExtensionCodec for ShadowCodec {
-    fn try_decode(
-        &self,
-        buf: &[u8],
-        inputs: &[Arc<dyn ExecutionPlan>],
-        _registry: &dyn FunctionRegistry,
-    ) -> Result<Arc<dyn ExecutionPlan>> {
-        if buf == "ShadowPartitionExec".as_bytes() {
-            // TODO: generalize
-            assert_eq!(inputs.len(), 1);
-            Ok(Arc::new(ShadowPartitionExec::new(inputs[0].clone())))
-        } else {
-            internal_err!("Not supported")
-        }
-    }
-
-    fn try_encode(&self, node: Arc<dyn ExecutionPlan>, buf: &mut Vec<u8>) -> Result<()> {
-        if node
-            .as_any()
-            .downcast_ref::<ShadowPartitionExec>()
-            .is_some()
-        {
-            buf.extend_from_slice("ShadowPartitionExec".as_bytes());
-            Ok(())
-        } else {
-            internal_err!("Not supported")
-        }
-    }
-}

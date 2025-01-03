@@ -24,9 +24,9 @@ use prost::Message;
 use pyo3::exceptions::PyRuntimeError;
 use pyo3::prelude::*;
 use pyo3::types::{PyBytes, PyIterator};
-use uuid::uuid;
+use uuid::{uuid, Uuid};
 
-use crate::shadow::ShadowCodec;
+use crate::codec::ShufflerCodec;
 
 #[derive(Debug)]
 pub struct RayShuffleExec {
@@ -35,17 +35,15 @@ pub struct RayShuffleExec {
     /// Output partitioning
     properties: PlanProperties,
 
-    output_partitions: usize,
-    input_partitions: usize,
+    pub output_partitions: usize,
+    pub input_partitions: usize,
 
-    py_inner: Arc<PyObject>,
     unique_id: String,
 }
 
 impl RayShuffleExec {
     pub fn new(
         input: Arc<dyn ExecutionPlan>,
-        py_inner: Arc<PyObject>,
         output_partitions: usize,
         input_partitions: usize,
     ) -> Self {
@@ -55,10 +53,9 @@ impl RayShuffleExec {
         Self {
             input,
             properties,
-            py_inner,
             output_partitions,
             input_partitions,
-            unique_id: uuid!("67e55044-10b1-426f-9247-bb680e5fe0c8").to_string(),
+            unique_id: Uuid::new_v4().to_string(),
         }
     }
 }
@@ -101,7 +98,6 @@ impl ExecutionPlan for RayShuffleExec {
         let child = children[0].clone();
         Ok(Arc::new(RayShuffleExec::new(
             child,
-            self.py_inner.clone(),
             self.output_partitions,
             self.input_partitions,
         )))
@@ -115,18 +111,24 @@ impl ExecutionPlan for RayShuffleExec {
         _context: std::sync::Arc<datafusion::execution::TaskContext>,
     ) -> Result<SendableRecordBatchStream> {
         // serialize our input plan
-        let codec = ShadowCodec {};
+        let codec = ShufflerCodec {};
         let proto = datafusion_proto::protobuf::PhysicalPlanNode::try_from_physical_plan(
             self.input.clone(),
             &codec,
         )?;
         let bytes = proto.encode_to_vec();
 
+        println!("RayShuffleExec::execute {}", self.unique_id);
+
         // defer execution to the python RayShuffle object which will spawn a Ray Task
         // to execute this partition and send us back a stream of the results
         let unbound_iterable = Python::with_gil(|py| {
             let proto_bytes = PyBytes::new_bound(py, &bytes);
-            let py_obj = self.py_inner.bind(py).call_method1(
+
+            let module = PyModule::import_bound(py, "datafusion_ray.context")?;
+            let ray_shuffler = module.getattr("RayShuffler")?.call0()?;
+
+            let py_obj = ray_shuffler.call_method1(
                 "execute_partition",
                 (
                     proto_bytes,
@@ -221,7 +223,7 @@ pub fn internal_execute_partition(
             ))
         })?;
 
-    let codec = ShadowCodec {};
+    let codec = ShufflerCodec {};
     let plan = proto_plan.try_into_physical_plan(&ctx, &ctx.runtime_env(), &codec)?;
 
     println!(

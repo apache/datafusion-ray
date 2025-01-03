@@ -100,7 +100,6 @@ impl PhysicalOptimizerRule for RayShuffleOptimizerRule {
 
                 let new_plan = Arc::new(RayShuffleExec::new(
                     repartition,
-                    self.py_inner.clone(),
                     output_partitions,
                     input_partitions,
                 ));

@@ -28,7 +28,7 @@ from datafusion_ray._datafusion_ray_internal import (
 )
 
 
-class RayContext:
+class DataFusionRayContext:
     def __init__(self) -> None:
         self.ctx = RayContextInternal(RayShuffler())
 
@@ -78,7 +78,7 @@ class RayShuffler:
         input_partitions: int,
         unique_id: str,
     ) -> RayIterable:
-        print(f"ray executing partition {partition}")
+        print(f"ray executing partition {partition} for shuffleexec {unique_id}")
         # TODO: make name unique per query tree
         self.actor = RayShuffleActor.options(
             name=f"RayShuffleActor ({unique_id})",
@@ -101,7 +101,8 @@ def exec_stream(actor, partition: int):
         yield object_ref
 
 
-@ray.remote
+# 0 cpus is fine as this will just be doing i/o
+@ray.remote(num_cpus=0)
 class RayShuffleActor:
     def __init__(
         self, plan: bytes, output_partitions: int, input_partitions: int
@@ -146,7 +147,8 @@ class RayShuffleActor:
         return thing
 
 
-@ray.remote
+# @ray.remote
+@ray.remote(num_cpus=0)
 def _exec_stream(
     plan: bytes, shadow_partition: int, output_partitions: int, ray_shuffle_actor
 ):

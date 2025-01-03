@@ -23,6 +23,7 @@ mod proto;
 use crate::ray_shuffle::internal_execute_partition;
 pub use proto::generated::protobuf;
 
+pub mod codec;
 pub mod context;
 pub mod physical;
 pub mod ray_shuffle;
