@@ -1,3 +1,4 @@
+use std::fmt::Display;
 use std::pin::Pin;
 use std::{fmt::Formatter, sync::Arc};
 
@@ -20,6 +21,7 @@ use datafusion_proto::physical_plan::AsExecutionPlan;
 use datafusion_python::utils::wait_for_future;
 use futures::stream::TryStreamExt;
 use futures::{Stream, StreamExt};
+use log::{debug, trace};
 use prost::Message;
 use pyo3::exceptions::PyRuntimeError;
 use pyo3::prelude::*;
@@ -38,7 +40,7 @@ pub struct RayShuffleExec {
     pub output_partitions: usize,
     pub input_partitions: usize,
 
-    unique_id: String,
+    pub unique_id: String,
 }
 
 impl RayShuffleExec {
@@ -46,6 +48,7 @@ impl RayShuffleExec {
         input: Arc<dyn ExecutionPlan>,
         output_partitions: usize,
         input_partitions: usize,
+        unique_id: String,
     ) -> Self {
         let properties = input.properties().clone();
         println!("new ray shuffle exec");
@@ -55,7 +58,8 @@ impl RayShuffleExec {
             properties,
             output_partitions,
             input_partitions,
-            unique_id: Uuid::new_v4().to_string(),
+            unique_id,
+            // unique names
         }
     }
 }
@@ -63,7 +67,8 @@ impl DisplayAs for RayShuffleExec {
     fn fmt_as(&self, _t: DisplayFormatType, f: &mut Formatter) -> std::fmt::Result {
         write!(
             f,
-            "RayShuffleExec(output_partitioning={:?})",
+            "RayShuffleExec[{}] (output_partitioning={:?})",
+            self.unique_id,
             self.properties().partitioning
         )
     }
@@ -100,6 +105,7 @@ impl ExecutionPlan for RayShuffleExec {
             child,
             self.output_partitions,
             self.input_partitions,
+            self.unique_id.clone(),
         )))
     }
 
@@ -118,7 +124,7 @@ impl ExecutionPlan for RayShuffleExec {
         )?;
         let bytes = proto.encode_to_vec();
 
-        println!("RayShuffleExec::execute {}", self.unique_id);
+        debug!("RayShuffleExec{} ::execute", self.unique_id);
 
         // defer execution to the python RayShuffle object which will spawn a Ray Task
         // to execute this partition and send us back a stream of the results
@@ -138,7 +144,6 @@ impl ExecutionPlan for RayShuffleExec {
                     self.unique_id.clone(),
                 ),
             )?;
-            println!("done executing in python");
             py_obj.iter().map(|i| i.unbind())
         })
         .map_err(|e| internal_datafusion_err!("{e}"))?;
@@ -180,74 +185,91 @@ impl Iterator for SendableIterator {
 }
 
 struct StreamToIteratorAdapter<S: Stream<Item = T> + Unpin + Send, T: Send> {
+    name: String,
     stream: Pin<Box<S>>,
 }
 
 impl<S: Stream<Item = T> + Unpin + Send, T: Send> StreamToIteratorAdapter<S, T> {
-    fn new(stream: S) -> Self {
+    fn new(name: String, stream: S) -> Self {
         Self {
+            name,
             stream: Pin::new(Box::new(stream)),
         }
     }
 }
 
-impl<S: Stream<Item = T> + Unpin + Send, T: Send> Iterator for StreamToIteratorAdapter<S, T> {
+impl<S: Stream<Item = T> + Unpin + Send, T: Send + std::fmt::Debug> Iterator
+    for StreamToIteratorAdapter<S, T>
+{
     type Item = T;
     fn next(&mut self) -> Option<Self::Item> {
-        Python::with_gil(|py| wait_for_future(py, self.stream.next()))
+        Python::with_gil(|py| {
+            wait_for_future(py, async {
+                let next = self.stream.next().await;
+                match next {
+                    Some(n) => {
+                        println!("{} got a thing from stream: {:?}", self.name, n);
+                        Some(n)
+                    }
+                    None => None,
+                }
+            })
+        })
     }
 }
 
 pub struct ShadowPartitionNumber(pub usize);
 
-#[pyfunction]
-pub fn internal_execute_partition(
-    py: Python,
-    plan_bytes: Vec<u8>,
-    partition: usize,
-    shadow_partition: usize,
-) -> PyResult<PyObject> {
-    let mut config =
-        SessionConfig::new().with_extension(Arc::new(ShadowPartitionNumber(shadow_partition)));
-    let state = SessionStateBuilder::new()
-        .with_default_features()
-        .with_config(config)
-        .build();
-    let ctx = SessionContext::new_with_state(state);
+#[pyclass]
+pub struct PartitionExecutor {
+    name: String,
+    plan: Arc<dyn ExecutionPlan>,
+    ctx: SessionContext,
+}
 
-    let proto_plan = datafusion_proto::protobuf::PhysicalPlanNode::try_decode(&plan_bytes)
-        .map_err(|e| {
-            PyRuntimeError::new_err(format!(
-                "Unable to decode logical node from serialized bytes: {}",
-                e
-            ))
-        })?;
+#[pymethods]
+impl PartitionExecutor {
+    #[new]
+    pub fn new(name: String, plan_bytes: Vec<u8>, shadow_partition: usize) -> PyResult<Self> {
+        let config =
+            SessionConfig::new().with_extension(Arc::new(ShadowPartitionNumber(shadow_partition)));
+        let state = SessionStateBuilder::new()
+            .with_default_features()
+            .with_config(config)
+            .build();
+        let ctx = SessionContext::new_with_state(state);
 
-    let codec = ShufflerCodec {};
-    let plan = proto_plan.try_into_physical_plan(&ctx, &ctx.runtime_env(), &codec)?;
+        let proto_plan = datafusion_proto::protobuf::PhysicalPlanNode::try_decode(&plan_bytes)
+            .map_err(|e| {
+                PyRuntimeError::new_err(format!(
+                    "Unable to decode logical node from serialized bytes: {}",
+                    e
+                ))
+            })?;
 
-    println!(
-        "internal execution partition {} plan:\n{}",
-        partition,
-        displayable(plan.as_ref()).indent(true)
-    );
+        let codec = ShufflerCodec {};
+        let plan = proto_plan.try_into_physical_plan(&ctx, &ctx.runtime_env(), &codec)?;
 
-    let child = plan.children()[0].clone();
+        trace!(
+            "New ParititonExecutor shadow_partition {} plan:\n{}",
+            shadow_partition,
+            displayable(plan.as_ref()).indent(true)
+        );
 
-    println!(
-        "child {} partitioning {}",
-        displayable(child.as_ref()).one_line(),
-        child.output_partitioning(),
-    );
+        Ok(Self { name, plan, ctx })
+    }
 
-    let stream_out = plan.execute(partition, ctx.task_ctx())?;
+    pub fn output_partition(&self, py: Python, partition: usize) -> PyResult<PyObject> {
+        let stream_out = self.plan.execute(partition, self.ctx.task_ctx())?;
 
-    let py_out = StreamToIteratorAdapter::new(
-        stream_out.map_err(|e| ArrowError::ExternalError(Box::new(e))),
-    );
+        let py_out = StreamToIteratorAdapter::new(
+            self.name.clone(),
+            stream_out.map_err(|e| ArrowError::ExternalError(Box::new(e))),
+        );
 
-    let py_out = RecordBatchIterator::new(py_out, plan.schema());
+        let py_out = RecordBatchIterator::new(py_out, self.plan.schema());
 
-    let reader: Box<dyn RecordBatchReader + Send> = Box::new(py_out);
-    reader.into_pyarrow(py)
+        let reader: Box<dyn RecordBatchReader + Send> = Box::new(py_out);
+        reader.into_pyarrow(py)
+    }
 }

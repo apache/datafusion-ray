@@ -1,4 +1,4 @@
-use std::{fmt::Formatter, sync::Arc};
+use std::{fmt::Formatter, ops::Index, sync::Arc};
 
 use datafusion::{
     common::{internal_datafusion_err, internal_err},
@@ -31,16 +31,61 @@ impl PhysicalExtensionCodec for ShufflerCodec {
         if buf == "ShadowPartitionExec".as_bytes() {
             Ok(Arc::new(ShadowPartitionExec::new(inputs[0].clone())))
         } else if buf.starts_with("RayShuffleExec".as_bytes()) {
-            let offset = "RayShuffleExec".len();
+            let mut end = "RayShuffleExec".len();
 
-            let output_partitions = std::str::from_utf8(&buf[offset..offset + 1])
+            let delim: u8 = b"|"[0];
+
+            let mut start = end + 1;
+            /*println!(
+                "og buf {}",
+                std::str::from_utf8(&buf).expect("valid string")
+            );
+            println!(
+                "searching buf {}",
+                std::str::from_utf8(&buf[start..]).expect("valid string 2")
+            );*/
+            end = start
+                + buf[start..]
+                    .iter()
+                    .position(|b| b == &delim)
+                    .ok_or(internal_datafusion_err!("Invalid buffer"))?;
+
+            //println!("1start: {}, end: {}", start, end);
+
+            let unique_id = std::str::from_utf8(&buf[start..end])
+                .map_err(|e| internal_datafusion_err!("{e}"))?;
+
+            start = end + 1;
+            //println!(
+            //    "searching buf {}",
+            //    std::str::from_utf8(&buf[start..]).expect("valid string 2")
+            //);
+
+            let end = start
+                + buf[start..]
+                    .iter()
+                    .position(|b| b == &delim)
+                    .ok_or(internal_datafusion_err!("Invalid buffer"))?;
+
+            //println!("2start: {}, end: {}", start, end);
+
+            let output_partitions = std::str::from_utf8(&buf[start..end])
                 .map_err(|e| internal_datafusion_err!("{e}"))
                 .and_then(|s| {
                     s.parse::<usize>()
                         .map_err(|e| internal_datafusion_err!("{e}"))
                 })?;
 
-            let input_partitions = std::str::from_utf8(&buf[offset + 1..offset + 2])
+            start = end + 1;
+
+            /*println!(
+                "searching buf {}",
+                std::str::from_utf8(&buf[start..]).expect("valid string 2")
+            );*/
+            let end = buf.len();
+            //println!("3start: {}, end: {}", start, end);
+
+            let input_partitions = std::str::from_utf8(&buf[start..end])
                 .map_err(|e| internal_datafusion_err!("{e}"))
                 .and_then(|s| {
                     s.parse::<usize>()
@@ -51,6 +96,7 @@ impl PhysicalExtensionCodec for ShufflerCodec {
                 inputs[0].clone(),
                 output_partitions,
                 input_partitions,
+                unique_id.to_owned(),
             )))
         } else {
             internal_err!("Not supported")
@@ -68,8 +114,10 @@ impl PhysicalExtensionCodec for ShufflerCodec {
         } else if let Some(ray_shuffle) = node.as_any().downcast_ref::<RayShuffleExec>() {
             buf.extend_from_slice(
                 format!(
-                    "RayShuffleExec{}{}",
-                    ray_shuffle.output_partitions, ray_shuffle.input_partitions
+                    "RayShuffleExec|{}|{}|{}",
+                    ray_shuffle.unique_id,
+                    ray_shuffle.output_partitions,
+                    ray_shuffle.input_partitions
                 )
                 .as_bytes(),
             );

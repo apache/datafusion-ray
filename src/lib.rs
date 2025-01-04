@@ -20,7 +20,6 @@ extern crate core;
 use pyo3::prelude::*;
 
 mod proto;
-use crate::ray_shuffle::internal_execute_partition;
 pub use proto::generated::protobuf;
 
 pub mod codec;
@@ -33,7 +32,7 @@ pub mod shadow;
 #[pymodule]
 fn _datafusion_ray_internal(m: &Bound<'_, PyModule>) -> PyResult<()> {
     // register classes that can be created directly from Python code
-    m.add_function(wrap_pyfunction!(internal_execute_partition, m)?)?;
     m.add_class::<context::RayContext>()?;
+    m.add_class::<ray_shuffle::PartitionExecutor>()?;
     Ok(())
 }

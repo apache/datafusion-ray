@@ -23,6 +23,7 @@ use datafusion::physical_plan::{displayable, ExecutionPlan, ExecutionPlanPropert
 use pyo3::prelude::*;
 use std::cell::RefCell;
 use std::sync::Arc;
+use uuid::Uuid;
 
 use crate::ray_shuffle::RayShuffleExec;
 use crate::shadow::ShadowPartitionExec;
@@ -102,6 +103,8 @@ impl PhysicalOptimizerRule for RayShuffleOptimizerRule {
                     repartition,
                     output_partitions,
                     input_partitions,
+                    Uuid::new_v4().to_string()[..8].to_string(), // TODO: use a short
+                                                                 // unique name vs this hack
                 ));
 
                 parents.push(new_plan.clone());

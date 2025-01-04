@@ -16,6 +16,7 @@
 # under the License.
 
 import argparse
+import datafusion
 import ray
 
 from datafusion_ray import DataFusionRayContext
@@ -31,9 +32,9 @@ def go(data_dir: str):
     # we could set this value to however many CPUs we plan to give each
     # ray task
     # ctx.set("datafusion.optimizer.enable_round_robin_repartition", "false")
-    ctx.set("datafusion.execution.target_partitions", "2")
+    ctx.set("datafusion.execution.target_partitions", "4")
 
-    ctx.register_parquet("tips", f"{data_dir}/tips.parquet")
+    ctx.register_parquet("tips", f"{data_dir}/tips*.parquet")
 
     df = ctx.sql(
         "select sex, smoker, avg(tip/total_bill) as tip_pct from tips group by sex, smoker"
@@ -43,6 +44,13 @@ def go(data_dir: str):
 
     df.show()
 
+    # compare to non ray version
+    ctx = datafusion.SessionContext()
+    ctx.register_parquet("tips", f"{data_dir}/tips*.parquet")
+    ctx.sql(
+        "select sex, smoker, avg(tip/total_bill) as tip_pct from tips group by sex, smoker"
+    ).show()
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
@@ -50,3 +58,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     go(args.data_dir)
+
+    import time
+
+    time.sleep(5)
