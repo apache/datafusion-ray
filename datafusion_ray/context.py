@@ -16,10 +16,10 @@
 # under the License.
 
 import asyncio
+import queue
 import threading
 
 import datafusion
-import pyarrow as pa
 import ray
 
 from tabulate import tabulate
@@ -44,9 +44,10 @@ class DataFusionRayContext:
 
 
 class RayIterable:
-    def __init__(self, name, iterable):
-        self.iterable = iterable
+    def __init__(self, name, actor, partition):
         self.name = name
+        self.actor = actor
+        self.iterable = actor.stream.remote(partition)
 
     def __next__(self):
         try:
@@ -55,10 +56,11 @@ class RayIterable:
             print(f"{self.name} stop iteration")
             raise e
 
-        list_of_ref = ray.get(object_ref)
+        # list_of_ref = ray.get(object_ref)
 
         # print(f"{self.name} ray iterable got list: {list_of_ref}")
-        ob = ray.get(list_of_ref[0])
+        # ob = ray.get(list_of_ref[0])
+        ob = ray.get(object_ref)
         print(f"{self.name} got\n{tabulate(ob.to_pandas(), tablefmt='simple_grid')}")
         return ob
 
@@ -77,15 +79,14 @@ class RayShuffler:
     ) -> RayIterable:
         print(f"ray executing partition {partition} for shuffleexec {unique_id}")
         # TODO: make name unique per query tree
-        actor = RayShuffleActor.options(
+        self.actor = RayShuffleActor.options(
             name=f"RayShuffleActor ({unique_id})",
-            lifetime="detached",
             get_if_exists=True,
         ).remote(unique_id, plan, output_partitions, input_partitions)
 
-        stream = actor.stream.remote(partition)
-
-        return RayIterable(f"RayIterable [{unique_id}] partition:{partition} ", stream)
+        return RayIterable(
+            f"RayIterable [{unique_id}] partition:{partition} ", self.actor, partition
+        )
 
 
 @ray.remote(num_cpus=0)
@@ -119,6 +120,7 @@ class RayShuffleActor:
         print(f"Actor [{self.name}] started tasks: {self.tasks}")
 
     def finished(self, partition: int) -> None:
+        print(f"Actor [{self.name}] finished partition {partition}")
         self.is_finished[partition] = True
 
         # if we are finished with all input partitions, then signal consumers
@@ -128,10 +130,9 @@ class RayShuffleActor:
             for q in self.queues:
                 q.put_nowait(None)
 
-        print(f"Actor [{self.name}] finished partition {partition}")
-
-    async def put(self, partition: int, thing) -> None:
-        await self.queues[partition].put(thing)
+    def put(self, partition: int, thing) -> None:
+        self.queues[partition].put_nowait(thing)
+        print(f"Actor [{self.name}] received {len(thing)} rows from part {partition}")
 
     async def get(self, partition: int):
         thing = await self.queues[partition].get()
@@ -164,22 +165,40 @@ def exec_stream(
         f"PartitionExecutor[{name}]", plan, shadow_partition
     )
 
-    readers = [
-        partition_executor.output_partition(p) for p in range(num_output_partitions)
-    ]
+    class DoAPartition(threading.Thread):
+        def __init__(self, partition, reader):
+            super().__init__()
+            self.partition = partition
+            self.reader = reader
+            self.refs = []
 
-    def do_a_partition(partition, reader):
-        for batch in reader:
-            object_ref = ray.put(batch)
-            ray_shuffle_actor.put.remote(partition, [object_ref])
+        def run(self):
+            try:
+                for batch in self.reader:
+                    print(
+                        f"PartitionExecutor Task [{name}] got (output part:{self.partition}) \n{tabulate(batch.to_pandas(), tablefmt='simple_grid')}"
+                    )
+                    # object_ref = ray.put(batch)
+                    # ray_shuffle_actor.put.remote(partition, [object_ref])
+                    self.refs.append(
+                        ray_shuffle_actor.put.remote(self.partition, batch)
+                    )
+            except Exception as e:
+                print(f"PartitionExecutor Task [{name}] got exception {e}")
 
     threads = []
     for p in range(num_output_partitions):
-        t = threading.Thread(target=do_a_partition, args=(p, readers[p]))
+        reader = partition_executor.output_partition(p)
+        t = DoAPartition(p, reader)
         threads.append(t)
         t.start()
 
     for t in threads:
         t.join()
+
+    # ensure all items are enqueued before we call finish below
+    all_refs = [ref for t in threads for ref in t.refs]
+    print(f"PartitionExecutor Task [{name}] waiting for {all_refs}")
+    ray.wait(all_refs, num_returns=len(all_refs), fetch_local=False)
 
     ray_shuffle_actor.finished.remote(shadow_partition)

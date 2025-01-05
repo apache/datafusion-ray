@@ -23,9 +23,6 @@ from datafusion_ray import DataFusionRayContext
 
 
 def go(data_dir: str):
-    # Connect to a cluster
-    ray.init()
-
     ctx = DataFusionRayContext()
     ctx.set("datafusion.execution.parquet.pushdown_filters", "true")
 
@@ -53,12 +50,9 @@ def go(data_dir: str):
 
 
 if __name__ == "__main__":
+    ray.init()
     parser = argparse.ArgumentParser()
     parser.add_argument("--data-dir", required=True, help="path to tips*.parquet files")
     args = parser.parse_args()
 
     go(args.data_dir)
-
-    import time
-
-    time.sleep(5)
