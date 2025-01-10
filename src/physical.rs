@@ -20,24 +20,24 @@ use datafusion::error::Result;
 use datafusion::physical_optimizer::PhysicalOptimizerRule;
 use datafusion::physical_plan::repartition::RepartitionExec;
 use datafusion::physical_plan::{displayable, ExecutionPlan, ExecutionPlanProperties};
-use pyo3::prelude::*;
 use std::cell::RefCell;
 use std::sync::Arc;
 use uuid::Uuid;
 
-use crate::ray_shuffle::RayShuffleExec;
-use crate::shadow::ShadowPartitionExec;
+use crate::ray_stage::RayStageExec;
 
 #[derive(Debug)]
-pub struct RayShuffleOptimizerRule {
-    py_inner: Arc<PyObject>,
+pub struct RayShuffleOptimizerRule {}
+
+impl Default for RayShuffleOptimizerRule {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl RayShuffleOptimizerRule {
-    pub fn new(py_inner: PyObject) -> Self {
-        Self {
-            py_inner: Arc::new(py_inner),
-        }
+    pub fn new() -> Self {
+        Self {}
     }
 }
 
@@ -77,7 +77,7 @@ impl PhysicalOptimizerRule for RayShuffleOptimizerRule {
             );
 
             if let Some(ref parent) = my_parent {
-                if parent.as_any().downcast_ref::<RayShuffleExec>().is_some() {
+                if parent.as_any().downcast_ref::<RayStageExec>().is_some() {
                     return Ok(Transformed::no(plan));
                 }
             }
@@ -96,11 +96,11 @@ impl PhysicalOptimizerRule for RayShuffleOptimizerRule {
                 // how many after the repartition
                 let output_partitions = plan.output_partitioning().partition_count();
 
-                let repartition =
-                    plan.with_new_children(vec![Arc::new(ShadowPartitionExec::new(child))])?;
+                //let repartition =
+                //    plan.with_new_children(vec![Arc::new(PartitionIsolatorExec::new(child))])?;
 
-                let new_plan = Arc::new(RayShuffleExec::new(
-                    repartition,
+                let new_plan = Arc::new(RayStageExec::new(
+                    plan,
                     output_partitions,
                     input_partitions,
                     Uuid::new_v4().to_string()[..8].to_string(), // TODO: use a short

@@ -20,6 +20,6 @@ try:
 except ImportError:
     import importlib_metadata
 
-from .context import DataFusionRayContext
+from .context import RayContext, RayDataFrame, PlanExecutor
 
 __version__ = importlib_metadata.version(__name__)

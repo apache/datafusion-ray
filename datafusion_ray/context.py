@@ -15,190 +15,213 @@
 # specific language governing permissions and limitations
 # under the License.
 
-import asyncio
-import queue
 import threading
 
 import datafusion
+import pyarrow as pa
 import ray
+import uuid
+import time
+from collections import deque
 
 from tabulate import tabulate
 
 from datafusion_ray._datafusion_ray_internal import (
     RayContext as RayContextInternal,
+    PlanExecutor,
+    batch_to_ipc as rust_batch_to_ipc,
+    ipc_to_batch as rust_ipc_to_batch,
 )
 
 
-class DataFusionRayContext:
+class RayDataFrame:
+    def __init__(self, coordinator_id, plan_bytes):
+        self.coordinator_id = coordinator_id
+        self.plan_bytes = plan_bytes
+        self.batches = None
+
+    def collect(self) -> list[pa.RecordBatch]:
+        if not self.batches:
+            reader = self.reader()
+            self.batches = list(reader)
+        return self.batches
+
+    def show(self) -> None:
+        table = pa.Table.from_batches(self.collect())
+        print(tabulate(table.to_pylist(), headers="keys", tablefmt="outline"))
+
+    def local_reader(self) -> pa.RecordBatchReader:
+        pe = PlanExecutor("RootStage", self.plan_bytes, self.coordinator_id)
+        return pe.execute(0)
+
+    def reader(self) -> pa.RecordBatchReader:
+        self.actor = RayQueryCoordinator.options(
+            name="RayQueryCoordinator:" + self.coordinator_id,
+            # lifetime="detached",
+        ).remote(self.coordinator_id)
+
+        stage = self.actor.new_stage.remote("RootStage", self.plan_bytes)
+        stage = ray.get(stage)
+
+        iterator = stage.batches.remote(0)
+
+        return RayIterable("RayIterable [Root] partition:0", iterator)
+
+
+class RayContext:
     def __init__(self) -> None:
-        self.ctx = RayContextInternal(RayShuffler())
+        self.ctx = RayContextInternal()
 
     def register_parquet(self, name: str, path: str):
         self.ctx.register_parquet(name, path)
 
-    def sql(self, query: str) -> datafusion.DataFrame:
-        return self.ctx.sql(query)
+    def sql(self, query: str) -> RayDataFrame:
+        coordinator_id = str(uuid.uuid4())
+        self.ctx.set_coordinator_id(coordinator_id)
+
+        plan_bytes = self.ctx.sql_to_physical_plan_bytes(query)
+        return RayDataFrame(coordinator_id, plan_bytes)
+
+    def basic(self, query: str) -> RayDataFrame:
+        coordinator_id = str(uuid.uuid4())
+        self.ctx.set_coordinator_id(coordinator_id)
+
+        plan_bytes = self.ctx.basic_physical_plan_bytes(query)
+        return RayDataFrame(coordinator_id, plan_bytes)
+
+    def two_step(self, query: str) -> RayDataFrame:
+        coordinator_id = str(uuid.uuid4())
+        self.ctx.set_coordinator_id(coordinator_id)
+
+        plan_bytes = self.ctx.two_step_physical_plan_bytes(query)
+        return RayDataFrame(coordinator_id, plan_bytes)
 
     def set(self, option: str, value: str) -> None:
         self.ctx.set(option, value)
 
 
 class RayIterable:
-    def __init__(self, name, actor, partition):
+    def __init__(self, name, iterable):
         self.name = name
-        self.actor = actor
-        self.iterable = actor.stream.remote(partition)
+        self.iterable = iterable
 
     def __next__(self):
-        try:
-            object_ref = next(self.iterable)
-        except StopIteration as e:
-            print(f"{self.name} stop iteration")
-            raise e
+        obj_ref = next(self.iterable)
+        print(f"[{self.name}] got ref")
+        ipc_batch = ray.get(obj_ref)
+        print(f"[{self.name}] got ipc batch")
+        batch = ipc_to_batch(ipc_batch)
+        print(f"[{self.name}] converted to batch")
 
-        # list_of_ref = ray.get(object_ref)
-
-        # print(f"{self.name} ray iterable got list: {list_of_ref}")
-        # ob = ray.get(list_of_ref[0])
-        ob = ray.get(object_ref)
-        print(f"{self.name} got\n{tabulate(ob.to_pandas(), tablefmt='simple_grid')}")
-        return ob
+        return batch
 
     def __iter__(self):
         return self
 
 
-class RayShuffler:
-    def execute_partition(
-        self,
-        plan: bytes,
-        partition: int,
-        output_partitions: int,
-        input_partitions: int,
-        unique_id: str,
-    ) -> RayIterable:
-        print(f"ray executing partition {partition} for shuffleexec {unique_id}")
-        # TODO: make name unique per query tree
-        self.actor = RayShuffleActor.options(
-            name=f"RayShuffleActor ({unique_id})",
-            get_if_exists=True,
-        ).remote(unique_id, plan, output_partitions, input_partitions)
+@ray.remote(num_cpus=0)
+class RayQueryCoordinator:
+    def __init__(self, coordinator_id: str) -> None:
+        self.my_id = coordinator_id
+        self.stages = {}
 
-        return RayIterable(
-            f"RayIterable [{unique_id}] partition:{partition} ", self.actor, partition
+    def new_stage(self, stage_id, plan):
+        try:
+            if stage_id in self.stages:
+                print(f"already started stage {stage_id}")
+                return self.stages[stage_id]
+
+            stage = Stage.options(
+                name="stage:" + stage_id,
+                # lifetime="detached",
+            ).remote(stage_id, plan, self.my_id)
+            self.stages[stage_id] = stage
+
+            return stage
+        except Exception as e:
+            print(f"RayQueryCoordinator[{self.my_id}] Unhandled Exception! {e}")
+            raise e
+
+
+def execute_stage(
+    plan: bytes,
+    partition: int,
+    stage_id: str,
+    coordinator_id: str,
+) -> pa.RecordBatchReader:
+    try:
+        print(f"execute_stage [{stage_id}] executing partition {partition}")
+        actor = ray.get_actor("RayQueryCoordinator:" + coordinator_id)
+        stage = actor.new_stage.remote(stage_id, plan)
+        stage = ray.get(stage)
+
+        iterable = stage.batches.remote(partition)
+        print(f"execute_stage [{stage_id}] made iterable")
+
+        schema = ray.get(stage.schema.remote())
+
+        ray_iterable = RayIterable(
+            f"RayIterable [{stage_id}] partition:{partition} ", iterable
         )
+        reader = pa.RecordBatchReader.from_batches(schema, ray_iterable)
+        return reader
+    except Exception as e:
+        print(f"execute_stage [{stage_id}] Unhandled Exception! {e}")
+        raise e
 
 
 @ray.remote(num_cpus=0)
-class RayShuffleActor:
-    def __init__(
-        self, name: str, plan: bytes, output_partitions: int, input_partitions: int
-    ) -> None:
+class Stage:
+    def __init__(self, name: str, plan: bytes, coordinator_id: str):
+
+        from datafusion_ray._datafusion_ray_internal import PlanExecutor
+
         self.name = name
-        self.plan = plan
-        self.output_partitions = output_partitions
-        self.input_partitions = input_partitions
+        self.executor = PlanExecutor(name, plan, coordinator_id)
 
-        self.queues = [asyncio.Queue() for _ in range(output_partitions)]
+        try:
+            self.readers = [
+                self.executor.execute(p)
+                for p in range(self.executor.num_output_partitions())
+            ]
+        except Exception as e:
+            print(f"Stage[{self.name}] Unhandled Exception in init {e}!")
+            raise e
 
-        self.is_finished = [False for _ in range(input_partitions)]
-
-        print(f"creating Actor [{name}] with {output_partitions}, {input_partitions}")
-
-        self._start_partition_tasks()
-
-    def _start_partition_tasks(self):
-        ctx = ray.get_runtime_context()
-        my_handle = ctx.current_actor
-
-        self.tasks = [
-            exec_stream.remote(
-                f"{self.name} part:{p}", self.plan, p, self.output_partitions, my_handle
+    def batches(self, partition):
+        try:
+            start = time.time()
+            batch = next(self.readers[partition])
+            end = time.time()
+            print(
+                f"Stage[{self.name}] got batch ({len(batch)} rows) in {end - start} s size of batch {batch.get_total_buffer_size()}"
             )
-            for p in range(self.input_partitions)
-        ]
-        print(f"Actor [{self.name}] started tasks: {self.tasks}")
+            ipc_batch = batch_to_ipc(batch)
+            print(
+                f"Stage[{self.name}] got ipc_batch size {len(ipc_batch)} type {type(ipc_batch)}"
+            )
+            yield ipc_batch
+        except StopIteration:
+            return
+        except Exception as e:
+            print(f"Stage[{self.name}] Unhandled Exception in batches {e}!")
+            raise e
 
-    def finished(self, partition: int) -> None:
-        print(f"Actor [{self.name}] finished partition {partition}")
-        self.is_finished[partition] = True
-
-        # if we are finished with all input partitions, then signal consumers
-        # of our output partitions
-        if all(self.is_finished):
-            print(f"Actor [{self.name}] totally finished")
-            for q in self.queues:
-                q.put_nowait(None)
-
-    def put(self, partition: int, thing) -> None:
-        self.queues[partition].put_nowait(thing)
-        print(f"Actor [{self.name}] received {len(thing)} rows from part {partition}")
-
-    async def get(self, partition: int):
-        thing = await self.queues[partition].get()
-        return thing
-
-    async def stream(self, partition: int):
-        while True:
-            thing = await self.get(partition)
-            if thing is None:
-                break
-            yield thing
+    def schema(self):
+        return self.executor.schema()
 
 
-@ray.remote
-def exec_stream(
-    name: str,
-    plan: bytes,
-    shadow_partition: int,
-    num_output_partitions: int,
-    ray_shuffle_actor,
-):
+def batch_to_ipc(batch: pa.RecordBatch) -> bytes:
+    # sink = pa.BufferOutputStream()
+    # with pa.ipc.new_stream(sink, batch.schema) as writer:
+    #    writer.write_batch(batch)
 
-    from datafusion_ray._datafusion_ray_internal import PartitionExecutor
+    # work around for non alignment issue for FFI buffers
+    # return sink.getvalue()
+    return rust_batch_to_ipc(batch)
 
-    print(
-        f"PartitionExecutor Task [{name}] executing shadow partition {shadow_partition} with {num_output_partitions} output partitions"
-    )
 
-    partition_executor = PartitionExecutor(
-        f"PartitionExecutor[{name}]", plan, shadow_partition
-    )
-
-    class DoAPartition(threading.Thread):
-        def __init__(self, partition, reader):
-            super().__init__()
-            self.partition = partition
-            self.reader = reader
-            self.refs = []
-
-        def run(self):
-            try:
-                for batch in self.reader:
-                    print(
-                        f"PartitionExecutor Task [{name}] got (output part:{self.partition}) \n{tabulate(batch.to_pandas(), tablefmt='simple_grid')}"
-                    )
-                    # object_ref = ray.put(batch)
-                    # ray_shuffle_actor.put.remote(partition, [object_ref])
-                    self.refs.append(
-                        ray_shuffle_actor.put.remote(self.partition, batch)
-                    )
-            except Exception as e:
-                print(f"PartitionExecutor Task [{name}] got exception {e}")
-
-    threads = []
-    for p in range(num_output_partitions):
-        reader = partition_executor.output_partition(p)
-        t = DoAPartition(p, reader)
-        threads.append(t)
-        t.start()
-
-    for t in threads:
-        t.join()
-
-    # ensure all items are enqueued before we call finish below
-    all_refs = [ref for t in threads for ref in t.refs]
-    print(f"PartitionExecutor Task [{name}] waiting for {all_refs}")
-    ray.wait(all_refs, num_returns=len(all_refs), fetch_local=False)
-
-    ray_shuffle_actor.finished.remote(shadow_partition)
+def ipc_to_batch(data) -> pa.RecordBatch:
+    # with pa.ipc.open_stream(data) as reader:
+    #    return reader.read_next_batch()
+    return rust_ipc_to_batch(data)

@@ -1,20 +1,14 @@
-use std::{fmt::Formatter, ops::Index, sync::Arc};
+use std::sync::Arc;
 
 use datafusion::{
     common::{internal_datafusion_err, internal_err},
-    error::{DataFusionError, Result},
-    execution::{FunctionRegistry, SendableRecordBatchStream},
-    physical_plan::{
-        DisplayAs, DisplayFormatType, ExecutionPlan, ExecutionPlanProperties, Partitioning,
-        PlanProperties,
-    },
+    error::Result,
+    execution::FunctionRegistry,
+    physical_plan::ExecutionPlan,
 };
-use datafusion_proto::physical_plan::{DefaultPhysicalExtensionCodec, PhysicalExtensionCodec};
+use datafusion_proto::physical_plan::PhysicalExtensionCodec;
 
-use crate::{
-    ray_shuffle::{RayShuffleExec, ShadowPartitionNumber},
-    shadow::ShadowPartitionExec,
-};
+use crate::{isolator::PartitionIsolatorExec, ray_stage::RayStageExec};
 
 #[derive(Debug)]
 pub struct ShufflerCodec {}
@@ -28,10 +22,10 @@ impl PhysicalExtensionCodec for ShufflerCodec {
     ) -> Result<Arc<dyn ExecutionPlan>> {
         // TODO: make this more robust
         assert_eq!(inputs.len(), 1);
-        if buf == "ShadowPartitionExec".as_bytes() {
-            Ok(Arc::new(ShadowPartitionExec::new(inputs[0].clone())))
-        } else if buf.starts_with("RayShuffleExec".as_bytes()) {
-            let mut end = "RayShuffleExec".len();
+        if buf == "PartitionIsolatorExec".as_bytes() {
+            Ok(Arc::new(PartitionIsolatorExec::new(inputs[0].clone())))
+        } else if buf.starts_with("RayStageExec".as_bytes()) {
+            let mut end = "RayStageExec".len();
 
             let delim: u8 = b"|"[0];
 
@@ -92,7 +86,7 @@ impl PhysicalExtensionCodec for ShufflerCodec {
                         .map_err(|e| internal_datafusion_err!("{e}"))
                 })?;
 
-            Ok(Arc::new(RayShuffleExec::new(
+            Ok(Arc::new(RayStageExec::new(
                 inputs[0].clone(),
                 output_partitions,
                 input_partitions,
@@ -106,15 +100,15 @@ impl PhysicalExtensionCodec for ShufflerCodec {
     fn try_encode(&self, node: Arc<dyn ExecutionPlan>, buf: &mut Vec<u8>) -> Result<()> {
         if node
             .as_any()
-            .downcast_ref::<ShadowPartitionExec>()
+            .downcast_ref::<PartitionIsolatorExec>()
             .is_some()
         {
-            buf.extend_from_slice("ShadowPartitionExec".as_bytes());
+            buf.extend_from_slice("PartitionIsolatorExec".as_bytes());
             Ok(())
-        } else if let Some(ray_shuffle) = node.as_any().downcast_ref::<RayShuffleExec>() {
+        } else if let Some(ray_shuffle) = node.as_any().downcast_ref::<RayStageExec>() {
             buf.extend_from_slice(
                 format!(
-                    "RayShuffleExec|{}|{}|{}",
+                    "RayStageExec|{}|{}|{}",
                     ray_shuffle.unique_id,
                     ray_shuffle.output_partitions,
                     ray_shuffle.input_partitions
