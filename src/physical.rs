@@ -53,7 +53,7 @@ impl PhysicalOptimizerRule for RayShuffleOptimizerRule {
         let mut stage_counter = 0;
 
         let up = |plan: Arc<dyn ExecutionPlan>| {
-            println!("examining plan: {}", displayable(plan.as_ref()).one_line());
+            //println!("examining plan: {}", displayable(plan.as_ref()).one_line());
 
             if plan.as_any().downcast_ref::<RepartitionExec>().is_some() {
                 let stage = Arc::new(RayStageExec::new(plan, stage_counter.to_string()));
@@ -67,10 +67,10 @@ impl PhysicalOptimizerRule for RayShuffleOptimizerRule {
         let plan = plan.transform_up(up)?.data;
         let final_plan = Arc::new(RayStageExec::new(plan, stage_counter.to_string()));
 
-        println!(
-            "optimized physical plan:\n{}",
-            displayable(final_plan.as_ref()).indent(false)
-        );
+        //println!(
+        //    "optimized physical plan:\n{}",
+        //    displayable(final_plan.as_ref()).indent(false)
+        //);
         Ok(final_plan)
     }
 

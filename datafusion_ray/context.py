@@ -36,24 +36,26 @@ class RayDataFrame:
     def __init__(self, ray_internal_df: RayDataFrameInternal):
         self.df = ray_internal_df
         self.coordinator_id = self.df.coordinator_id
-        self._stages = []
+        self._stages = None
+        self._batches = None
 
-    def stages(self):
+    def stages(self, batch_size=8192):
         # create our coordinator now, which we need to create stages
         if not self._stages:
             self.coord = RayStageCoordinator.options(
                 name="RayQueryCoordinator:" + self.coordinator_id,
             ).remote(self.coordinator_id)
-            self._stages = self.df.stages()
+            self._stages = self.df.stages(batch_size)
         return self._stages
 
     def execution_plan(self):
         return self.df.execution_plan()
 
     def collect(self) -> list[pa.RecordBatch]:
-        reader = self.reader()
-        self.batches = list(reader)
-        return self.batches
+        if not self._batches:
+            reader = self.reader()
+            self._batches = list(reader)
+        return self._batches
 
     def show(self) -> None:
         table = pa.Table.from_batches(self.collect())
@@ -111,7 +113,7 @@ class RayStageCoordinator:
         self.exchanger = RayExchanger.remote()
 
     def get_exchanger(self):
-        print("Coord: returning exchanger {self.exchanger}")
+        print(f"Coord: returning exchanger {self.exchanger}")
         return self.exchanger
 
     def new_stage(self, stage_id: str, plan_bytes: bytes):
@@ -123,7 +125,6 @@ class RayStageCoordinator:
             print(f"creating new stage {stage_id} from bytes {len(plan_bytes)}")
             stage = RayStage.options(
                 name="stage:" + stage_id,
-                # lifetime="detached",
             ).remote(stage_id, plan_bytes, self.my_id, self.exchanger)
             self.stages[stage_id] = stage
 
@@ -155,7 +156,7 @@ class RayStageCoordinator:
             raise e
 
 
-@ray.remote(num_cpus=1)
+@ray.remote(num_cpus=0)
 class RayStage:
     def __init__(
         self, stage_id: str, plan_bytes: bytes, coordinator_id: str, exchanger
@@ -178,8 +179,13 @@ class RayStage:
                 reader = self.pystage.execute(partition)
                 for batch in reader:
                     ipc_batch = batch_to_ipc(batch)
+                    o_ref = ray.put(ipc_batch)
+
+                    # upload a nested object, list[oref] so that ray does not
+                    # materialize it at the destination.  The shuffler only
+                    # needs to exchange object refs
                     ray.get(
-                        self.exchanger.put.remote(self.stage_id, partition, ipc_batch)
+                        self.exchanger.put.remote(self.stage_id, partition, [o_ref])
                     )
                 # signal there are no more batches
                 ray.get(self.exchanger.put.remote(self.stage_id, partition, None))
@@ -209,7 +215,7 @@ class RayExchanger:
 
         q = self.queues[key]
         await q.put(item)
-        print(f"RayExchanger got batch for {key}")
+        # print(f"RayExchanger got batch for {key}")
 
     async def get(self, stage_id, output_partition):
         key = f"{stage_id}-{output_partition}"
@@ -257,17 +263,20 @@ class RayIterable:
 
     def __next__(self):
         obj_ref = self.exchanger.get.remote(self.stage_id, self.partition)
-        print(f"[RayIterable stage:{self.stage_id} p:{self.partition}] got ref")
-        ipc_batch = ray.get(obj_ref)
+        # print(f"[RayIterable stage:{self.stage_id} p:{self.partition}] got ref")
+        message = ray.get(obj_ref)
 
-        if ipc_batch is None:
+        if message is None:
             raise StopIteration
 
-        print(f"[RayIterable stage:{self.stage_id} p:{self.partition}] got ipc batch")
+        # other wise we know its a list of a single object ref
+        ipc_batch = ray.get(message[0])
+
+        # print(f"[RayIterable stage:{self.stage_id} p:{self.partition}] got ipc batch")
         batch = ipc_to_batch(ipc_batch)
-        print(
-            f"[RayIterable stage:{self.stage_id} p:{self.partition}] converted to batch"
-        )
+        # print(
+        #    f"[RayIterable stage:{self.stage_id} p:{self.partition}] converted to batch"
+        # )
 
         return batch
 

@@ -27,7 +27,7 @@ import time
 import duckdb
 
 
-def main(data_path: str, concurrency: int):
+def main(data_path: str, concurrency: int, batch_size: int):
 
     # Register the tables
     table_names = [
@@ -46,10 +46,9 @@ def main(data_path: str, concurrency: int):
 
     ctx = RayContext()
     ctx.set("datafusion.execution.target_partitions", f"{concurrency}")
+    ctx.set("datafusion.optimizer.enable_round_robin_repartition", "false")
 
     local_cfg = SessionConfig()
-
-    local_cfg.set("datafusion.execution.target_partitions", f"{concurrency}")
 
     local_ctx = SessionContext(local_cfg)
 
@@ -71,20 +70,17 @@ def main(data_path: str, concurrency: int):
 
     # for query in range(1, num_queries + 1):
     #
-    queries = [
-        """SELECT customer.c_name, sum(orders.o_totalprice) as total_amount
-    FROM customer JOIN orders ON customer.c_custkey = orders.o_custkey
-    GROUP BY customer.c_name"""
-    ]
-    for qnum in [2]:
-
-        # sql: str = duckdb.sql(
-        #    f"select * from tpch_queries() where query_nr=?", params=(qnum,)
-        # ).df()["query"][0]
-        sql = queries[0]
+    for qnum in [1, 2, 3, 4]:
+        sql: str = duckdb.sql(
+            f"select * from tpch_queries() where query_nr=?", params=(qnum,)
+        ).df()["query"][0]
 
         start_time = time.time()
         df = ctx.sql(sql)
+        for stage in df.stages(batch_size):
+            print("Stage ", stage.stage_id)
+            print(stage.execution_plan().display_indent())
+
         batches = df.collect()
         table = pa.Table.from_batches(batches)
         end_time = time.time()
@@ -126,6 +122,12 @@ if __name__ == "__main__":
     parser.add_argument(
         "--concurrency", required=True, help="Number of concurrent tasks"
     )
+    parser.add_argument(
+        "--batch-size",
+        required=False,
+        default=8192,
+        help="Desired batch size output per stage",
+    )
     args = parser.parse_args()
 
-    main(args.data, int(args.concurrency))
+    main(args.data, int(args.concurrency), int(args.batch_size))
