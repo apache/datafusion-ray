@@ -15,35 +15,15 @@
 // specific language governing permissions and limitations
 // under the License.
 
-use datafusion::{
-    execution::{
-        runtime_env::{RuntimeConfig, RuntimeEnv},
-        SessionStateBuilder,
-    },
-    prelude::*,
-};
-use datafusion_python::{
-    context::{PyRuntimeConfig, PySessionConfig, PySessionContext},
-    dataframe::PyDataFrame,
-};
+use datafusion::{execution::SessionStateBuilder, physical_plan::ExecutionPlan, prelude::*};
+use datafusion_python::{errors::*, utils::wait_for_future};
 use pyo3::prelude::*;
 use std::sync::Arc;
 
+use crate::dataframe::RayDataFrame;
 use crate::physical::RayShuffleOptimizerRule;
 
-#[pyfunction]
-pub fn make_ray_context(ray_obj: PyObject) -> PyResult<PySessionContext> {
-    let rule = RayShuffleOptimizerRule::new(ray_obj);
-
-    let state = SessionStateBuilder::new()
-        .with_default_features()
-        .with_physical_optimizer_rule(Arc::new(rule))
-        .build();
-
-    let ctx = SessionContext::new_with_state(state);
-
-    Ok(PySessionContext { ctx })
-}
+pub struct CoordinatorId(pub String);
 
 #[pyclass]
 pub struct RayContext {
@@ -53,8 +33,8 @@ pub struct RayContext {
 #[pymethods]
 impl RayContext {
     #[new]
-    pub fn new(ray_obj: PyObject) -> PyResult<Self> {
-        let rule = RayShuffleOptimizerRule::new(ray_obj);
+    pub fn new() -> PyResult<Self> {
+        let rule = RayShuffleOptimizerRule::new();
 
         let state = SessionStateBuilder::new()
             .with_default_features()
@@ -75,9 +55,10 @@ impl RayContext {
         Ok(())
     }
 
-    pub fn sql(&self, query: String) -> PyResult<PyDataFrame> {
-        let df = futures::executor::block_on(self.ctx.sql(&query))?;
-        Ok(PyDataFrame::new(df))
+    pub fn sql(&self, py: Python, query: String, coordinator_id: String) -> PyResult<RayDataFrame> {
+        let physical_plan = wait_for_future(py, self.sql_to_physical_plan(query))?;
+
+        Ok(RayDataFrame::new(physical_plan, coordinator_id))
     }
 
     pub fn set(&self, option: String, value: String) -> PyResult<()> {
@@ -88,5 +69,22 @@ impl RayContext {
         options.set(&option, &value)?;
 
         Ok(())
+    }
+
+    pub fn set_coordinator_id(&self, id: String) -> PyResult<()> {
+        let state = self.ctx.state_ref();
+        let mut guard = state.write();
+        let config = guard.config_mut();
+        config.set_extension(Arc::new(CoordinatorId(id)));
+        Ok(())
+    }
+}
+impl RayContext {
+    async fn sql_to_physical_plan(&self, sql: String) -> Result<Arc<dyn ExecutionPlan>> {
+        let logical_plan = self.ctx.sql(&sql).await?.into_optimized_plan()?;
+
+        let plan = self.ctx.state().create_physical_plan(&logical_plan).await?;
+
+        Ok(plan)
     }
 }

@@ -15,30 +15,47 @@
 # specific language governing permissions and limitations
 # under the License.
 
-import os
+import argparse
+import datafusion
 import ray
 
 from datafusion_ray import RayContext
 
-SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 
-# Connect to a cluster
-ray.init()
+def go(data_dir: str):
+    ctx = RayContext()
+    ctx.set("datafusion.execution.parquet.pushdown_filters", "true")
 
-ctx = RayContext()
-ctx.set("datafusion.execution.parquet.pushdown_filters", "true")
+    # we could set this value to however many CPUs we plan to give each
+    # ray task
+    # ctx.set("datafusion.optimizer.enable_round_robin_repartition", "false")
+    ctx.set("datafusion.execution.target_partitions", "1")
 
-# we could set this value to however many CPUs we plan to give each
-# ray task
-ctx.set("datafusion.optimizer.enable_round_robin_repartition", "false")
-ctx.set("datafusion.execution.target_partitions", "4")
+    ctx.register_parquet("tips", f"{data_dir}/tips*.parquet")
 
-ctx.register_parquet("tips", f"{SCRIPT_DIR}/tips*.parquet")
+    df = ctx.sql(
+        "select sex, smoker, avg(tip/total_bill) as tip_pct from tips group by sex, smoker"
+    )
+    df.show()
 
-df = ctx.sql(
-    "select sex, smoker, avg(tip/total_bill) as tip_pct from tips group by sex, smoker"
-)
+    print("no ray result:")
 
-print(df.execution_plan().display_indent())
+    # compare to non ray version
+    ctx = datafusion.SessionContext()
+    ctx.register_parquet("tips", f"{data_dir}/tips*.parquet")
+    ctx.sql(
+        "select sex, smoker, avg(tip/total_bill) as tip_pct from tips group by sex, smoker"
+    ).show()
 
-df.show()
+
+if __name__ == "__main__":
+    ray.init(namespace="tips")
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--data-dir", required=True, help="path to tips*.parquet files")
+    args = parser.parse_args()
+
+    go(args.data_dir)
+
+    import time
+
+    time.sleep(3)
