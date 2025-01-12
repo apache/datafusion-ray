@@ -15,25 +15,13 @@
 // specific language governing permissions and limitations
 // under the License.
 
-use datafusion::arrow::pyarrow::{FromPyArrow, IntoPyArrow, ToPyArrow};
-use datafusion::physical_plan::coalesce_partitions::CoalescePartitionsExec;
-use datafusion::physical_plan::displayable;
-use datafusion::{
-    execution::SessionStateBuilder,
-    logical_expr::logical_plan,
-    physical_plan::{collect, ExecutionPlan, ExecutionPlanProperties},
-    prelude::*,
-};
-use datafusion_proto::physical_plan::AsExecutionPlan;
-use datafusion_python::{
-    context::PySessionContext, dataframe::PyDataFrame, errors::*, utils::wait_for_future,
-};
-use prost::Message;
+use datafusion::{execution::SessionStateBuilder, physical_plan::ExecutionPlan, prelude::*};
+use datafusion_python::{errors::*, utils::wait_for_future};
 use pyo3::prelude::*;
-use std::{sync::Arc, time::Instant};
+use std::sync::Arc;
 
-use crate::ray_stage::RayStageExec;
-use crate::{codec::ShufflerCodec, physical::RayShuffleOptimizerRule};
+use crate::dataframe::RayDataFrame;
+use crate::physical::RayShuffleOptimizerRule;
 
 pub struct CoordinatorId(pub String);
 
@@ -67,9 +55,10 @@ impl RayContext {
         Ok(())
     }
 
-    pub fn sql(&self, py: Python, query: String) -> PyResult<PyDataFrame> {
-        let df = wait_for_future(py, self.ctx.sql(&query))?;
-        Ok(PyDataFrame::new(df))
+    pub fn sql(&self, py: Python, query: String, coordinator_id: String) -> PyResult<RayDataFrame> {
+        let physical_plan = wait_for_future(py, self.sql_to_physical_plan(query))?;
+
+        Ok(RayDataFrame::new(physical_plan, coordinator_id))
     }
 
     pub fn set(&self, option: String, value: String) -> PyResult<()> {
@@ -89,118 +78,13 @@ impl RayContext {
         config.set_extension(Arc::new(CoordinatorId(id)));
         Ok(())
     }
+}
+impl RayContext {
+    async fn sql_to_physical_plan(&self, sql: String) -> Result<Arc<dyn ExecutionPlan>> {
+        let logical_plan = self.ctx.sql(&sql).await?.into_optimized_plan()?;
 
-    fn sql_to_physical_plan_bytes(&self, py: Python, sql: String) -> PyResult<Vec<u8>> {
-        let logical_plan = wait_for_future(py, self.ctx.sql(&sql))?.into_optimized_plan()?;
+        let plan = self.ctx.state().create_physical_plan(&logical_plan).await?;
 
-        let plan = wait_for_future(py, self.ctx.state().create_physical_plan(&logical_plan))?;
-
-        let codec = ShufflerCodec {};
-        let proto =
-            datafusion_proto::protobuf::PhysicalPlanNode::try_from_physical_plan(plan, &codec)?;
-        let bytes = proto.encode_to_vec();
-        Ok(bytes)
-    }
-
-    fn basic_physical_plan_bytes(&self, py: Python, sql: String) -> PyResult<Vec<u8>> {
-        let logical_plan = wait_for_future(py, self.ctx.sql(&sql))?.into_optimized_plan()?;
-
-        let plan = wait_for_future(py, self.ctx.state().create_physical_plan(&logical_plan))?;
-
-        let plan = Arc::new(RayStageExec::new(
-            plan.clone(),
-            plan.output_partitioning().partition_count(),
-            plan.output_partitioning().partition_count(),
-            "stage 1".into(),
-        ));
-
-        let plan = Arc::new(CoalescePartitionsExec::new(plan.clone()));
-
-        println!("basic plan = {}", displayable(plan.as_ref()).indent(true));
-
-        let codec = ShufflerCodec {};
-        let proto =
-            datafusion_proto::protobuf::PhysicalPlanNode::try_from_physical_plan(plan, &codec)?;
-        let bytes = proto.encode_to_vec();
-        Ok(bytes)
-    }
-
-    fn two_step_physical_plan_bytes(&self, py: Python, sql: String) -> PyResult<Vec<u8>> {
-        let logical_plan = wait_for_future(py, self.ctx.sql(&sql))?.into_optimized_plan()?;
-
-        let plan = wait_for_future(py, self.ctx.state().create_physical_plan(&logical_plan))?;
-
-        let plan: Arc<dyn ExecutionPlan> = Arc::new(RayStageExec::new(
-            plan.clone(),
-            plan.output_partitioning().partition_count(),
-            plan.output_partitioning().partition_count(),
-            "stage 1".into(),
-        ));
-        let plan = Arc::new(RayStageExec::new(
-            plan.clone(),
-            plan.output_partitioning().partition_count(),
-            plan.output_partitioning().partition_count(),
-            "stage 2".into(),
-        ));
-
-        let plan = Arc::new(CoalescePartitionsExec::new(plan.clone()));
-
-        println!(
-            "two step plan = {}",
-            displayable(plan.as_ref()).indent(true)
-        );
-
-        let codec = ShufflerCodec {};
-        let proto =
-            datafusion_proto::protobuf::PhysicalPlanNode::try_from_physical_plan(plan, &codec)?;
-        let bytes = proto.encode_to_vec();
-        Ok(bytes)
-    }
-
-    pub fn execute_all(&self, sql: String, py: Python) -> PyResult<Vec<PyObject>> {
-        //let stream_out = execute_stream(self.plan.clone(), self.ctx.task_ctx())?;
-
-        let df = wait_for_future(py, self.ctx.sql(&sql))?;
-        let pplan = wait_for_future(py, df.create_physical_plan())?;
-        let now = Instant::now();
-        let batches = wait_for_future(py, collect(pplan, self.ctx.task_ctx()))?;
-        let elapsed = now.elapsed();
-        println!(
-            "collecting with my own plan batches took {}ms",
-            elapsed.as_millis()
-        );
-
-        let logical_plan = wait_for_future(py, self.ctx.sql(&sql))?.into_optimized_plan()?;
-
-        let plan = wait_for_future(py, self.ctx.state().create_physical_plan(&logical_plan))?;
-
-        let codec = ShufflerCodec {};
-        let proto =
-            datafusion_proto::protobuf::PhysicalPlanNode::try_from_physical_plan(plan, &codec)?;
-        let bytes = proto.encode_to_vec();
-
-        let proto_plan = datafusion_proto::protobuf::PhysicalPlanNode::try_decode(&bytes)?;
-
-        let plan = proto_plan.try_into_physical_plan(&self.ctx, &self.ctx.runtime_env(), &codec)?;
-
-        let now = Instant::now();
-        let batches = wait_for_future(py, collect(plan, self.ctx.task_ctx()))?;
-        let elapsed = now.elapsed();
-        println!("collecting batches took {}ms", elapsed.as_millis());
-
-        let now = Instant::now();
-        let out = batches.into_iter().map(|rb| rb.to_pyarrow(py)).collect();
-        let elapsed = now.elapsed();
-        println!("batches to py took {}ms", elapsed.as_millis());
-        out
-
-        /*let py_out =
-            block_on_stream(stream_out.map_err(|e| ArrowError::ExternalError(Box::new(e))));
-
-        let py_out = RecordBatchIterator::new(py_out, self.plan.schema());
-
-        let reader: Box<dyn RecordBatchReader + Send> = Box::new(py_out);
-        reader.into_pyarrow(py)
-        */
+        Ok(plan)
     }
 }

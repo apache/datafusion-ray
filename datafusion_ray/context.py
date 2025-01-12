@@ -15,57 +15,71 @@
 # specific language governing permissions and limitations
 # under the License.
 
-import threading
 
-import datafusion
 import pyarrow as pa
+import asyncio
 import ray
 import uuid
-import time
 from collections import deque
 
 from tabulate import tabulate
 
 from datafusion_ray._datafusion_ray_internal import (
     RayContext as RayContextInternal,
-    PlanExecutor,
+    RayDataFrame as RayDataFrameInternal,
     batch_to_ipc as rust_batch_to_ipc,
     ipc_to_batch as rust_ipc_to_batch,
 )
 
 
 class RayDataFrame:
-    def __init__(self, coordinator_id, plan_bytes):
-        self.coordinator_id = coordinator_id
-        self.plan_bytes = plan_bytes
-        self.batches = None
+    def __init__(self, ray_internal_df: RayDataFrameInternal):
+        self.df = ray_internal_df
+        self.coordinator_id = self.df.coordinator_id
+        self._stages = []
+
+    def stages(self):
+        # create our coordinator now, which we need to create stages
+        if not self._stages:
+            self.coord = RayStageCoordinator.options(
+                name="RayQueryCoordinator:" + self.coordinator_id,
+            ).remote(self.coordinator_id)
+            self._stages = self.df.stages()
+        return self._stages
+
+    def execution_plan(self):
+        return self.df.execution_plan()
 
     def collect(self) -> list[pa.RecordBatch]:
-        if not self.batches:
-            reader = self.reader()
-            self.batches = list(reader)
+        reader = self.reader()
+        self.batches = list(reader)
         return self.batches
 
     def show(self) -> None:
         table = pa.Table.from_batches(self.collect())
         print(tabulate(table.to_pylist(), headers="keys", tablefmt="outline"))
 
-    def local_reader(self) -> pa.RecordBatchReader:
-        pe = PlanExecutor("RootStage", self.plan_bytes, self.coordinator_id)
-        return pe.execute(0)
-
     def reader(self) -> pa.RecordBatchReader:
-        self.actor = RayQueryCoordinator.options(
-            name="RayQueryCoordinator:" + self.coordinator_id,
-            # lifetime="detached",
-        ).remote(self.coordinator_id)
+        refs = [
+            self.coord.new_stage.remote(stage.stage_id, stage.plan_bytes())
+            for stage in self.stages()
+        ]
+        # wait for all stages to be created
+        ray.wait(refs, num_returns=len(refs))
 
-        stage = self.actor.new_stage.remote("RootStage", self.plan_bytes)
-        stage = ray.get(stage)
+        ray.get(self.coord.run_stages.remote())
 
-        iterator = stage.batches.remote(0)
+        print("RayDataFrame: Done executing all stages")
 
-        return RayIterable("RayIterable [Root] partition:0", iterator)
+        max_stage_id = max([int(stage.stage_id) for stage in self.stages()])
+
+        exchanger = ray.get(self.coord.get_exchanger.remote())
+        schema = ray.get(exchanger.get_schema.remote(max_stage_id))
+
+        ray_iterable = RayIterable(exchanger, max_stage_id, 0)
+        reader = pa.RecordBatchReader.from_batches(schema, ray_iterable)
+
+        return reader
 
 
 class RayContext:
@@ -75,140 +89,190 @@ class RayContext:
     def register_parquet(self, name: str, path: str):
         self.ctx.register_parquet(name, path)
 
+    def execution_plan(self):
+        return self.ctx.execution_plan()
+
     def sql(self, query: str) -> RayDataFrame:
         coordinator_id = str(uuid.uuid4())
         self.ctx.set_coordinator_id(coordinator_id)
 
-        plan_bytes = self.ctx.sql_to_physical_plan_bytes(query)
-        return RayDataFrame(coordinator_id, plan_bytes)
-
-    def basic(self, query: str) -> RayDataFrame:
-        coordinator_id = str(uuid.uuid4())
-        self.ctx.set_coordinator_id(coordinator_id)
-
-        plan_bytes = self.ctx.basic_physical_plan_bytes(query)
-        return RayDataFrame(coordinator_id, plan_bytes)
-
-    def two_step(self, query: str) -> RayDataFrame:
-        coordinator_id = str(uuid.uuid4())
-        self.ctx.set_coordinator_id(coordinator_id)
-
-        plan_bytes = self.ctx.two_step_physical_plan_bytes(query)
-        return RayDataFrame(coordinator_id, plan_bytes)
+        df = self.ctx.sql(query, coordinator_id)
+        return RayDataFrame(df)
 
     def set(self, option: str, value: str) -> None:
         self.ctx.set(option, value)
 
 
-class RayIterable:
-    def __init__(self, name, iterable):
-        self.name = name
-        self.iterable = iterable
-
-    def __next__(self):
-        obj_ref = next(self.iterable)
-        print(f"[{self.name}] got ref")
-        ipc_batch = ray.get(obj_ref)
-        print(f"[{self.name}] got ipc batch")
-        batch = ipc_to_batch(ipc_batch)
-        print(f"[{self.name}] converted to batch")
-
-        return batch
-
-    def __iter__(self):
-        return self
-
-
 @ray.remote(num_cpus=0)
-class RayQueryCoordinator:
+class RayStageCoordinator:
     def __init__(self, coordinator_id: str) -> None:
         self.my_id = coordinator_id
         self.stages = {}
+        self.exchanger = RayExchanger.remote()
 
-    def new_stage(self, stage_id, plan):
+    def get_exchanger(self):
+        print("Coord: returning exchanger {self.exchanger}")
+        return self.exchanger
+
+    def new_stage(self, stage_id: str, plan_bytes: bytes):
         try:
             if stage_id in self.stages:
                 print(f"already started stage {stage_id}")
                 return self.stages[stage_id]
 
-            stage = Stage.options(
+            print(f"creating new stage {stage_id} from bytes {len(plan_bytes)}")
+            stage = RayStage.options(
                 name="stage:" + stage_id,
                 # lifetime="detached",
-            ).remote(stage_id, plan, self.my_id)
+            ).remote(stage_id, plan_bytes, self.my_id, self.exchanger)
             self.stages[stage_id] = stage
 
-            return stage
         except Exception as e:
-            print(f"RayQueryCoordinator[{self.my_id}] Unhandled Exception! {e}")
+            print(
+                f"RayQueryCoordinator[{self.my_id}] Unhandled Exception in new stage! {e}"
+            )
+            raise e
+
+    def run_stages(self):
+        try:
+            refs = [stage.register_schema.remote() for stage in self.stages.values()]
+
+            # wait for all stages to register their schemas
+            ray.wait(refs, num_returns=len(refs))
+
+            print(f"RayQueryCoordinator[{self.my_id}] all schemas registered")
+
+            # now we can tell each stage to start executing and stream its results to
+            # the exchanger
+
+            refs = [stage.consume.remote() for stage in self.stages.values()]
+            # wait for all stages finish before this method finishes
+            # ray.wait(refs, num_returns=len(refs))
+        except Exception as e:
+            print(
+                f"RayQueryCoordinator[{self.my_id}] Unhandled Exception in run stages! {e}"
+            )
             raise e
 
 
-def execute_stage(
-    plan: bytes,
-    partition: int,
-    stage_id: str,
-    coordinator_id: str,
-) -> pa.RecordBatchReader:
-    try:
-        print(f"execute_stage [{stage_id}] executing partition {partition}")
-        actor = ray.get_actor("RayQueryCoordinator:" + coordinator_id)
-        stage = actor.new_stage.remote(stage_id, plan)
-        stage = ray.get(stage)
+@ray.remote(num_cpus=1)
+class RayStage:
+    def __init__(
+        self, stage_id: str, plan_bytes: bytes, coordinator_id: str, exchanger
+    ):
 
-        iterable = stage.batches.remote(partition)
-        print(f"execute_stage [{stage_id}] made iterable")
+        from datafusion_ray._datafusion_ray_internal import PyStage
 
-        schema = ray.get(stage.schema.remote())
+        self.stage_id = stage_id
+        self.pystage = PyStage(stage_id, plan_bytes, coordinator_id)
+        self.exchanger = exchanger
 
-        ray_iterable = RayIterable(
-            f"RayIterable [{stage_id}] partition:{partition} ", iterable
-        )
-        reader = pa.RecordBatchReader.from_batches(schema, ray_iterable)
-        return reader
-    except Exception as e:
-        print(f"execute_stage [{stage_id}] Unhandled Exception! {e}")
-        raise e
+    def register_schema(self):
+        schema = self.pystage.schema()
+        ray.get(self.exchanger.put_schema.remote(self.stage_id, schema))
+
+    def consume(self):
+        try:
+            for partition in range(self.pystage.num_output_partitions()):
+                print(f"RayStage[{self.stage_id}] consuming partition:{partition}")
+                reader = self.pystage.execute(partition)
+                for batch in reader:
+                    ipc_batch = batch_to_ipc(batch)
+                    ray.get(
+                        self.exchanger.put.remote(self.stage_id, partition, ipc_batch)
+                    )
+                # signal there are no more batches
+                ray.get(self.exchanger.put.remote(self.stage_id, partition, None))
+        except Exception as e:
+            print(f"RayStage[{self.stage_id}] Unhandled Exception in consume: {e}!")
+            raise e
 
 
 @ray.remote(num_cpus=0)
-class Stage:
-    def __init__(self, name: str, plan: bytes, coordinator_id: str):
+class RayExchanger:
+    def __init__(self):
+        self.queues = {}
+        self.schemas = {}
 
-        from datafusion_ray._datafusion_ray_internal import PlanExecutor
+    async def put_schema(self, stage_id, schema):
+        key = int(stage_id)
+        self.schemas[key] = schema
 
-        self.name = name
-        self.executor = PlanExecutor(name, plan, coordinator_id)
+    async def get_schema(self, stage_id):
+        key = int(stage_id)
+        return self.schemas[key]
 
+    async def put(self, stage_id, output_partition, item):
+        key = f"{stage_id}-{output_partition}"
+        if key not in self.queues:
+            self.queues[key] = asyncio.Queue()
+
+        q = self.queues[key]
+        await q.put(item)
+        print(f"RayExchanger got batch for {key}")
+
+    async def get(self, stage_id, output_partition):
+        key = f"{stage_id}-{output_partition}"
+        if key not in self.queues:
+            self.queues[key] = asyncio.Queue()
+
+        q = self.queues[key]
+
+        item = await q.get()
+        return item
+
+
+class StageReader:
+    def __init__(self, coordinator_id):
+        print(f"Stage reader init getting coordinator {coordinator_id}")
+        self.coord = ray.get_actor("RayQueryCoordinator:" + coordinator_id)
+        print("Stage reader init got it")
+        ref = self.coord.get_exchanger.remote()
+        print(f"Stage reader init got exchanger ref {ref}")
+        self.exchanger = ray.get(ref)
+        print("Stage reader init got exchanger")
+
+    def reader(
+        self,
+        stage_id: str,
+        partition: int,
+    ) -> pa.RecordBatchReader:
         try:
-            self.readers = [
-                self.executor.execute(p)
-                for p in range(self.executor.num_output_partitions())
-            ]
+            print(f"reader [s:{stage_id} p:{partition}] getting reader")
+            schema = ray.get(self.exchanger.get_schema.remote(stage_id))
+            ray_iterable = RayIterable(self.exchanger, stage_id, partition)
+            reader = pa.RecordBatchReader.from_batches(schema, ray_iterable)
+            print(f"reader [s:{stage_id} p:{partition}] got it")
+            return reader
         except Exception as e:
-            print(f"Stage[{self.name}] Unhandled Exception in init {e}!")
+            print(f"reader [s:{stage_id} p:{partition}] Unhandled Exception! {e}")
             raise e
 
-    def batches(self, partition):
-        try:
-            start = time.time()
-            batch = next(self.readers[partition])
-            end = time.time()
-            print(
-                f"Stage[{self.name}] got batch ({len(batch)} rows) in {end - start} s size of batch {batch.get_total_buffer_size()}"
-            )
-            ipc_batch = batch_to_ipc(batch)
-            print(
-                f"Stage[{self.name}] got ipc_batch size {len(ipc_batch)} type {type(ipc_batch)}"
-            )
-            yield ipc_batch
-        except StopIteration:
-            return
-        except Exception as e:
-            print(f"Stage[{self.name}] Unhandled Exception in batches {e}!")
-            raise e
 
-    def schema(self):
-        return self.executor.schema()
+class RayIterable:
+    def __init__(self, exchanger, stage_id, partition):
+        self.exchanger = exchanger
+        self.stage_id = stage_id
+        self.partition = partition
+
+    def __next__(self):
+        obj_ref = self.exchanger.get.remote(self.stage_id, self.partition)
+        print(f"[RayIterable stage:{self.stage_id} p:{self.partition}] got ref")
+        ipc_batch = ray.get(obj_ref)
+
+        if ipc_batch is None:
+            raise StopIteration
+
+        print(f"[RayIterable stage:{self.stage_id} p:{self.partition}] got ipc batch")
+        batch = ipc_to_batch(ipc_batch)
+        print(
+            f"[RayIterable stage:{self.stage_id} p:{self.partition}] converted to batch"
+        )
+
+        return batch
+
+    def __iter__(self):
+        return self
 
 
 def batch_to_ipc(batch: pa.RecordBatch) -> bytes:

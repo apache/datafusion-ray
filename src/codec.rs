@@ -1,123 +1,114 @@
 use std::sync::Arc;
 
+use crate::protobuf::RayStageReaderExecNode;
+
+use arrow::datatypes::Schema;
 use datafusion::{
     common::{internal_datafusion_err, internal_err},
     error::Result,
     execution::FunctionRegistry,
     physical_plan::ExecutionPlan,
 };
-use datafusion_proto::physical_plan::PhysicalExtensionCodec;
+use datafusion_proto::physical_plan::{
+    from_proto::parse_protobuf_partitioning, to_proto::serialize_partitioning,
+    DefaultPhysicalExtensionCodec, PhysicalExtensionCodec,
+};
+use datafusion_proto::protobuf;
 
-use crate::{isolator::PartitionIsolatorExec, ray_stage::RayStageExec};
+use prost::Message;
+
+use crate::ray_stage_reader::RayStageReaderExec;
 
 #[derive(Debug)]
-pub struct ShufflerCodec {}
+pub struct RayCodec {}
 
-impl PhysicalExtensionCodec for ShufflerCodec {
+impl PhysicalExtensionCodec for RayCodec {
     fn try_decode(
         &self,
         buf: &[u8],
-        inputs: &[Arc<dyn ExecutionPlan>],
-        _registry: &dyn FunctionRegistry,
+        _inputs: &[Arc<dyn ExecutionPlan>],
+        registry: &dyn FunctionRegistry,
     ) -> Result<Arc<dyn ExecutionPlan>> {
-        // TODO: make this more robust
-        assert_eq!(inputs.len(), 1);
-        if buf == "PartitionIsolatorExec".as_bytes() {
-            Ok(Arc::new(PartitionIsolatorExec::new(inputs[0].clone())))
-        } else if buf.starts_with("RayStageExec".as_bytes()) {
-            let mut end = "RayStageExec".len();
+        println!("decoding 1");
+        let node = RayStageReaderExecNode::decode(buf)
+            .map_err(|e| internal_datafusion_err!("Couldn't decode ray stage reader proto {e}"))?;
 
-            let delim: u8 = b"|"[0];
+        println!("decoding 2");
+        let schema: Schema = node
+            .schema
+            .as_ref()
+            .ok_or(internal_datafusion_err!("missing schema in proto"))?
+            .try_into()?;
 
-            let mut start = end + 1;
-            /*println!(
-                "og buf {}",
-                std::str::from_utf8(&buf).expect("valid string")
-            );
-            println!(
-                "searching buf {}",
-                std::str::from_utf8(&buf[start..]).expect("valid string 2")
-            );*/
-            end = start
-                + buf[start..]
-                    .iter()
-                    .position(|b| b == &delim)
-                    .ok_or(internal_datafusion_err!("Invalid buffer"))?;
+        println!("decoding 3");
+        let part = parse_protobuf_partitioning(
+            node.partitioning.as_ref(),
+            registry,
+            &schema,
+            &DefaultPhysicalExtensionCodec {},
+        )?
+        .ok_or(internal_datafusion_err!("missing partitioning in proto"))?;
 
-            //println!("1start: {}, end: {}", start, end);
+        println!("decoding 4");
+        Ok(Arc::new(RayStageReaderExec::try_new(
+            part,
+            Arc::new(schema),
+            node.stage_id,
+            node.coordinator_id,
+        )?))
+    }
 
-            let unique_id = std::str::from_utf8(&buf[start..end])
-                .map_err(|e| internal_datafusion_err!("{e}"))?;
+    fn try_encode(&self, node: Arc<dyn ExecutionPlan>, buf: &mut Vec<u8>) -> Result<()> {
+        if let Some(reader) = node.as_any().downcast_ref::<RayStageReaderExec>() {
+            let schema: protobuf::Schema = reader.schema().try_into()?;
+            let partitioning: protobuf::Partitioning = serialize_partitioning(
+                &reader.properties().output_partitioning(),
+                &DefaultPhysicalExtensionCodec {},
+            )?;
 
-            start = end + 1;
-            //println!(
-            //    "searching buf {}",
-            //    std::str::from_utf8(&buf[start..]).expect("valid string 2")
-            //);
+            let pb = RayStageReaderExecNode {
+                schema: Some(schema),
+                partitioning: Some(partitioning),
+                stage_id: reader.stage_id.clone(),
+                coordinator_id: reader.coordinator_id.clone(),
+            };
 
-            let end = start
-                + buf[start..]
-                    .iter()
-                    .position(|b| b == &delim)
-                    .ok_or(internal_datafusion_err!("Invalid buffer"))?;
+            pb.encode(buf)
+                .map_err(|e| internal_datafusion_err!("can't encode ray stage reader pb"))?;
 
-            //println!("2start: {}, end: {}", start, end);
-
-            let output_partitions = std::str::from_utf8(&buf[start..end])
-                .map_err(|e| internal_datafusion_err!("{e}"))
-                .and_then(|s| {
-                    s.parse::<usize>()
-                        .map_err(|e| internal_datafusion_err!("{e}"))
-                })?;
-
-            start = end + 1;
-
-            /*println!(
-                "searching buf {}",
-                std::str::from_utf8(&buf[start..]).expect("valid string 2")
-            );*/
-            let end = buf.len();
-            //println!("3start: {}, end: {}", start, end);
-
-            let input_partitions = std::str::from_utf8(&buf[start..end])
-                .map_err(|e| internal_datafusion_err!("{e}"))
-                .and_then(|s| {
-                    s.parse::<usize>()
-                        .map_err(|e| internal_datafusion_err!("{e}"))
-                })?;
-
-            Ok(Arc::new(RayStageExec::new(
-                inputs[0].clone(),
-                output_partitions,
-                input_partitions,
-                unique_id.to_owned(),
-            )))
+            Ok(())
         } else {
             internal_err!("Not supported")
         }
     }
+}
 
-    fn try_encode(&self, node: Arc<dyn ExecutionPlan>, buf: &mut Vec<u8>) -> Result<()> {
-        if node
-            .as_any()
-            .downcast_ref::<PartitionIsolatorExec>()
-            .is_some()
-        {
-            buf.extend_from_slice("PartitionIsolatorExec".as_bytes());
-            Ok(())
-        } else if let Some(ray_shuffle) = node.as_any().downcast_ref::<RayStageExec>() {
-            buf.extend_from_slice(
-                format!(
-                    "RayStageExec|{}|{}|{}",
-                    ray_shuffle.unique_id,
-                    ray_shuffle.output_partitions,
-                    ray_shuffle.input_partitions
-                )
-                .as_bytes(),
-            );
-            Ok(())
-        } else {
-            internal_err!("Not supported")
-        }
+#[cfg(test)]
+mod test {
+    use super::*;
+    use crate::ray_stage_reader::RayStageReaderExec;
+    use arrow::datatypes::DataType;
+    use datafusion::{physical_plan::Partitioning, prelude::SessionContext};
+
+    use pyo3::prelude::*;
+    use std::sync::Arc;
+
+    #[test]
+    fn stage_reader_round_trip() {
+        let schema = Arc::new(arrow::datatypes::Schema::new(vec![
+            arrow::datatypes::Field::new("a", DataType::Int32, false),
+            arrow::datatypes::Field::new("b", DataType::Int32, false),
+        ]));
+        let ctx = SessionContext::new();
+        let part = Partitioning::UnknownPartitioning(2);
+        let exec = Arc::new(
+            RayStageReaderExec::try_new(part, schema, "1".to_owned(), "coordinator_id".to_owned())
+                .unwrap(),
+        );
+        let codec = RayCodec {};
+        let mut buf = vec![];
+        codec.try_encode(exec.clone(), &mut buf).unwrap();
+        let decoded = codec.try_decode(&buf, &[], &ctx).unwrap();
+        assert_eq!(exec.schema(), decoded.schema());
     }
 }
