@@ -1337,6 +1337,7 @@ dependencies = [
  "futures",
  "glob",
  "log",
+ "object_store",
  "pretty_assertions",
  "prost 0.13.4",
  "prost-types 0.13.4",
@@ -1346,6 +1347,7 @@ dependencies = [
  "rustc_version",
  "tokio",
  "tonic-build",
+ "url",
  "uuid",
 ]
 
