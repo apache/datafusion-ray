@@ -16,7 +16,7 @@
 # under the License.
 
 [build-system]
-requires = ["maturin>=0.14,<1.7.4"]
+requires = ["maturin>=0.14"]
 build-backend = "maturin"
 
 [project]

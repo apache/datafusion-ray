@@ -16,49 +16,80 @@
 // under the License.
 
 use datafusion::{execution::SessionStateBuilder, physical_plan::ExecutionPlan, prelude::*};
+use datafusion_python::dataframe::PyDataFrame;
 use datafusion_python::{errors::*, utils::wait_for_future};
+use object_store::aws::AmazonS3Builder;
 use pyo3::prelude::*;
+use std::env;
 use std::sync::Arc;
 
 use crate::dataframe::RayDataFrame;
 use crate::physical::RayShuffleOptimizerRule;
+use crate::util::ResultExt;
+use url::Url;
 
 pub struct CoordinatorId(pub String);
 
 #[pyclass]
 pub struct RayContext {
     ctx: SessionContext,
+    bucket: Option<String>,
 }
 
 #[pymethods]
 impl RayContext {
     #[new]
-    pub fn new() -> PyResult<Self> {
+    pub fn new(bucket: Option<String>) -> PyResult<Self> {
         let rule = RayShuffleOptimizerRule::new();
+
+        let config = SessionConfig::default().with_information_schema(true);
 
         let state = SessionStateBuilder::new()
             .with_default_features()
             .with_physical_optimizer_rule(Arc::new(rule))
+            .with_config(config)
             .build();
 
         let ctx = SessionContext::new_with_state(state);
 
-        Ok(Self { ctx })
+        Ok(Self { ctx, bucket })
     }
 
-    pub fn register_parquet(&self, name: String, path: String) -> PyResult<()> {
-        futures::executor::block_on(self.ctx.register_parquet(
-            &name,
-            &path,
-            ParquetReadOptions::default(),
-        ))?;
+    pub fn register_s3(&self, bucket_name: String) -> PyResult<()> {
+        let s3 = AmazonS3Builder::from_env()
+            .with_bucket_name(&bucket_name)
+            .build()
+            .to_py_err()?;
+
+        let path = format!("s3://{bucket_name}");
+        let s3_url = Url::parse(&path).to_py_err()?;
+        let arc_s3 = Arc::new(s3);
+        self.ctx.register_object_store(&s3_url, arc_s3.clone());
+        Ok(())
+    }
+
+    pub fn register_parquet(&self, py: Python, name: String, path: String) -> PyResult<()> {
+        let mut options = ParquetReadOptions::default();
+        options.file_extension = ".parquet";
+
+        wait_for_future(py, self.ctx.register_parquet(&name, &path, options))?;
         Ok(())
     }
 
     pub fn sql(&self, py: Python, query: String, coordinator_id: String) -> PyResult<RayDataFrame> {
         let physical_plan = wait_for_future(py, self.sql_to_physical_plan(query))?;
 
-        Ok(RayDataFrame::new(physical_plan, coordinator_id))
+        Ok(RayDataFrame::new(
+            physical_plan,
+            coordinator_id,
+            self.bucket.clone(),
+        ))
+    }
+
+    pub fn local_sql(&self, py: Python, query: String) -> PyResult<PyDataFrame> {
+        wait_for_future(py, self.ctx.sql(&query))
+            .map(PyDataFrame::new)
+            .to_py_err()
     }
 
     pub fn set(&self, option: String, value: String) -> PyResult<()> {

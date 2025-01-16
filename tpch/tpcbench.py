@@ -22,12 +22,14 @@ from datafusion_ray import RayContext
 from datetime import datetime
 import pyarrow as pa
 import json
+import os
 import time
 
 import duckdb
+from datafusion.object_store import AmazonS3
 
 
-def main(data_path: str, concurrency: int, batch_size: int):
+def main(data_path: str, concurrency: int, batch_size: int, isolate_partitions: bool):
 
     # Register the tables
     table_names = [
@@ -44,40 +46,42 @@ def main(data_path: str, concurrency: int, batch_size: int):
     # use ray job submit
     ray.init()
 
-    ctx = RayContext()
+    ctx = RayContext(
+        batch_size=batch_size,
+        isolate_partitions=isolate_partitions,
+        bucket="rob-tandy-tmp",
+    )
+
     ctx.set("datafusion.execution.target_partitions", f"{concurrency}")
+    ctx.set("datafusion.execution.parquet.pushdown_filters", "true")
     ctx.set("datafusion.optimizer.enable_round_robin_repartition", "false")
-
-    local_cfg = SessionConfig()
-
-    local_ctx = SessionContext(local_cfg)
 
     for table in table_names:
         path = f"{data_path}/{table}.parquet"
         print(f"Registering table {table} using path {path}")
         ctx.register_parquet(table, path)
-        local_ctx.register_parquet(table, path)
 
     results = {
         "engine": "datafusion-python",
         "benchmark": "tpch",
         "data_path": data_path,
         "queries": {},
-        "local_queries": {},
     }
 
     duckdb.sql("load tpch")
 
     # for query in range(1, num_queries + 1):
     #
-    for qnum in [1, 2, 3, 4]:
+    # for qnum in range(1, 23):
+    for qnum in [1, 2, 3, 4, 5]:
         sql: str = duckdb.sql(
             f"select * from tpch_queries() where query_nr=?", params=(qnum,)
         ).df()["query"][0]
+        print("executing ", sql)
 
         start_time = time.time()
         df = ctx.sql(sql)
-        for stage in df.stages(batch_size):
+        for stage in df.stages():
             print("Stage ", stage.stage_id)
             print(stage.execution_plan().display_indent())
 
@@ -90,16 +94,6 @@ def main(data_path: str, concurrency: int, batch_size: int):
             f"testQuery {qnum} took {end_time - start_time} seconds, {len(batches)} batches, result size {size}"
         )
         results["queries"][qnum] = [end_time - start_time]
-
-        start_time = time.time()
-        df = local_ctx.sql(sql)
-        batches = df.collect()
-        table = pa.Table.from_batches(batches)
-        end_time = time.time()
-        df.show()
-
-        print(f"Local Query {qnum} took {end_time - start_time} seconds")
-        results["local_queries"][qnum] = [end_time - start_time]
 
     results = json.dumps(results, indent=4)
     current_time_millis = int(datetime.now().timestamp() * 1000)
@@ -122,6 +116,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--concurrency", required=True, help="Number of concurrent tasks"
     )
+    parser.add_argument("--isolate", action="store_true")
     parser.add_argument(
         "--batch-size",
         required=False,
@@ -130,4 +125,4 @@ if __name__ == "__main__":
     )
     args = parser.parse_args()
 
-    main(args.data, int(args.concurrency), int(args.batch_size))
+    main(args.data, int(args.concurrency), int(args.batch_size), args.isolate)

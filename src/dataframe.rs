@@ -19,11 +19,14 @@ use datafusion::common::tree_node::Transformed;
 use datafusion::common::tree_node::TreeNode;
 use datafusion::physical_plan::coalesce_batches::CoalesceBatchesExec;
 use datafusion::physical_plan::displayable;
+use datafusion::physical_plan::joins::HashJoinExec;
+use datafusion::physical_plan::repartition::RepartitionExec;
 use datafusion::physical_plan::ExecutionPlan;
 use datafusion_python::physical_plan::PyExecutionPlan;
 use pyo3::prelude::*;
 use std::sync::Arc;
 
+use crate::isolator::PartitionIsolatorExec;
 use crate::pystage::PyStage;
 use crate::ray_stage::RayStageExec;
 use crate::ray_stage_reader::RayStageReaderExec;
@@ -35,21 +38,27 @@ pub struct RayDataFrame {
     physical_plan: Arc<dyn ExecutionPlan>,
     #[pyo3(get)]
     coordinator_id: String,
+    #[pyo3(get)]
+    bucket: Option<String>,
 }
 
 impl RayDataFrame {
-    pub fn new(physical_plan: Arc<dyn ExecutionPlan>, coordinator_id: String) -> Self {
+    pub fn new(
+        physical_plan: Arc<dyn ExecutionPlan>,
+        coordinator_id: String,
+        bucket: Option<String>,
+    ) -> Self {
         Self {
             physical_plan,
             coordinator_id,
+            bucket,
         }
     }
 }
 
 #[pymethods]
 impl RayDataFrame {
-    #[pyo3(signature = (batch_size=8192))]
-    fn stages(&self, batch_size: usize) -> PyResult<Vec<PyStage>> {
+    fn stages(&self, batch_size: usize, isolate_partitions: bool) -> PyResult<Vec<PyStage>> {
         let mut stages = vec![];
 
         // TODO: This can be done more efficiently, likely in one pass but I'm
@@ -57,9 +66,13 @@ impl RayDataFrame {
         // what I want. So, two steps for now
 
         // Step 2: we walk down this stage and replace stages earlier in the tree with
-        // RayStageReaderExecs
+        // RayStageReaderExecs as we will need to consume their output instead of
+        // execute that part of the tree ourselves
         let down = |plan: Arc<dyn ExecutionPlan>| {
-            //println!("examining plan: {}", displayable(plan.as_ref()).one_line());
+            /*println!(
+                "examining plan down: {}",
+                displayable(plan.as_ref()).indent(true)
+            );*/
 
             if let Some(stage_exec) = plan.as_any().downcast_ref::<RayStageExec>() {
                 let input = plan.children();
@@ -80,7 +93,7 @@ impl RayDataFrame {
 
         // Step 1: we walk up the tree from the leaves to find the stages
         let up = |plan: Arc<dyn ExecutionPlan>| {
-            println!("examining plan: {}", displayable(plan.as_ref()).one_line());
+            //println!("examining plan: {}", displayable(plan.as_ref()).one_line());
 
             if let Some(stage_exec) = plan.as_any().downcast_ref::<RayStageExec>() {
                 let input = plan.children();
@@ -89,27 +102,33 @@ impl RayDataFrame {
 
                 let fixed_plan = input.clone().transform_down(down)?.data;
 
-                // insert a coalescing batches here too so that we aren't sending
-                // too small of batches over the network
-                let final_plan = Arc::new(CoalesceBatchesExec::new(fixed_plan, batch_size))
-                    as Arc<dyn ExecutionPlan>;
-
                 let stage = PyStage::new(
                     stage_exec.stage_id.clone(),
-                    final_plan,
+                    fixed_plan,
                     self.coordinator_id.clone(),
                 );
 
-                /*println!(
-                    "made new stage {}: plan:\n{}",
-                    stage_exec.stage_id,
-                    displayable(stage.plan.as_ref()).indent(true)
-                );*/
-
                 stages.push(stage);
-            }
+                Ok(Transformed::no(plan))
+            } else if plan.as_any().downcast_ref::<RepartitionExec>().is_some() {
+                let mut replacement = plan.clone();
+                if isolate_partitions {
+                    let children = plan.children();
+                    assert!(children.len() == 1, "Unexpected plan structure");
 
-            Ok(Transformed::no(plan))
+                    let child = children[0];
+
+                    let new_child = Arc::new(PartitionIsolatorExec::new(child.clone()));
+                    replacement = replacement.clone().with_new_children(vec![new_child])?;
+                }
+                // insert a coalescing batches here too so that we aren't sending
+                // too small of batches over the network
+                replacement = Arc::new(CoalesceBatchesExec::new(replacement, batch_size))
+                    as Arc<dyn ExecutionPlan>;
+                Ok(Transformed::yes(replacement))
+            } else {
+                Ok(Transformed::no(plan))
+            }
         };
 
         self.physical_plan.clone().transform_up(up)?;

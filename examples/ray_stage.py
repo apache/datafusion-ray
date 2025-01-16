@@ -16,28 +16,33 @@
 # under the License.
 
 import argparse
-import datafusion
 import glob
+import json
+import time
 import os
 import ray
 import pyarrow as pa
 from datafusion_ray import RayContext
 
 
-def go(data_dir: str, concurrency: int):
-    ctx = RayContext()
+def go(data_dir: str, concurrency: int, isolate: bool):
+    print(f"isolate {isolate}")
+    ctx = RayContext(isolate_partitions=isolate, bucket="rob-tandy-tmp")
     ctx.set("datafusion.execution.target_partitions", str(concurrency))
     ctx.set("datafusion.catalog.information_schema", "true")
     ctx.set("datafusion.optimizer.enable_round_robin_repartition", "false")
 
-    for f in glob.glob(os.path.join(data_dir, "*parquet")):
-        print(f)
-        table, _ = os.path.basename(f).split(".")
+    for table in [
+        "customer",
+        "orders",
+    ]:
+        f = os.path.join(data_dir, f"{table}.parquet")
+        print("Registering table", table, "using path", f)
         ctx.register_parquet(table, f)
 
     query = """SELECT customer.c_name, sum(orders.o_totalprice) as total_amount
     FROM customer JOIN orders ON customer.c_custkey = orders.o_custkey
-    GROUP BY customer.c_name limit 10"""
+    GROUP BY customer.c_name order by total_amount desc limit 10"""
 
     # query = """SELECT count(customer.c_name), customer.c_mktsegment from customer group by customer.c_mktsegment limit 10"""
 
@@ -46,21 +51,23 @@ def go(data_dir: str, concurrency: int):
     for stage in df.stages():
         print(f"Stage ", stage.stage_id)
         print(stage.execution_plan().display_indent())
-        b = stage.plan_bytes()
-        print(f"Stage bytes: {len(b)}")
 
     df.show()
 
-    import time
-
     time.sleep(3)
+    print(json.dumps(df.totals(), indent=4))
 
 
 if __name__ == "__main__":
     ray.init(namespace="example")
     parser = argparse.ArgumentParser()
-    parser.add_argument("--data-dir", required=True, help="path to tpch*.parquet files")
+    parser.add_argument("--data", required=True, help="path to tpch*.parquet files")
     parser.add_argument("--concurrency", required=True, type=int)
+    parser.add_argument(
+        "--isolate",
+        action="store_true",
+        help="do each partition as a separate ray actor, more concurrency",
+    )
     args = parser.parse_args()
 
-    go(args.data_dir, args.concurrency)
+    go(args.data, args.concurrency, args.isolate)

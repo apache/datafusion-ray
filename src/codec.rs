@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use crate::protobuf::RayStageReaderExecNode;
+use crate::{isolator::PartitionIsolatorExec, protobuf::RayStageReaderExecNode};
 
 use arrow::datatypes::Schema;
 use datafusion::{
@@ -26,36 +26,43 @@ impl PhysicalExtensionCodec for RayCodec {
     fn try_decode(
         &self,
         buf: &[u8],
-        _inputs: &[Arc<dyn ExecutionPlan>],
+        inputs: &[Arc<dyn ExecutionPlan>],
         registry: &dyn FunctionRegistry,
     ) -> Result<Arc<dyn ExecutionPlan>> {
-        println!("decoding 1");
-        let node = RayStageReaderExecNode::decode(buf)
-            .map_err(|e| internal_datafusion_err!("Couldn't decode ray stage reader proto {e}"))?;
+        if buf == "PartitionIsolatorExec".as_bytes() {
+            if inputs.len() != 1 {
+                Err(internal_datafusion_err!(
+                    "PartitionIsolatorExec requires one input"
+                ))
+            } else {
+                Ok(Arc::new(PartitionIsolatorExec::new(inputs[0].clone())))
+            }
+        } else {
+            let node = RayStageReaderExecNode::decode(buf).map_err(|e| {
+                internal_datafusion_err!("Couldn't decode ray stage reader proto {e}")
+            })?;
 
-        println!("decoding 2");
-        let schema: Schema = node
-            .schema
-            .as_ref()
-            .ok_or(internal_datafusion_err!("missing schema in proto"))?
-            .try_into()?;
+            let schema: Schema = node
+                .schema
+                .as_ref()
+                .ok_or(internal_datafusion_err!("missing schema in proto"))?
+                .try_into()?;
 
-        println!("decoding 3");
-        let part = parse_protobuf_partitioning(
-            node.partitioning.as_ref(),
-            registry,
-            &schema,
-            &DefaultPhysicalExtensionCodec {},
-        )?
-        .ok_or(internal_datafusion_err!("missing partitioning in proto"))?;
+            let part = parse_protobuf_partitioning(
+                node.partitioning.as_ref(),
+                registry,
+                &schema,
+                &DefaultPhysicalExtensionCodec {},
+            )?
+            .ok_or(internal_datafusion_err!("missing partitioning in proto"))?;
 
-        println!("decoding 4");
-        Ok(Arc::new(RayStageReaderExec::try_new(
-            part,
-            Arc::new(schema),
-            node.stage_id,
-            node.coordinator_id,
-        )?))
+            Ok(Arc::new(RayStageReaderExec::try_new(
+                part,
+                Arc::new(schema),
+                node.stage_id,
+                node.coordinator_id,
+            )?))
+        }
     }
 
     fn try_encode(&self, node: Arc<dyn ExecutionPlan>, buf: &mut Vec<u8>) -> Result<()> {
@@ -75,6 +82,14 @@ impl PhysicalExtensionCodec for RayCodec {
 
             pb.encode(buf)
                 .map_err(|e| internal_datafusion_err!("can't encode ray stage reader pb"))?;
+
+            Ok(())
+        } else if node
+            .as_any()
+            .downcast_ref::<PartitionIsolatorExec>()
+            .is_some()
+        {
+            buf.extend_from_slice(b"PartitionIsolatorExec");
 
             Ok(())
         } else {

@@ -37,6 +37,12 @@ datafusion-proto = "43.0"
 futures = "0.3"
 glob = "0.3.1"
 log = "0.4"
+object_store = { version = "0.11.0", features = [
+  "aws",
+  "gcp",
+  "azure",
+  "http",
+] }
 prost = "0.13"
 pyo3 = { version = "0.22.6", features = [
   "extension-module",
@@ -51,6 +57,7 @@ tokio = { version = "1.40", features = [
   "sync",
 ] }
 uuid = "1.11.0"
+url = "2"
 
 [build-dependencies]
 prost-types = "0.13"
@@ -59,6 +66,7 @@ tonic-build = { version = "0.8", default-features = false, features = [
   "transport",
   "prost",
 ] }
+url = "2"
 
 [dev-dependencies]
 anyhow = "1.0.89"
