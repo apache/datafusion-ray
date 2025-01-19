@@ -30,6 +30,8 @@ use url::Url;
 
 pub struct CoordinatorId(pub String);
 
+pub struct ExchangeAddr(pub String);
+
 #[pyclass]
 pub struct RayContext {
     ctx: SessionContext,

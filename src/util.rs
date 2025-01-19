@@ -1,12 +1,17 @@
+use std::collections::HashMap;
 use std::io::Cursor;
 use std::sync::Arc;
 
 use arrow::array::RecordBatch;
+use arrow::datatypes::SchemaRef;
 use arrow::error::ArrowError;
+use arrow::ipc::convert::fb_to_schema;
 use arrow::ipc::reader::StreamReader;
 use arrow::ipc::writer::{IpcWriteOptions, StreamWriter};
-use arrow::ipc::MetadataVersion;
+use arrow::ipc::{root_as_message, MetadataVersion};
 use arrow::pyarrow::*;
+use arrow_flight::utils::flight_data_to_arrow_batch;
+use arrow_flight::FlightData;
 use datafusion::common::internal_datafusion_err;
 use datafusion::error::DataFusionError;
 use datafusion::physical_plan::ExecutionPlan;
@@ -16,7 +21,8 @@ use pyo3::prelude::*;
 use pyo3::types::PyBytes;
 
 use crate::codec::RayCodec;
-use prost::Message;
+use crate::protobuf::StreamMeta;
+use prost::{bytes::Bytes, Message};
 
 pub(crate) trait ResultExt<T> {
     fn to_py_err(self) -> PyResult<T>;
@@ -94,6 +100,34 @@ pub fn bytes_to_physical_plan(
     let codec = RayCodec {};
     let plan = proto_plan.try_into_physical_plan(ctx, ctx.runtime_env().as_ref(), &codec)?;
     Ok(plan)
+}
+
+pub fn flight_data_to_schema(flight_data: &FlightData) -> anyhow::Result<SchemaRef> {
+    let message = root_as_message(&flight_data.data_header[..])
+        .map_err(|_| ArrowError::CastError("Cannot get root as message".to_string()))?;
+
+    let ipc_schema: arrow::ipc::Schema = message
+        .header_as_schema()
+        .ok_or_else(|| ArrowError::CastError("Cannot get header as Schema".to_string()))?;
+    let schema = fb_to_schema(ipc_schema);
+    let schema = Arc::new(schema);
+    Ok(schema)
+}
+
+pub fn extract_stream_meta(flight_data: &FlightData) -> anyhow::Result<(usize, usize, f64)> {
+    let descriptor = flight_data
+        .flight_descriptor
+        .as_ref()
+        .ok_or(internal_datafusion_err!("No flight descriptor"))?;
+
+    let cmd = descriptor.cmd.clone(); // TODO: Can this be avoided?
+
+    let stream_meta = StreamMeta::decode(cmd)?;
+    Ok((
+        stream_meta.stage_num as usize,
+        stream_meta.partition_num as usize,
+        stream_meta.fraction as f64,
+    ))
 }
 
 #[cfg(test)]

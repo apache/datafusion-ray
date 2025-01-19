@@ -15,21 +15,24 @@
 // specific language governing permissions and limitations
 // under the License.
 
+use datafusion::common::internal_err;
 use datafusion::common::tree_node::Transformed;
 use datafusion::common::tree_node::TreeNode;
 use datafusion::physical_plan::coalesce_batches::CoalesceBatchesExec;
 use datafusion::physical_plan::displayable;
 use datafusion::physical_plan::joins::HashJoinExec;
 use datafusion::physical_plan::repartition::RepartitionExec;
-use datafusion::physical_plan::ExecutionPlan;
+use datafusion::physical_plan::{ExecutionPlan, ExecutionPlanProperties};
 use datafusion_python::physical_plan::PyExecutionPlan;
 use pyo3::prelude::*;
+use std::borrow::Cow;
 use std::sync::Arc;
 
 use crate::isolator::PartitionIsolatorExec;
 use crate::pystage::PyStage;
 use crate::ray_stage::RayStageExec;
 use crate::ray_stage_reader::RayStageReaderExec;
+use crate::util::physical_plan_to_bytes;
 
 pub struct CoordinatorId(pub String);
 
@@ -58,7 +61,11 @@ impl RayDataFrame {
 
 #[pymethods]
 impl RayDataFrame {
-    fn stages(&self, batch_size: usize, isolate_partitions: bool) -> PyResult<Vec<PyStage>> {
+    fn stages(
+        &self,
+        batch_size: usize,
+        isolate_partitions: bool,
+    ) -> PyResult<Vec<PyDataFrameStage>> {
         let mut stages = vec![];
 
         // TODO: This can be done more efficiently, likely in one pass but I'm
@@ -102,11 +109,7 @@ impl RayDataFrame {
 
                 let fixed_plan = input.clone().transform_down(down)?.data;
 
-                let stage = PyStage::new(
-                    stage_exec.stage_id.clone(),
-                    fixed_plan,
-                    self.coordinator_id.clone(),
-                );
+                let stage = PyDataFrameStage::new(stage_exec.stage_id.clone(), fixed_plan);
 
                 stages.push(stage);
                 Ok(Transformed::no(plan))
@@ -138,5 +141,55 @@ impl RayDataFrame {
 
     fn execution_plan(&self) -> PyResult<PyExecutionPlan> {
         Ok(PyExecutionPlan::new(self.physical_plan.clone()))
+    }
+}
+
+#[pyclass]
+pub struct PyDataFrameStage {
+    stage_id: String,
+    plan: Arc<dyn ExecutionPlan>,
+}
+impl PyDataFrameStage {
+    fn new(stage_id: String, plan: Arc<dyn ExecutionPlan>) -> Self {
+        Self { stage_id, plan }
+    }
+}
+
+#[pymethods]
+impl PyDataFrameStage {
+    #[getter]
+    fn stage_id(&self) -> &str {
+        &self.stage_id
+    }
+    pub fn num_output_partitions(&self) -> usize {
+        self.plan.output_partitioning().partition_count()
+    }
+
+    /// How many partitions are we shadowing if at all
+    pub fn num_shadow_partitions(&self) -> Option<usize> {
+        let mut result = None;
+        self.plan
+            .clone()
+            .transform_down(|node: Arc<dyn ExecutionPlan>| {
+                if let Some(isolator) = node.as_any().downcast_ref::<PartitionIsolatorExec>() {
+                    let children = isolator.children();
+                    if children.len() != 1 {
+                        return internal_err!("PartitionIsolatorExec must have exactly one child");
+                    }
+                    result = Some(children[0].output_partitioning().partition_count());
+                    //TODO: break early
+                }
+                Ok(Transformed::no(node))
+            });
+        result
+    }
+
+    pub fn execution_plan(&self) -> PyExecutionPlan {
+        PyExecutionPlan::new(self.plan.clone())
+    }
+
+    pub fn plan_bytes(&self) -> PyResult<Cow<[u8]>> {
+        let plan_bytes = physical_plan_to_bytes(self.plan.clone())?;
+        Ok(Cow::Owned(plan_bytes))
     }
 }

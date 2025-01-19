@@ -20,6 +20,6 @@ try:
 except ImportError:
     import importlib_metadata
 
-from .context import RayContext, RayDataFrame, StageReader
+from .context import RayContext, RayDataFrame, StageReader, PyExchange
 
 __version__ = importlib_metadata.version(__name__)

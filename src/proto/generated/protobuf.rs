@@ -14,3 +14,16 @@ pub struct RayStageReaderExecNode {
     #[prost(message, optional, tag = "4")]
     pub partitioning: ::core::option::Option<::datafusion_proto::protobuf::Partitioning>,
 }
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct StreamMeta {
+    /// stage id of the stream
+    #[prost(uint32, tag = "1")]
+    pub stage_num: u32,
+    /// parittion id of the stream
+    #[prost(uint32, tag = "2")]
+    pub partition_num: u32,
+    /// what fraction of the work do we represent
+    #[prost(float, tag = "3")]
+    pub fraction: f32,
+}

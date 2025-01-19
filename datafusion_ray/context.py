@@ -29,6 +29,7 @@ from datafusion_ray._datafusion_ray_internal import (
     RayDataFrame as RayDataFrameInternal,
     batch_to_ipc as rust_batch_to_ipc,
     ipc_to_batch as rust_ipc_to_batch,
+    PyExchange,
 )
 import datafusion
 
@@ -55,6 +56,12 @@ class RayDataFrame:
             self.coord = RayStageCoordinator.options(
                 name="RayQueryCoordinator:" + self.coordinator_id,
             ).remote(self.coordinator_id)
+
+            print("getting exchanger")
+            exchanger = ray.get(self.coord.get_exchanger.remote())
+            print("calling serve")
+            exchanger.serve.remote()
+
             self._stages = self.df.stages(self.batch_size, self.isolate_partitions)
         return self._stages
 
@@ -71,7 +78,7 @@ class RayDataFrame:
         table = pa.Table.from_batches(self.collect())
         print(tabulate(table.to_pylist(), headers="keys", tablefmt="outline"))
 
-    def reader(self) -> pa.RecordBatchReader:
+    def create_stages(self):
 
         # if we are doing each partition separate (isolate_partitions =True)
         # then the plan generated will include a PartitionIsolator which
@@ -106,6 +113,7 @@ class RayDataFrame:
                         )
                     )
         else:
+            print("creating stages")
             refs = [
                 self.coord.new_stage.remote(
                     stage.stage_id, stage.plan_bytes(), bucket=self.bucket
@@ -116,7 +124,10 @@ class RayDataFrame:
 
         ray.wait(refs, num_returns=len(refs))
 
+    def run_stages(self):
+
         ray.get(self.coord.run_stages.remote())
+        return
 
         max_stage_id = max([int(stage.stage_id) for stage in self.stages()])
 
@@ -180,6 +191,9 @@ class RayStageCoordinator:
         self.runtime_env = {}
         self.determine_environment()
 
+    def get_exchanger(self):
+        return self.exchanger
+
     def determine_environment(self):
         env_keys = "AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_REGION AWS_SESSION_TOKEN".split()
         env = {}
@@ -187,10 +201,6 @@ class RayStageCoordinator:
             if key in os.environ:
                 env[key] = os.environ[key]
         self.runtime_env["env_vars"] = env
-
-    def get_exchanger(self):
-        print(f"Coord: returning exchanger {self.exchanger}")
-        return self.exchanger
 
     def new_stage(
         self,
@@ -201,7 +211,10 @@ class RayStageCoordinator:
         bucket: str | None = None,
     ):
         stage_key = f"{stage_id}-{shadow_partition}"
+        print(f"creating new stage {stage_key} from bytes {len(plan_bytes)}")
         try:
+            exchange_addr = ray.get(self.exchanger.addr.remote())
+            print("addr is ", exchange_addr)
             if stage_key in self.stages:
                 print(f"already started stage {stage_key}")
                 return self.stages[stage_key]
@@ -213,8 +226,7 @@ class RayStageCoordinator:
             ).remote(
                 stage_id,
                 plan_bytes,
-                self.my_id,
-                self.exchanger,
+                exchange_addr,
                 fraction,
                 shadow_partition,
                 bucket,
@@ -228,18 +240,10 @@ class RayStageCoordinator:
             raise e
 
     def run_stages(self):
+        print("running stages")
         try:
-            refs = [stage.register_schema.remote() for stage in self.stages.values()]
-
-            # wait for all stages to register their schemas
-            ray.wait(refs, num_returns=len(refs))
-
-            print(f"RayQueryCoordinator[{self.my_id}] all schemas registered")
-
-            # now we can tell each stage to start executing and stream its results to
-            # the exchanger
-
-            refs = [stage.consume.remote() for stage in self.stages.values()]
+            # refs = [stage.consume.remote() for stage in self.stages.values()]
+            list(self.stages.values())[0].execute.remote()
         except Exception as e:
             print(
                 f"RayQueryCoordinator[{self.my_id}] Unhandled Exception in run stages! {e}"
@@ -269,29 +273,36 @@ class RayStage:
         self,
         stage_id: str,
         plan_bytes: bytes,
-        coordinator_id: str,
-        exchanger,
+        exchanger_addr: str,
         fraction: float,
         shadow_partition=None,
         bucket: str | None = None,
-        max_in_flight_puts: int = 20,
     ):
 
         from datafusion_ray._datafusion_ray_internal import PyStage
 
         self.stage_id = stage_id
         self.pystage = PyStage(
-            stage_id, plan_bytes, coordinator_id, shadow_partition, bucket
+            stage_id, plan_bytes, exchanger_addr, shadow_partition, bucket, fraction
         )
-        self.exchanger = exchanger
-        self.coord = ray.get_actor("RayQueryCoordinator:" + coordinator_id)
-        self.fraction = fraction
         self.shadow_partition = shadow_partition
-        self.max_in_flight_puts = max_in_flight_puts
 
-    def register_schema(self):
-        schema = self.pystage.schema()
-        ray.get(self.exchanger.put_schema.remote(self.stage_id, schema))
+    def execute(self):
+        shadow = (
+            f", shadowing:{self.shadow_partition}"
+            if self.shadow_partition is not None
+            else ""
+        )
+
+        try:
+            for partition in range(self.pystage.num_output_partitions()):
+                print(
+                    f"RayStage[{self.stage_id}{shadow}] consuming partition:{partition}"
+                )
+                self.pystage.execute(partition)
+        except Exception as e:
+            print(f"RayStage[{self.stage_id}] Unhandled Exception in execute: {e}!")
+            raise e
 
     def consume(self):
         shadow = (
@@ -351,49 +362,15 @@ class RayStage:
 @ray.remote(num_cpus=0)
 class RayExchanger:
     def __init__(self):
-        self.queues = {}
-        self.schemas = {}
-        self.dones = {}
+        from datafusion_ray import PyExchange
 
-    async def put_schema(self, stage_id, schema):
-        key = int(stage_id)
-        self.schemas[key] = schema
+        self.exchange = PyExchange()
 
-    async def get_schema(self, stage_id):
-        key = int(stage_id)
-        return self.schemas[key]
+    def addr(self):
+        return self.exchange.addr()
 
-    async def put(self, stage_id, output_partition, item):
-        key = f"{stage_id}-{output_partition}"
-        if key not in self.queues:
-            self.queues[key] = asyncio.Queue()
-
-        q = self.queues[key]
-        await q.put(item)
-        # print(f"RayExchanger got batch for {key}")
-
-    async def done(self, stage_id, output_partition, fraction):
-        key = f"{stage_id}-{output_partition}"
-        if key not in self.dones:
-            self.dones[key] = 0.0
-        self.dones[key] += fraction
-        print(f"RayExchanger: done for {stage_id}-{output_partition} {self.dones[key]}")
-
-        # round to five decimal places.  We probably wont
-        # have more than 10^5 shadow partitions
-        if round(self.dones[key], 5) >= 1.0:
-            # the partition is done, (all shadows reporting)
-            await self.put(stage_id, output_partition, None)
-
-    async def get(self, stage_id, output_partition):
-        key = f"{stage_id}-{output_partition}"
-        if key not in self.queues:
-            self.queues[key] = asyncio.Queue()
-
-        q = self.queues[key]
-
-        item = await q.get()
-        return item
+    def serve(self):
+        self.exchange.serve()
 
 
 class StageReader:

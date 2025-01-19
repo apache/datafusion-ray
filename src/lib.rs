@@ -25,6 +25,8 @@ pub use proto::generated::protobuf;
 pub mod codec;
 pub mod context;
 pub mod dataframe;
+pub mod exchange;
+pub mod flight;
 pub mod isolator;
 pub mod physical;
 pub mod pystage;
@@ -38,7 +40,9 @@ fn _datafusion_ray_internal(m: &Bound<'_, PyModule>) -> PyResult<()> {
     // register classes that can be created directly from Python code
     m.add_class::<context::RayContext>()?;
     m.add_class::<dataframe::RayDataFrame>()?;
+    m.add_class::<dataframe::PyDataFrameStage>()?;
     m.add_class::<pystage::PyStage>()?;
+    m.add_class::<exchange::PyExchange>()?;
     m.add_function(wrap_pyfunction!(util::batch_to_ipc, m)?)?;
     m.add_function(wrap_pyfunction!(util::ipc_to_batch, m)?)?;
     Ok(())

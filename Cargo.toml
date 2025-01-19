@@ -29,7 +29,9 @@ rust-version = "1.62"
 build = "build.rs"
 
 [dependencies]
+anyhow = "1"
 arrow = { version = "53.3", features = ["pyarrow", "ipc"] }
+arrow-flight = "53.3"
 async-stream = "0.3"
 datafusion = { version = "43.0", features = ["pyarrow", "avro"] }
 datafusion-python = { version = "43.1" }
@@ -55,6 +57,13 @@ tokio = { version = "1.40", features = [
   "rt",
   "rt-multi-thread",
   "sync",
+] }
+tokio-stream = "0.1"
+
+tonic = { version = "0.12.3", default-features = false, features = [
+  "transport",
+  "codegen",
+  "prost",
 ] }
 uuid = "1.11.0"
 url = "2"

@@ -47,12 +47,13 @@ def go(data_dir: str, concurrency: int, isolate: bool):
     # query = """SELECT count(customer.c_name), customer.c_mktsegment from customer group by customer.c_mktsegment limit 10"""
 
     df = ctx.sql(query)
-    print(df.execution_plan().display_indent())
     for stage in df.stages():
         print(f"Stage ", stage.stage_id)
         print(stage.execution_plan().display_indent())
 
-    df.show()
+    df.create_stages()
+    df.run_stages()
+    # df.show()
 
     time.sleep(3)
     print(json.dumps(df.totals(), indent=4))

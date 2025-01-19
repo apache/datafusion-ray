@@ -4,7 +4,7 @@ package datafusion_ray.protobuf;
 
 option java_multiple_files = true;
 option java_package = "datafusion_ray.protobuf";
-option java_outer_classname = "RaySqlProto";
+option java_outer_classname = "RayDataFusionProto";
 
 import "datafusion_common.proto";
 import "datafusion.proto";
@@ -18,5 +18,14 @@ message RayStageReaderExecNode {
   datafusion_common.Schema schema = 3;
   // properties of the stage we will consume
   datafusion.Partitioning partitioning = 4;
+}
+
+message StreamMeta {
+  // stage id of the stream
+  uint32 stage_num  = 1;
+  // parittion id of the stream
+  uint32 partition_num = 2;
+  // what fraction of the work do we represent
+  float fraction = 3;
 }
 
