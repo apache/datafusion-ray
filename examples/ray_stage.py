@@ -27,10 +27,13 @@ from datafusion_ray import RayContext
 
 def go(data_dir: str, concurrency: int, isolate: bool):
     print(f"isolate {isolate}")
-    ctx = RayContext(isolate_partitions=isolate, bucket="rob-tandy-tmp")
+    ctx = RayContext(
+        isolate_partitions=isolate, bucket="rob-tandy-tmp", batch_size=1024
+    )
     ctx.set("datafusion.execution.target_partitions", str(concurrency))
     ctx.set("datafusion.catalog.information_schema", "true")
     ctx.set("datafusion.optimizer.enable_round_robin_repartition", "false")
+    ctx.set("datafusion.execution.coalesce_batches", "false")
 
     for table in [
         "customer",
@@ -44,7 +47,7 @@ def go(data_dir: str, concurrency: int, isolate: bool):
     FROM customer JOIN orders ON customer.c_custkey = orders.o_custkey
     GROUP BY customer.c_name order by total_amount desc limit 10"""
 
-    query = """SELECT count(customer.c_name), customer.c_mktsegment from customer group by customer.c_mktsegment limit 10"""
+    # query = """SELECT count(customer.c_name), customer.c_mktsegment from customer group by customer.c_mktsegment limit 10"""
 
     df = ctx.sql(query)
     for stage in df.stages():

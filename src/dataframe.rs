@@ -139,9 +139,10 @@ impl RayDataFrame {
                     replacement = replacement.clone().with_new_children(vec![new_child])?;
                 }
                 // insert a coalescing batches here too so that we aren't sending
-                // too small of batches over the network
-                replacement = Arc::new(CoalesceBatchesExec::new(replacement, batch_size))
-                    as Arc<dyn ExecutionPlan>;
+                // too small (or too big) of batches over the network
+                replacement = Arc::new(
+                    CoalesceBatchesExec::new(replacement, batch_size).with_fetch(Some(batch_size)),
+                ) as Arc<dyn ExecutionPlan>;
                 Ok(Transformed::yes(replacement))
             } else {
                 Ok(Transformed::no(plan))
@@ -150,14 +151,26 @@ impl RayDataFrame {
 
         self.physical_plan.clone().transform_up(up)?;
 
-        // we need to also read from the last stage to gather results
-        let final_stage = &stages[stages.len() - 1];
+        // add coalesce to last stage
+        let mut last_stage = stages
+            .pop()
+            .ok_or(internal_datafusion_err!("No stages found"))?;
+
+        last_stage = PyDataFrameStage::new(
+            last_stage.stage_id,
+            Arc::new(
+                CoalesceBatchesExec::new(last_stage.plan, batch_size).with_fetch(Some(batch_size)),
+            ) as Arc<dyn ExecutionPlan>,
+        );
 
         let reader_plan = Arc::new(RayStageReaderExec::try_new_from_input(
-            final_stage.plan.clone(),
-            final_stage.stage_id.clone(),
+            last_stage.plan.clone(),
+            last_stage.stage_id.clone(),
             self.coordinator_id.clone(),
         )?) as Arc<dyn ExecutionPlan>;
+
+        stages.push(last_stage);
+        // done fixing final stage.
 
         // TODO: only coalesce partitions if necessary
         self.final_plan =

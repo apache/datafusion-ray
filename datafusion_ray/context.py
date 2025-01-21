@@ -133,19 +133,7 @@ class RayDataFrame:
         ray.wait(refs, num_returns=len(refs))
 
     def run_stages(self):
-
         ray.get(self.coord.run_stages.remote())
-        return
-
-        max_stage_id = max([int(stage.stage_id) for stage in self.stages()])
-
-        exchanger = ray.get(self.coord.get_exchanger.remote())
-        schema = ray.get(exchanger.get_schema.remote(max_stage_id))
-
-        ray_iterable = RayIterable(exchanger, max_stage_id, 0, self.coordinator_id)
-        reader = pa.RecordBatchReader.from_batches(schema, ray_iterable)
-
-        return reader
 
     def totals(self):
         return ray.get(self.coord.stats.remote())
