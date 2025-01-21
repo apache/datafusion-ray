@@ -69,7 +69,7 @@ impl PhysicalExtensionCodec for RayCodec {
         if let Some(reader) = node.as_any().downcast_ref::<RayStageReaderExec>() {
             let schema: protobuf::Schema = reader.schema().try_into()?;
             let partitioning: protobuf::Partitioning = serialize_partitioning(
-                &reader.properties().output_partitioning(),
+                reader.properties().output_partitioning(),
                 &DefaultPhysicalExtensionCodec {},
             )?;
 
@@ -105,7 +105,7 @@ mod test {
     use arrow::datatypes::DataType;
     use datafusion::{physical_plan::Partitioning, prelude::SessionContext};
 
-    use pyo3::prelude::*;
+    
     use std::sync::Arc;
 
     #[test]

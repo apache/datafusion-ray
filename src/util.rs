@@ -1,4 +1,3 @@
-use std::collections::HashMap;
 use std::io::Cursor;
 use std::sync::Arc;
 
@@ -10,8 +9,7 @@ use arrow::ipc::reader::StreamReader;
 use arrow::ipc::writer::{IpcWriteOptions, StreamWriter};
 use arrow::ipc::{root_as_message, MetadataVersion};
 use arrow::pyarrow::*;
-use arrow_flight::utils::flight_data_to_arrow_batch;
-use arrow_flight::FlightData;
+use arrow_flight::{FlightData, Ticket};
 use datafusion::common::internal_datafusion_err;
 use datafusion::error::DataFusionError;
 use datafusion::physical_plan::ExecutionPlan;
@@ -22,7 +20,7 @@ use pyo3::types::PyBytes;
 
 use crate::codec::RayCodec;
 use crate::protobuf::StreamMeta;
-use prost::{bytes::Bytes, Message};
+use prost::Message;
 
 pub(crate) trait ResultExt<T> {
     fn to_py_err(self) -> PyResult<T>;
@@ -123,6 +121,17 @@ pub fn extract_stream_meta(flight_data: &FlightData) -> anyhow::Result<(usize, u
     let cmd = descriptor.cmd.clone(); // TODO: Can this be avoided?
 
     let stream_meta = StreamMeta::decode(cmd)?;
+    Ok((
+        stream_meta.stage_num as usize,
+        stream_meta.partition_num as usize,
+        stream_meta.fraction as f64,
+    ))
+}
+
+pub fn extract_ticket(ticket: Ticket) -> anyhow::Result<(usize, usize, f64)> {
+    let data = ticket.ticket;
+
+    let stream_meta = StreamMeta::decode(data)?;
     Ok((
         stream_meta.stage_num as usize,
         stream_meta.partition_num as usize,

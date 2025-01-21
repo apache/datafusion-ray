@@ -1,23 +1,11 @@
 use std::{fmt::Formatter, sync::Arc};
 
-use arrow::ffi_stream::ArrowArrayStreamReader;
 use arrow::record_batch::RecordBatchReader;
-use datafusion::arrow::pyarrow::FromPyArrow;
-use datafusion::common::internal_datafusion_err;
 use datafusion::error::Result;
-use datafusion::physical_plan::stream::RecordBatchStreamAdapter;
 use datafusion::physical_plan::{DisplayAs, DisplayFormatType, ExecutionPlan, PlanProperties};
 use datafusion::{arrow::datatypes::SchemaRef, execution::SendableRecordBatchStream};
-use datafusion_proto::physical_plan::AsExecutionPlan;
-use datafusion_proto::protobuf::PhysicalPlanNode;
-use futures::stream::{self, TryStreamExt};
-use log::debug;
-use prost::Message;
 use pyo3::prelude::*;
-use pyo3::types::PyBytes;
 
-use crate::codec::RayCodec;
-use crate::context::CoordinatorId;
 
 #[derive(Debug)]
 pub struct RayStageExec {

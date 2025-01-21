@@ -44,19 +44,16 @@ def go(data_dir: str, concurrency: int, isolate: bool):
     FROM customer JOIN orders ON customer.c_custkey = orders.o_custkey
     GROUP BY customer.c_name order by total_amount desc limit 10"""
 
-    # query = """SELECT count(customer.c_name), customer.c_mktsegment from customer group by customer.c_mktsegment limit 10"""
+    query = """SELECT count(customer.c_name), customer.c_mktsegment from customer group by customer.c_mktsegment limit 10"""
 
     df = ctx.sql(query)
     for stage in df.stages():
         print(f"Stage ", stage.stage_id)
         print(stage.execution_plan().display_indent())
 
-    df.create_stages()
-    df.run_stages()
-    # df.show()
+    df.show()
 
     time.sleep(3)
-    print(json.dumps(df.totals(), indent=4))
 
 
 if __name__ == "__main__":

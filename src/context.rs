@@ -20,7 +20,6 @@ use datafusion_python::dataframe::PyDataFrame;
 use datafusion_python::{errors::*, utils::wait_for_future};
 use object_store::aws::AmazonS3Builder;
 use pyo3::prelude::*;
-use std::env;
 use std::sync::Arc;
 
 use crate::dataframe::RayDataFrame;
@@ -29,8 +28,6 @@ use crate::util::ResultExt;
 use url::Url;
 
 pub struct CoordinatorId(pub String);
-
-pub struct ExchangeAddr(pub String);
 
 #[pyclass]
 pub struct RayContext {

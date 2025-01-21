@@ -61,6 +61,7 @@ class RayDataFrame:
             exchanger = ray.get(self.coord.get_exchanger.remote())
             print("calling serve")
             exchanger.serve.remote()
+            print("called serve")
 
             self._stages = self.df.stages(self.batch_size, self.isolate_partitions)
         return self._stages
@@ -70,7 +71,14 @@ class RayDataFrame:
 
     def collect(self) -> list[pa.RecordBatch]:
         if not self._batches:
-            reader = self.reader()
+            addr = ray.get(self.coord.get_exchanger_addr.remote())
+            self.stages()
+            self.create_stages()
+            self.run_stages()
+
+            print("calling df execute")
+            reader = self.df.execute(addr)
+            print("called df execute, got reader")
             self._batches = list(reader)
         return self._batches
 
@@ -187,12 +195,16 @@ class RayStageCoordinator:
         self.my_id = coordinator_id
         self.stages = {}
         self.exchanger = RayExchanger.remote()
+        self.exchange_addr = ray.get(self.exchanger.addr.remote())
         self.totals = {}
         self.runtime_env = {}
         self.determine_environment()
 
     def get_exchanger(self):
         return self.exchanger
+
+    def get_exchanger_addr(self):
+        return self.exchange_addr
 
     def determine_environment(self):
         env_keys = "AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_REGION AWS_SESSION_TOKEN".split()
@@ -213,8 +225,7 @@ class RayStageCoordinator:
         stage_key = f"{stage_id}-{shadow_partition}"
         print(f"creating new stage {stage_key} from bytes {len(plan_bytes)}")
         try:
-            exchange_addr = ray.get(self.exchanger.addr.remote())
-            print("addr is ", exchange_addr)
+            print("addr is ", self.exchange_addr)
             if stage_key in self.stages:
                 print(f"already started stage {stage_key}")
                 return self.stages[stage_key]
@@ -226,7 +237,7 @@ class RayStageCoordinator:
             ).remote(
                 stage_id,
                 plan_bytes,
-                exchange_addr,
+                self.exchange_addr,
                 fraction,
                 shadow_partition,
                 bucket,
@@ -242,8 +253,8 @@ class RayStageCoordinator:
     def run_stages(self):
         print("running stages")
         try:
-            # refs = [stage.consume.remote() for stage in self.stages.values()]
-            list(self.stages.values())[0].execute.remote()
+            for stage_id, stage in self.stages.items():
+                stage.execute.remote()
         except Exception as e:
             print(
                 f"RayQueryCoordinator[{self.my_id}] Unhandled Exception in run stages! {e}"
@@ -302,60 +313,6 @@ class RayStage:
                 self.pystage.execute(partition)
         except Exception as e:
             print(f"RayStage[{self.stage_id}] Unhandled Exception in execute: {e}!")
-            raise e
-
-    def consume(self):
-        shadow = (
-            f", shadowing:{self.shadow_partition}"
-            if self.shadow_partition is not None
-            else ""
-        )
-        try:
-            for partition in range(self.pystage.num_output_partitions()):
-                print(
-                    f"RayStage[{self.stage_id}{shadow}] consuming partition:{partition}"
-                )
-                total_rows = 0
-                reader = self.pystage.execute(partition)
-
-                pending_refs = []
-
-                for batch in reader:
-                    total_rows += len(batch)
-                    ipc_batch = batch_to_ipc(batch)
-                    o_ref = ray.put(ipc_batch)
-
-                    # print(
-                    #    f"RayStage[{self.stage_id}{shadow}] produced batch:{print_batch(batch)}"
-                    # )
-
-                    # upload a nested object, list[oref] so that ray does not
-                    # materialize it at the destination.  The shuffler only
-                    # needs to exchange object refs
-                    ref = self.exchanger.put.remote(self.stage_id, partition, [o_ref])
-                    pending_refs.append(ref)
-
-                    if len(pending_refs) >= self.max_in_flight_puts:
-                        _, pending_refs = ray.wait(pending_refs, num_returns=1)
-
-                # before we send the done signal, let our puts finish
-                ray.wait(pending_refs, num_returns=len(pending_refs))
-
-                # signal there are no more batches
-                ray.get(
-                    self.exchanger.done.remote(self.stage_id, partition, self.fraction)
-                )
-
-                self.coord.report_totals.remote(
-                    self.stage_id,
-                    f"{partition}-{self.shadow_partition}",
-                    total_rows,
-                    "write",
-                )
-        except Exception as e:
-            print(
-                f"RayStage[{self.stage_id}{shadow}] Unhandled Exception in consume: {e}!"
-            )
             raise e
 
 

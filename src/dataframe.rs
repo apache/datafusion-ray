@@ -15,24 +15,36 @@
 // specific language governing permissions and limitations
 // under the License.
 
+use arrow::array::RecordBatch;
+use arrow::pyarrow::ToPyArrow;
+use arrow_flight::FlightClient;
+use datafusion::common::internal_datafusion_err;
 use datafusion::common::internal_err;
 use datafusion::common::tree_node::Transformed;
 use datafusion::common::tree_node::TreeNode;
+use datafusion::execution::SendableRecordBatchStream;
+use datafusion::execution::SessionStateBuilder;
 use datafusion::physical_plan::coalesce_batches::CoalesceBatchesExec;
+use datafusion::physical_plan::coalesce_partitions::CoalescePartitionsExec;
 use datafusion::physical_plan::displayable;
-use datafusion::physical_plan::joins::HashJoinExec;
 use datafusion::physical_plan::repartition::RepartitionExec;
 use datafusion::physical_plan::{ExecutionPlan, ExecutionPlanProperties};
+use datafusion::prelude::SessionConfig;
+use datafusion::prelude::SessionContext;
 use datafusion_python::physical_plan::PyExecutionPlan;
+use datafusion_python::utils::wait_for_future;
+use futures::stream::StreamExt;
 use pyo3::prelude::*;
 use std::borrow::Cow;
 use std::sync::Arc;
+use tonic::transport::Channel;
 
 use crate::isolator::PartitionIsolatorExec;
-use crate::pystage::PyStage;
+use crate::pystage::ExchangeFlightClient;
 use crate::ray_stage::RayStageExec;
 use crate::ray_stage_reader::RayStageReaderExec;
 use crate::util::physical_plan_to_bytes;
+use crate::util::ResultExt;
 
 pub struct CoordinatorId(pub String);
 
@@ -43,6 +55,7 @@ pub struct RayDataFrame {
     coordinator_id: String,
     #[pyo3(get)]
     bucket: Option<String>,
+    final_plan: Option<Arc<dyn ExecutionPlan>>,
 }
 
 impl RayDataFrame {
@@ -55,6 +68,7 @@ impl RayDataFrame {
             physical_plan,
             coordinator_id,
             bucket,
+            final_plan: None,
         }
     }
 }
@@ -62,7 +76,7 @@ impl RayDataFrame {
 #[pymethods]
 impl RayDataFrame {
     fn stages(
-        &self,
+        &mut self,
         batch_size: usize,
         isolate_partitions: bool,
     ) -> PyResult<Vec<PyDataFrameStage>> {
@@ -136,11 +150,69 @@ impl RayDataFrame {
 
         self.physical_plan.clone().transform_up(up)?;
 
+        // we need to also read from the last stage to gather results
+        let final_stage = &stages[stages.len() - 1];
+
+        let reader_plan = Arc::new(RayStageReaderExec::try_new_from_input(
+            final_stage.plan.clone(),
+            final_stage.stage_id.clone(),
+            self.coordinator_id.clone(),
+        )?) as Arc<dyn ExecutionPlan>;
+
+        // TODO: only coalesce partitions if necessary
+        self.final_plan =
+            Some(Arc::new(CoalescePartitionsExec::new(reader_plan)) as Arc<dyn ExecutionPlan>);
+
         Ok(stages)
     }
 
     fn execution_plan(&self) -> PyResult<PyExecutionPlan> {
         Ok(PyExecutionPlan::new(self.physical_plan.clone()))
+    }
+
+    pub fn execute(&self, py: Python, exchange_addr: String) -> PyResult<PyRecordBatchStream> {
+        // TODO: consolidate this code
+
+        let url = format!("http://{exchange_addr}");
+
+        let chan = Channel::from_shared(url).to_py_err()?;
+        let fut = async {
+            let connect = chan.connect();
+            connect.await
+        };
+        let channel = match wait_for_future(py, fut) {
+            Ok(channel) => channel,
+            _ => {
+                return Err(pyo3::exceptions::PyException::new_err(
+                    "error connecting to exchange".to_string(),
+                ));
+            }
+        };
+
+        let client = FlightClient::new(channel);
+
+        let config = SessionConfig::new().with_extension(Arc::new(ExchangeFlightClient(client)));
+
+        let state = SessionStateBuilder::new()
+            .with_default_features()
+            .with_config(config)
+            .build();
+        let ctx = SessionContext::new_with_state(state);
+
+        println!(
+            "consuming query results using plan:\n{}",
+            self.final_plan
+                .as_ref()
+                .map(|plan| displayable(plan.as_ref()).indent(true).to_string())
+                .unwrap_or("NotFound".to_string())
+        );
+
+        self.final_plan
+            .clone()
+            .ok_or_else(|| internal_datafusion_err!("No final plan found"))
+            .and_then(|plan| plan.execute(0, ctx.task_ctx()))
+            .map(PyRecordBatchStream::new)
+            .to_py_err()
     }
 }
 
@@ -191,5 +263,54 @@ impl PyDataFrameStage {
     pub fn plan_bytes(&self) -> PyResult<Cow<[u8]>> {
         let plan_bytes = physical_plan_to_bytes(self.plan.clone())?;
         Ok(Cow::Owned(plan_bytes))
+    }
+}
+
+#[pyclass]
+pub struct PyRecordBatch {
+    batch: RecordBatch,
+}
+
+#[pymethods]
+impl PyRecordBatch {
+    fn to_pyarrow(&self, py: Python) -> PyResult<PyObject> {
+        self.batch.to_pyarrow(py)
+    }
+}
+
+impl From<RecordBatch> for PyRecordBatch {
+    fn from(batch: RecordBatch) -> Self {
+        Self { batch }
+    }
+}
+
+#[pyclass]
+pub struct PyRecordBatchStream {
+    stream: SendableRecordBatchStream,
+}
+
+impl PyRecordBatchStream {
+    pub fn new(stream: SendableRecordBatchStream) -> Self {
+        Self { stream }
+    }
+}
+
+#[pymethods]
+impl PyRecordBatchStream {
+    fn next(&mut self, py: Python) -> PyResult<Option<PyObject>> {
+        let result = self.stream.next();
+        match wait_for_future(py, result) {
+            None => Ok(None),
+            Some(Ok(b)) => Ok(Some(b.to_pyarrow(py)?)),
+            Some(Err(e)) => Err(e.into()),
+        }
+    }
+
+    fn __next__(&mut self, py: Python) -> PyResult<Option<PyObject>> {
+        self.next(py)
+    }
+
+    fn __iter__(slf: PyRef<'_, Self>) -> PyRef<'_, Self> {
+        slf
     }
 }
