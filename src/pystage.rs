@@ -201,6 +201,7 @@ impl PyStage {
 
         let flight_data_stream = FlightDataEncoderBuilder::new()
             .with_flight_descriptor(Some(descriptor))
+            .with_schema(self.plan.schema())
             .build(counting_stream.map_err(|e| FlightError::from_external_error(Box::new(e))));
 
         let name_c = name.clone();

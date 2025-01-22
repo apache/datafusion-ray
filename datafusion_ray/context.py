@@ -71,9 +71,9 @@ class RayDataFrame:
 
     def collect(self) -> list[pa.RecordBatch]:
         if not self._batches:
-            addr = ray.get(self.coord.get_exchanger_addr.remote())
             self.stages()
-            self.create_stages()
+            addr = ray.get(self.coord.get_exchanger_addr.remote())
+            self.create_ray_stages()
             self.run_stages()
 
             print("calling df execute")
@@ -86,7 +86,7 @@ class RayDataFrame:
         table = pa.Table.from_batches(self.collect())
         print(tabulate(table.to_pylist(), headers="keys", tablefmt="outline"))
 
-    def create_stages(self):
+    def create_ray_stages(self):
 
         # if we are doing each partition separate (isolate_partitions =True)
         # then the plan generated will include a PartitionIsolator which

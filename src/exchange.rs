@@ -27,6 +27,7 @@ use async_stream::stream;
 use datafusion::common::internal_datafusion_err;
 use datafusion_python::utils::wait_for_future;
 use futures::TryStreamExt;
+use local_ip_address::local_ip;
 use tokio::net::TcpListener;
 use tokio_stream::StreamExt;
 
@@ -252,7 +253,9 @@ pub struct PyExchange {
 impl PyExchange {
     #[new]
     pub fn new(py: Python) -> PyResult<Self> {
-        let listener = Some(wait_for_future(py, TcpListener::bind("127.0.0.1:0")).to_py_err()?);
+        let my_local_ip = local_ip().to_py_err()?;
+        let my_host_str = format!("{my_local_ip}:0");
+        let listener = Some(wait_for_future(py, TcpListener::bind(&my_host_str)).to_py_err()?);
 
         Ok(Self { listener })
     }

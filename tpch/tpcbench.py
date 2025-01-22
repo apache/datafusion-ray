@@ -55,9 +55,10 @@ def main(data_path: str, concurrency: int, batch_size: int, isolate_partitions: 
     ctx.set("datafusion.execution.target_partitions", f"{concurrency}")
     ctx.set("datafusion.execution.parquet.pushdown_filters", "true")
     ctx.set("datafusion.optimizer.enable_round_robin_repartition", "false")
+    ctx.set("datafusion.execution.coalesce_batches", "false")
 
     for table in table_names:
-        path = f"{data_path}/{table}.parquet"
+        path = os.path.join(data_path, f"{table}.parquet")
         print(f"Registering table {table} using path {path}")
         ctx.register_parquet(table, path)
 
@@ -73,7 +74,8 @@ def main(data_path: str, concurrency: int, batch_size: int, isolate_partitions: 
     # for query in range(1, num_queries + 1):
     #
     # for qnum in range(1, 23):
-    for qnum in [1, 2, 3, 4, 5]:
+    # for qnum in [1, 2, 3, 4, 5]:
+    for qnum in [3]:
         sql: str = duckdb.sql(
             f"select * from tpch_queries() where query_nr=?", params=(qnum,)
         ).df()["query"][0]
@@ -81,19 +83,18 @@ def main(data_path: str, concurrency: int, batch_size: int, isolate_partitions: 
 
         start_time = time.time()
         df = ctx.sql(sql)
+        end_time = time.time()
+        part1 = end_time - start_time
         for stage in df.stages():
             print("Stage ", stage.stage_id)
             print(stage.execution_plan().display_indent())
 
+        start_time = time.time()
         batches = df.collect()
-        table = pa.Table.from_batches(batches)
         end_time = time.time()
+        table = pa.Table.from_batches(batches)
         df.show()
-        size = sum([batch.get_total_buffer_size() for batch in batches])
-        print(
-            f"testQuery {qnum} took {end_time - start_time} seconds, {len(batches)} batches, result size {size}"
-        )
-        results["queries"][qnum] = [end_time - start_time]
+        results["queries"][qnum] = [end_time - start_time + part1]
 
     results = json.dumps(results, indent=4)
     current_time_millis = int(datetime.now().timestamp() * 1000)
