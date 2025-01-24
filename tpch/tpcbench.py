@@ -31,7 +31,13 @@ import duckdb
 from datafusion.object_store import AmazonS3
 
 
-def main(data_path: str, concurrency: int, batch_size: int, isolate_partitions: bool):
+def main(
+    qnum: int,
+    data_path: str,
+    concurrency: int,
+    batch_size: int,
+    isolate_partitions: bool,
+):
 
     # Register the tables
     table_names = [
@@ -83,11 +89,7 @@ def main(data_path: str, concurrency: int, batch_size: int, isolate_partitions: 
 
     duckdb.sql("load tpch")
 
-    # for query in range(1, num_queries + 1):
-    #
-    # for qnum in range(1, 23):
-    for qnum in [1, 2, 3, 4, 5]:
-        # for qnum in [3]:
+    for qnum in [qnum]:
         sql: str = duckdb.sql(
             f"select * from tpch_queries() where query_nr=?", params=(qnum,)
         ).df()["query"][0]
@@ -152,6 +154,9 @@ if __name__ == "__main__":
     )
     parser.add_argument("--isolate", action="store_true")
     parser.add_argument(
+        "--qnum", type=int, required=True, help="TPCH query number, 1-22"
+    )
+    parser.add_argument(
         "--batch-size",
         required=False,
         default=8192,
@@ -159,4 +164,6 @@ if __name__ == "__main__":
     )
     args = parser.parse_args()
 
-    main(args.data, int(args.concurrency), int(args.batch_size), args.isolate)
+    main(
+        args.qnum, args.data, int(args.concurrency), int(args.batch_size), args.isolate
+    )

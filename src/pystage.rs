@@ -13,14 +13,18 @@ use datafusion::common::tree_node::{Transformed, TreeNode};
 use datafusion::common::{internal_datafusion_err, internal_err};
 use datafusion::physical_plan::{collect, displayable};
 use datafusion_python::physical_plan::PyExecutionPlan;
+use futures::future::try_join_all;
+use futures::stream::FuturesUnordered;
 use object_store::aws::AmazonS3Builder;
 use prost::Message;
 use std::borrow::Cow;
+use std::future::Future;
 use std::sync::Arc;
+use tokio::{join, try_join};
 use tonic::transport::Channel;
 use url::Url;
 
-use datafusion::execution::SessionStateBuilder;
+use datafusion::execution::{SessionStateBuilder, TaskContext};
 use datafusion::physical_plan::{ExecutionPlan, ExecutionPlanProperties};
 use datafusion::prelude::{SessionConfig, SessionContext};
 use datafusion_python::utils::wait_for_future;
@@ -120,7 +124,40 @@ impl PyStage {
 
     pub fn execute(&mut self, py: Python, partition: usize) -> PyResult<()> {
         println!("PyStage[{}] executing", self.stage_id);
-        wait_for_future(py, self.consume(partition)).to_py_err()
+
+        let futs = (0..self.num_output_partitions()).map(|partition| {
+            let ctx = self.ctx.task_ctx();
+            // make our own clone as FlightClient is not Clone, but inner is
+            let inner = self.client.inner().clone();
+            let client_clone = FlightClient::new_from_inner(inner);
+            let plan = self.plan.clone();
+            let stage_id = self.stage_id.clone();
+            let fraction = self.fraction.clone();
+            let shadow_partition_number = self.shadow_partition_number.clone();
+
+            tokio::spawn(consume_stage(
+                stage_id,
+                shadow_partition_number,
+                fraction,
+                ctx,
+                partition,
+                plan,
+                client_clone,
+            ))
+        });
+
+        let stage_id = self.stage_id.clone();
+        let fut = async {
+            match try_join_all(futs).await {
+                Ok(_) => Ok(()),
+                Err(e) => {
+                    println!("PyStage[{stage_id}] ERROR executing {e}");
+                    Err(e)
+                }
+            }
+        };
+
+        wait_for_future(py, fut).to_py_err()
     }
 
     pub fn num_output_partitions(&self) -> usize {
@@ -161,66 +198,72 @@ impl PyStage {
     }
 }
 
-impl PyStage {
-    pub async fn consume(&mut self, partition: usize) -> Result<()> {
-        let name = format!(
-            "PyStage[{}:{}-{}]",
-            self.stage_id,
-            partition,
-            self.shadow_partition_number
-                .map(|s| s.to_string())
-                .unwrap_or("n/a".into())
-        );
+pub async fn consume_stage(
+    stage_id: String,
+    shadow_partition_number: Option<usize>,
+    fraction: f64,
+    ctx: Arc<TaskContext>,
+    partition: usize,
+    plan: Arc<dyn ExecutionPlan>,
+    mut client: FlightClient,
+) -> Result<()> {
+    let name = format!(
+        "PyStage[{}:{}-{}]",
+        stage_id,
+        partition,
+        shadow_partition_number
+            .map(|s| s.to_string())
+            .unwrap_or("n/a".into())
+    );
 
-        println!("{name} consuming");
+    println!("{name} consuming");
 
-        let stream_meta = StreamMeta {
-            stage_num: self.stage_id.parse::<u32>()?,
-            partition_num: partition as u32,
-            fraction: self.fraction as f32,
-        };
+    let stream_meta = StreamMeta {
+        stage_num: stage_id.parse::<u32>()?,
+        partition_num: partition as u32,
+        fraction: fraction as f32,
+    };
 
-        let descriptor = FlightDescriptor {
-            r#type: DescriptorType::Cmd.into(),
-            cmd: stream_meta.encode_to_vec().into(),
-            path: vec![],
-        };
-        let mut total_rows = 0;
-        let ctx = self.ctx.task_ctx();
-        let mut plan_output_stream = self.plan.execute(partition, ctx)?;
+    let descriptor = FlightDescriptor {
+        r#type: DescriptorType::Cmd.into(),
+        cmd: stream_meta.encode_to_vec().into(),
+        path: vec![],
+    };
+    let mut total_rows = 0;
+    let mut plan_output_stream = plan.execute(partition, ctx)?;
 
-        let name_c = name.clone();
-        let counting_stream = stream! {
-            while let Some(batch) = plan_output_stream.next().await {
-                total_rows += batch.as_ref().map(|b| b.num_rows()).unwrap_or(0);
-                //println!("{name_c}: yielding batch:{}", batch.as_ref().map(|b| pretty_format_batches(&[b.clone()]).unwrap().to_string()).unwrap_or("".to_string()));
+    let name_c = name.clone();
+    let counting_stream = stream! {
+        while let Some(batch) = plan_output_stream.next().await {
+            total_rows += batch.as_ref().map(|b| b.num_rows()).unwrap_or(0);
+            //println!("{name_c}: yielding batch:{}", batch.as_ref().map(|b| pretty_format_batches(&[b.clone()]).unwrap().to_string()).unwrap_or("".to_string()));
 
-                yield batch;
-            }
-            println!(
-                "{name_c} produced {total_rows} total rows",
-            );
-        };
-
-        let flight_data_stream = FlightDataEncoderBuilder::new()
-            .with_flight_descriptor(Some(descriptor))
-            .with_schema(self.plan.schema())
-            .build(counting_stream.map_err(|e| FlightError::from_external_error(Box::new(e))));
-
-        let name_c = name.clone();
-        let mut response = self.client.do_put(flight_data_stream).await.map_err(|e| {
-            internal_datafusion_err!("{name_c}: error getting back do put result: {e}")
-        })?;
-
-        let name_c = name.clone();
-        while let Some(result) = response.next().await {
-            if let Err(e) = result {
-                return Err(internal_datafusion_err!(
-                    "{name_c}: error getting back do put result: {e}"
-                )
-                .into());
-            }
+            yield batch;
         }
-        Ok(())
+        println!(
+            "{name_c} produced {total_rows} total rows",
+        );
+    };
+
+    let flight_data_stream = FlightDataEncoderBuilder::new()
+        .with_flight_descriptor(Some(descriptor))
+        .with_schema(plan.schema())
+        .build(counting_stream.map_err(|e| FlightError::from_external_error(Box::new(e))));
+
+    let name_c = name.clone();
+    let mut response = client
+        .do_put(flight_data_stream)
+        .await
+        .map_err(|e| internal_datafusion_err!("{name_c}: error getting back do put result: {e}"))?;
+
+    let name_c = name.clone();
+    while let Some(result) = response.next().await {
+        if let Err(e) = result {
+            return Err(internal_datafusion_err!(
+                "{name_c}: error getting back do put result: {e}"
+            )
+            .into());
+        }
     }
+    Ok(())
 }
