@@ -30,6 +30,7 @@ from datafusion_ray._datafusion_ray_internal import (
     batch_to_ipc as rust_batch_to_ipc,
     ipc_to_batch as rust_ipc_to_batch,
     PyExchange,
+    prettify,
 )
 import datafusion
 

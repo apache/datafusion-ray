@@ -146,7 +146,7 @@ impl FlightHandler for Exchange<RecordBatch> {
             while let Some(batch) = recv.recv().await {
 
                 total_rows += batch.num_rows();
-                println!( "{}: sending {} rows", name, batch.num_rows());
+                //println!( "{}: sending {} rows", name, batch.num_rows());
                 yield Ok(batch);
 
             }
@@ -202,7 +202,7 @@ impl FlightHandler for Exchange<RecordBatch> {
                     })?;
 
             total_rows += batch.num_rows();
-            println!("{}: writing {} to channel", name, batch.num_rows());
+            //println!("{}: writing {} to channel", name, batch.num_rows());
             let res = sender.send(batch).await;
 
             res.map_err(|e| {

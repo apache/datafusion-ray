@@ -144,7 +144,6 @@ impl ExecutionPlan for RayStageReaderExec {
             if let Ok(mut flight_rbr_stream) = flight_rbr_stream {
 
                 while let Some(batch) = flight_rbr_stream.next().await {
-                    println!("received batch");
                     total_rows += batch.as_ref().map(|b| b.num_rows()).unwrap_or(0);
                     yield batch
                         .map_err(|e| internal_datafusion_err!("Error reading batch: {}", e));

@@ -9,14 +9,19 @@ use arrow::ipc::reader::StreamReader;
 use arrow::ipc::writer::{IpcWriteOptions, StreamWriter};
 use arrow::ipc::{root_as_message, MetadataVersion};
 use arrow::pyarrow::*;
+use arrow::util::pretty;
 use arrow_flight::{FlightData, Ticket};
+use async_stream::stream;
 use datafusion::common::internal_datafusion_err;
 use datafusion::error::DataFusionError;
+use datafusion::execution::SendableRecordBatchStream;
+use datafusion::physical_plan::stream::RecordBatchStreamAdapter;
 use datafusion::physical_plan::ExecutionPlan;
 use datafusion::prelude::SessionContext;
 use datafusion_proto::physical_plan::AsExecutionPlan;
+use futures::{Stream, StreamExt};
 use pyo3::prelude::*;
-use pyo3::types::PyBytes;
+use pyo3::types::{PyBytes, PyList};
 
 use crate::codec::RayCodec;
 use crate::protobuf::StreamMeta;
@@ -139,6 +144,64 @@ pub fn extract_ticket(ticket: Ticket) -> anyhow::Result<(usize, usize, f64)> {
     ))
 }
 
+/// produce a new SendableRecordBatchStream that will respect the rows
+/// limit in the batches that it produces.  
+///
+/// It does this in a naive way, but it does honor the limit.  It will
+///
+/// For example, if the stream produces batches with length 8,
+/// and the max row limit is 5, then this new stream will yield
+/// batches with length 5, then 3, then 5, then 3 etc.  Simply
+/// slicing on the max rows
+pub fn max_rows_stream(
+    mut in_stream: SendableRecordBatchStream,
+    max_rows: usize,
+) -> SendableRecordBatchStream
+where
+{
+    let schema = in_stream.schema();
+    let fixed_stream = stream! {
+        while let Some(batch_res) = in_stream.next().await {
+            match batch_res {
+                Ok(batch) => {
+                    if batch.num_rows() > max_rows {
+                        let mut rows_remaining = batch.num_rows();
+                        let mut offset = 0;
+                        while rows_remaining > max_rows {
+                            let s = batch.slice(offset, max_rows);
+
+                            offset += max_rows;
+                            rows_remaining -= max_rows;
+                            yield Ok(s);
+                        }
+                        // yield remainder of the batch
+                        yield Ok(batch.slice(offset, rows_remaining));
+                    } else {
+                        yield Ok(batch);
+                    }
+                },
+                Err(e) => yield Err(e)
+            }
+        }
+    };
+    let adapter = RecordBatchStreamAdapter::new(schema, fixed_stream);
+
+    Box::pin(adapter)
+}
+
+#[pyfunction]
+pub fn prettify(batches: Bound<'_, PyList>) -> PyResult<String> {
+    let b: Vec<RecordBatch> = batches
+        .iter()
+        .map(|b| RecordBatch::from_pyarrow_bound(&b).unwrap())
+        .collect();
+
+    pretty::pretty_format_batches(&b)
+        .to_py_err()
+        .map(|d| d.to_string())
+        .to_py_err()
+}
+
 #[cfg(test)]
 mod test {
     use std::sync::Arc;
@@ -147,6 +210,7 @@ mod test {
         array::Int32Array,
         datatypes::{DataType, Field, Schema},
     };
+    use futures::stream;
 
     use super::*;
 
@@ -160,5 +224,39 @@ mod test {
         let bytes = batch_to_ipc_helper(&batch).unwrap();
         let batch2 = ipc_to_batch_helper(&bytes).unwrap();
         assert_eq!(batch, batch2);
+    }
+
+    #[tokio::test]
+    async fn test_max_rows_stream() {
+        let schema = Arc::new(Schema::new(vec![Field::new("a", DataType::Int32, false)]));
+        let batch = RecordBatch::try_new(
+            schema.clone(),
+            vec![Arc::new(Int32Array::from(vec![1, 2, 3, 4, 5, 6, 7, 8]))],
+        )
+        .unwrap();
+
+        // 24 total rows
+        let batches = (0..3).map(|_| Ok(batch.clone())).collect::<Vec<_>>();
+
+        let in_stream = Box::pin(RecordBatchStreamAdapter::new(schema, stream::iter(batches)));
+
+        let out_stream = max_rows_stream(in_stream, 3);
+        let batches: Vec<_> = out_stream.collect().await;
+
+        println!("got {} batches", batches.len());
+        for batch in batches.iter() {
+            println!("batch length: {}", batch.as_ref().unwrap().num_rows());
+        }
+
+        assert_eq!(batches.len(), 9);
+        assert_eq!(batches[0].as_ref().unwrap().num_rows(), 3);
+        assert_eq!(batches[1].as_ref().unwrap().num_rows(), 3);
+        assert_eq!(batches[2].as_ref().unwrap().num_rows(), 2);
+        assert_eq!(batches[3].as_ref().unwrap().num_rows(), 3);
+        assert_eq!(batches[4].as_ref().unwrap().num_rows(), 3);
+        assert_eq!(batches[5].as_ref().unwrap().num_rows(), 2);
+        assert_eq!(batches[6].as_ref().unwrap().num_rows(), 3);
+        assert_eq!(batches[7].as_ref().unwrap().num_rows(), 3);
+        assert_eq!(batches[8].as_ref().unwrap().num_rows(), 2);
     }
 }

@@ -16,6 +16,12 @@ pub struct RayStageReaderExecNode {
 }
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
+pub struct MaxRowsExecNode {
+    #[prost(uint64, tag = "1")]
+    pub max_rows: u64,
+}
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct StreamMeta {
     /// stage id of the stream
     #[prost(uint32, tag = "1")]

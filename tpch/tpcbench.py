@@ -17,12 +17,14 @@
 
 import argparse
 import ray
-from datafusion import SessionContext, SessionConfig
-from datafusion_ray import RayContext
+from datafusion import SessionContext, SessionConfig, DataFrame
+from datafusion_ray import RayContext, prettify
 from datetime import datetime
 import pyarrow as pa
+import pyarrow.csv as csv
 import json
 import os
+import io
 import time
 
 import duckdb
@@ -53,14 +55,24 @@ def main(data_path: str, concurrency: int, batch_size: int, isolate_partitions: 
     )
 
     ctx.set("datafusion.execution.target_partitions", f"{concurrency}")
-    ctx.set("datafusion.execution.parquet.pushdown_filters", "true")
+    # ctx.set("datafusion.execution.parquet.pushdown_filters", "true")
     ctx.set("datafusion.optimizer.enable_round_robin_repartition", "false")
     ctx.set("datafusion.execution.coalesce_batches", "false")
+
+    local_config = SessionConfig()
+    local_config.set("datafusion.execution.target_partitions", f"{concurrency}")
+    # local_config.set("datafusion.execution.parquet.pushdown_filters", "true")
+    local_config.set("datafusion.optimizer.enable_round_robin_repartition", "false")
+    local_config.set("datafusion.execution.coalesce_batches", "false")
+
+    local_ctx = SessionContext(local_config)
+    local_ctx.register_object_store("s3://", AmazonS3(bucket_name="rob-tandy-tmp"))
 
     for table in table_names:
         path = os.path.join(data_path, f"{table}.parquet")
         print(f"Registering table {table} using path {path}")
         ctx.register_parquet(table, path)
+        local_ctx.register_parquet(table, path)
 
     results = {
         "engine": "datafusion-python",
@@ -74,15 +86,28 @@ def main(data_path: str, concurrency: int, batch_size: int, isolate_partitions: 
     # for query in range(1, num_queries + 1):
     #
     # for qnum in range(1, 23):
-    # for qnum in [1, 2, 3, 4, 5]:
-    for qnum in [3]:
+    for qnum in [1, 2, 3, 4, 5]:
+        # for qnum in [3]:
         sql: str = duckdb.sql(
             f"select * from tpch_queries() where query_nr=?", params=(qnum,)
         ).df()["query"][0]
+
+        # jump through some hoops to get an answer batch to compare to
+        answer_csv = str(
+            duckdb.sql(
+                "select answer from tpch_answers() where query_nr=? and scale_factor=?",
+                params=(qnum, 1),
+            ).arrow()["answer"][0]
+        )
+        answer_batches = csv.read_csv(
+            io.BytesIO(answer_csv.encode("utf-8")),
+            parse_options=csv.ParseOptions(delimiter="|"),
+        ).to_batches()
+
         print("executing ", sql)
 
-        start_time = time.time()
         df = ctx.sql(sql)
+        start_time = time.time()
         end_time = time.time()
         part1 = end_time - start_time
         for stage in df.stages():
@@ -92,8 +117,16 @@ def main(data_path: str, concurrency: int, batch_size: int, isolate_partitions: 
         start_time = time.time()
         batches = df.collect()
         end_time = time.time()
-        table = pa.Table.from_batches(batches)
-        df.show()
+
+        calculated = prettify(batches)
+        expected = prettify(answer_batches)
+
+        print(calculated)
+        if not calculated == expected:
+            # ugh this doesn't work as I wanted.  The duckdb stringified versions
+            # of the answers don't format the output the same
+            print(f"Possible wrong answer for TPCH query {qnum}")
+            print(expected)
         results["queries"][qnum] = [end_time - start_time + part1]
 
     results = json.dumps(results, indent=4)

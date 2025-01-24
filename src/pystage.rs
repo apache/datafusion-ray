@@ -3,6 +3,7 @@ use crate::protobuf::StreamMeta;
 use crate::util::{bytes_to_physical_plan, physical_plan_to_bytes, ResultExt};
 use arrow::datatypes::Schema;
 use arrow::pyarrow::PyArrowType;
+use arrow::util::pretty::pretty_format_batches;
 use arrow_flight::encode::FlightDataEncoderBuilder;
 use arrow_flight::error::FlightError;
 use arrow_flight::flight_descriptor::DescriptorType;
@@ -10,7 +11,7 @@ use arrow_flight::{FlightClient, FlightDescriptor};
 use async_stream::stream;
 use datafusion::common::tree_node::{Transformed, TreeNode};
 use datafusion::common::{internal_datafusion_err, internal_err};
-use datafusion::physical_plan::displayable;
+use datafusion::physical_plan::{collect, displayable};
 use datafusion_python::physical_plan::PyExecutionPlan;
 use object_store::aws::AmazonS3Builder;
 use prost::Message;
@@ -172,7 +173,6 @@ impl PyStage {
         );
 
         println!("{name} consuming");
-        let ctx = self.ctx.task_ctx();
 
         let stream_meta = StreamMeta {
             stage_num: self.stage_id.parse::<u32>()?,
@@ -186,12 +186,15 @@ impl PyStage {
             path: vec![],
         };
         let mut total_rows = 0;
+        let ctx = self.ctx.task_ctx();
         let mut plan_output_stream = self.plan.execute(partition, ctx)?;
 
         let name_c = name.clone();
         let counting_stream = stream! {
             while let Some(batch) = plan_output_stream.next().await {
                 total_rows += batch.as_ref().map(|b| b.num_rows()).unwrap_or(0);
+                //println!("{name_c}: yielding batch:{}", batch.as_ref().map(|b| pretty_format_batches(&[b.clone()]).unwrap().to_string()).unwrap_or("".to_string()));
+
                 yield batch;
             }
             println!(

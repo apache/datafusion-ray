@@ -1,6 +1,10 @@
 use std::sync::Arc;
 
-use crate::{isolator::PartitionIsolatorExec, protobuf::RayStageReaderExecNode};
+use crate::{
+    isolator::PartitionIsolatorExec,
+    max_rows::MaxRowsExec,
+    protobuf::{MaxRowsExecNode, RayStageReaderExecNode},
+};
 
 use arrow::datatypes::Schema;
 use datafusion::{
@@ -29,6 +33,7 @@ impl PhysicalExtensionCodec for RayCodec {
         inputs: &[Arc<dyn ExecutionPlan>],
         registry: &dyn FunctionRegistry,
     ) -> Result<Arc<dyn ExecutionPlan>> {
+        // TODO: clean this up
         if buf == "PartitionIsolatorExec".as_bytes() {
             if inputs.len() != 1 {
                 Err(internal_datafusion_err!(
@@ -36,6 +41,15 @@ impl PhysicalExtensionCodec for RayCodec {
                 ))
             } else {
                 Ok(Arc::new(PartitionIsolatorExec::new(inputs[0].clone())))
+            }
+        } else if let Ok(node) = MaxRowsExecNode::decode(buf) {
+            if inputs.len() != 1 {
+                Err(internal_datafusion_err!("MaxRowsExec requires one input"))
+            } else {
+                Ok(Arc::new(MaxRowsExec::new(
+                    inputs[0].clone(),
+                    node.max_rows as usize,
+                )))
             }
         } else {
             let node = RayStageReaderExecNode::decode(buf).map_err(|e| {
@@ -81,7 +95,7 @@ impl PhysicalExtensionCodec for RayCodec {
             };
 
             pb.encode(buf)
-                .map_err(|e| internal_datafusion_err!("can't encode ray stage reader pb"))?;
+                .map_err(|e| internal_datafusion_err!("can't encode ray stage reader pb: {e}"))?;
 
             Ok(())
         } else if node
@@ -90,6 +104,14 @@ impl PhysicalExtensionCodec for RayCodec {
             .is_some()
         {
             buf.extend_from_slice(b"PartitionIsolatorExec");
+
+            Ok(())
+        } else if let Some(max) = node.as_any().downcast_ref::<MaxRowsExec>() {
+            let pb = MaxRowsExecNode {
+                max_rows: max.max_rows as u64,
+            };
+            pb.encode(buf)
+                .map_err(|e| internal_datafusion_err!("can't encode max rows pb: {e}"))?;
 
             Ok(())
         } else {
@@ -105,7 +127,6 @@ mod test {
     use arrow::datatypes::DataType;
     use datafusion::{physical_plan::Partitioning, prelude::SessionContext};
 
-    
     use std::sync::Arc;
 
     #[test]

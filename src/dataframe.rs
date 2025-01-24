@@ -40,6 +40,7 @@ use std::sync::Arc;
 use tonic::transport::Channel;
 
 use crate::isolator::PartitionIsolatorExec;
+use crate::max_rows::MaxRowsExec;
 use crate::pystage::ExchangeFlightClient;
 use crate::ray_stage::RayStageExec;
 use crate::ray_stage_reader::RayStageReaderExec;
@@ -81,6 +82,8 @@ impl RayDataFrame {
         isolate_partitions: bool,
     ) -> PyResult<Vec<PyDataFrameStage>> {
         let mut stages = vec![];
+        let max_rows = batch_size;
+        let inner_batch_size = batch_size;
 
         // TODO: This can be done more efficiently, likely in one pass but I'm
         // struggling to get the TreeNodeRecursion return values to make it do
@@ -140,9 +143,11 @@ impl RayDataFrame {
                 }
                 // insert a coalescing batches here too so that we aren't sending
                 // too small (or too big) of batches over the network
-                replacement = Arc::new(
-                    CoalesceBatchesExec::new(replacement, batch_size).with_fetch(Some(batch_size)),
-                ) as Arc<dyn ExecutionPlan>;
+                replacement = Arc::new(MaxRowsExec::new(
+                    Arc::new(CoalesceBatchesExec::new(replacement, inner_batch_size))
+                        as Arc<dyn ExecutionPlan>,
+                    max_rows,
+                )) as Arc<dyn ExecutionPlan>;
                 Ok(Transformed::yes(replacement))
             } else {
                 Ok(Transformed::no(plan))
@@ -151,17 +156,21 @@ impl RayDataFrame {
 
         self.physical_plan.clone().transform_up(up)?;
 
-        // add coalesce to last stage
+        // add coalesce and max rows to last stage
         let mut last_stage = stages
             .pop()
             .ok_or(internal_datafusion_err!("No stages found"))?;
 
         last_stage = PyDataFrameStage::new(
             last_stage.stage_id,
-            Arc::new(
-                CoalesceBatchesExec::new(last_stage.plan, batch_size).with_fetch(Some(batch_size)),
-            ) as Arc<dyn ExecutionPlan>,
+            Arc::new(MaxRowsExec::new(
+                Arc::new(CoalesceBatchesExec::new(last_stage.plan, inner_batch_size))
+                    as Arc<dyn ExecutionPlan>,
+                max_rows,
+            )) as Arc<dyn ExecutionPlan>,
         );
+
+        // done fixing last stage
 
         let reader_plan = Arc::new(RayStageReaderExec::try_new_from_input(
             last_stage.plan.clone(),
@@ -170,11 +179,12 @@ impl RayDataFrame {
         )?) as Arc<dyn ExecutionPlan>;
 
         stages.push(last_stage);
-        // done fixing final stage.
 
-        // TODO: only coalesce partitions if necessary
-        self.final_plan =
-            Some(Arc::new(CoalescePartitionsExec::new(reader_plan)) as Arc<dyn ExecutionPlan>);
+        if reader_plan.output_partitioning().partition_count() > 1 {
+            self.final_plan = Some(Arc::new(CoalescePartitionsExec::new(reader_plan)));
+        } else {
+            self.final_plan = Some(reader_plan);
+        };
 
         Ok(stages)
     }

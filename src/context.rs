@@ -15,6 +15,9 @@
 // specific language governing permissions and limitations
 // under the License.
 
+use arrow::util::pretty::pretty_format_batches;
+use datafusion::common::internal_datafusion_err;
+use datafusion::physical_plan::{collect, displayable};
 use datafusion::{execution::SessionStateBuilder, physical_plan::ExecutionPlan, prelude::*};
 use datafusion_python::dataframe::PyDataFrame;
 use datafusion_python::{errors::*, utils::wait_for_future};
@@ -22,9 +25,9 @@ use object_store::aws::AmazonS3Builder;
 use pyo3::prelude::*;
 use std::sync::Arc;
 
-use crate::dataframe::RayDataFrame;
+use crate::dataframe::{PyRecordBatchStream, RayDataFrame};
 use crate::physical::RayShuffleOptimizerRule;
-use crate::util::ResultExt;
+use crate::util::{bytes_to_physical_plan, physical_plan_to_bytes, ResultExt};
 use url::Url;
 
 pub struct CoordinatorId(pub String);
@@ -32,6 +35,7 @@ pub struct CoordinatorId(pub String);
 #[pyclass]
 pub struct RayContext {
     ctx: SessionContext,
+    ctx_test: SessionContext,
     bucket: Option<String>,
 }
 
@@ -50,8 +54,13 @@ impl RayContext {
             .build();
 
         let ctx = SessionContext::new_with_state(state);
+        let ctx_test = SessionContext::new();
 
-        Ok(Self { ctx, bucket })
+        Ok(Self {
+            ctx,
+            ctx_test,
+            bucket,
+        })
     }
 
     pub fn register_s3(&self, bucket_name: String) -> PyResult<()> {
@@ -71,7 +80,8 @@ impl RayContext {
         let mut options = ParquetReadOptions::default();
         options.file_extension = ".parquet";
 
-        wait_for_future(py, self.ctx.register_parquet(&name, &path, options))?;
+        wait_for_future(py, self.ctx.register_parquet(&name, &path, options.clone()))?;
+        wait_for_future(py, self.ctx_test.register_parquet(&name, &path, options))?;
         Ok(())
     }
 
@@ -85,14 +95,48 @@ impl RayContext {
         ))
     }
 
-    pub fn local_sql(&self, py: Python, query: String) -> PyResult<PyDataFrame> {
-        wait_for_future(py, self.ctx.sql(&query))
-            .map(PyDataFrame::new)
-            .to_py_err()
+    pub fn test(&self, py: Python, sql: String) -> PyResult<()> {
+        let ctx = self.ctx_test.clone();
+        let logical_plan = wait_for_future(py, ctx.sql(&sql))?.into_optimized_plan()?;
+
+        let og_plan = wait_for_future(py, ctx.state().create_physical_plan(&logical_plan))?;
+        println!(
+            "original plan :\n{}",
+            displayable(og_plan.as_ref()).indent(true)
+        );
+
+        let batches = wait_for_future(py, collect(og_plan.clone(), ctx.task_ctx()))?;
+        println!(
+            "test before round trip batch:{}",
+            pretty_format_batches(&batches).unwrap()
+        );
+
+        let bytes = physical_plan_to_bytes(og_plan)?;
+        let plan = bytes_to_physical_plan(&ctx, &bytes)?;
+
+        println!(
+            "round trip plan :\n{}",
+            displayable(plan.as_ref()).indent(true)
+        );
+
+        let batches = wait_for_future(py, collect(plan, ctx.task_ctx()))?;
+        println!(
+            "test after round trip batch:{}",
+            pretty_format_batches(&batches).unwrap()
+        );
+
+        //println!("are they equal {}", );
+        Ok(())
     }
 
     pub fn set(&self, option: String, value: String) -> PyResult<()> {
         let state = self.ctx.state_ref();
+        let mut guard = state.write();
+        let config = guard.config_mut();
+        let options = config.options_mut();
+        options.set(&option, &value)?;
+
+        let state = self.ctx_test.state_ref();
         let mut guard = state.write();
         let config = guard.config_mut();
         let options = config.options_mut();

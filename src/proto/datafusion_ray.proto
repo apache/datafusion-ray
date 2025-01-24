@@ -20,6 +20,10 @@ message RayStageReaderExecNode {
   datafusion.Partitioning partitioning = 4;
 }
 
+message MaxRowsExecNode {
+  uint64 max_rows = 1;
+}
+
 message StreamMeta {
   // stage id of the stream
   uint32 stage_num  = 1;
