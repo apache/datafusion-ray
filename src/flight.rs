@@ -20,23 +20,23 @@ use std::sync::Arc;
 use futures::stream::BoxStream;
 use tonic::{Request, Response, Status, Streaming};
 
-
 use arrow_flight::{
-    flight_service_server::FlightService, Action,
-    ActionType, Criteria, Empty, FlightData, FlightDescriptor, FlightInfo, HandshakeRequest,
-    HandshakeResponse, PollInfo, PutResult, SchemaResult, Ticket,
+    flight_service_server::FlightService, Action, ActionType, Criteria, Empty, FlightData,
+    FlightDescriptor, FlightInfo, HandshakeRequest, HandshakeResponse, PollInfo, PutResult,
+    SchemaResult, Ticket,
 };
 
 pub type DoPutStream = BoxStream<'static, Result<PutResult, Status>>;
 pub type DoGetStream = BoxStream<'static, Result<FlightData, Status>>;
+pub type DoActionStream = BoxStream<'static, Result<arrow_flight::Result, Status>>;
 
 #[tonic::async_trait]
 pub trait FlightHandler: Send + Sync {
-    async fn get_stream(&self, _request: Request<Ticket>) -> Result<Response<DoGetStream>, Status>;
+    async fn get_stream(&self, request: Request<Ticket>) -> Result<Response<DoGetStream>, Status>;
 
     async fn put_stream(
         &self,
-        _request: Request<Streaming<FlightData>>,
+        request: Request<Streaming<FlightData>>,
     ) -> Result<Response<DoPutStream>, Status>;
 }
 
@@ -105,9 +105,9 @@ impl FlightService for FlightServ {
 
     async fn do_action(
         &self,
-        _request: Request<Action>,
+        request: Request<Action>,
     ) -> Result<Response<Self::DoActionStream>, Status> {
-        Err(Status::unimplemented("Implement do_action"))
+        Err(Status::unimplemented("Implement do action"))
     }
 
     async fn list_actions(

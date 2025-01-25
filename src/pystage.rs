@@ -122,7 +122,7 @@ impl PyStage {
         })
     }
 
-    pub fn execute(&mut self, py: Python, partition: usize) -> PyResult<()> {
+    pub fn execute(&mut self, py: Python) -> PyResult<()> {
         println!("PyStage[{}] executing", self.stage_id);
 
         let futs = (0..self.num_output_partitions()).map(|partition| {
@@ -132,8 +132,8 @@ impl PyStage {
             let client_clone = FlightClient::new_from_inner(inner);
             let plan = self.plan.clone();
             let stage_id = self.stage_id.clone();
-            let fraction = self.fraction.clone();
-            let shadow_partition_number = self.shadow_partition_number.clone();
+            let fraction = self.fraction;
+            let shadow_partition_number = self.shadow_partition_number;
 
             tokio::spawn(consume_stage(
                 stage_id,

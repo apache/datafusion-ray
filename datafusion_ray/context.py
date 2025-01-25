@@ -81,6 +81,7 @@ class RayDataFrame:
             reader = self.df.execute(addr)
             print("called df execute, got reader")
             self._batches = list(reader)
+            self.coord.all_done.remote()
         return self._batches
 
     def show(self) -> None:
@@ -195,6 +196,11 @@ class RayStageCoordinator:
     def get_exchanger_addr(self):
         return self.exchange_addr
 
+    def all_done(self):
+        print("calling exchanger all done")
+        ray.get(self.exchanger.all_done.remote())
+        print("done exchanger all done")
+
     def determine_environment(self):
         env_keys = "AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_REGION AWS_SESSION_TOKEN".split()
         env = {}
@@ -293,15 +299,12 @@ class RayStage:
             if self.shadow_partition is not None
             else ""
         )
-
         try:
-            for partition in range(self.pystage.num_output_partitions()):
-                print(
-                    f"RayStage[{self.stage_id}{shadow}] consuming partition:{partition}"
-                )
-                self.pystage.execute(partition)
+            self.pystage.execute()
         except Exception as e:
-            print(f"RayStage[{self.stage_id}] Unhandled Exception in execute: {e}!")
+            print(
+                f"RayStage[{self.stage_id}{shadow}] Unhandled Exception in execute: {e}!"
+            )
             raise e
 
 
@@ -315,91 +318,9 @@ class RayExchanger:
     def addr(self):
         return self.exchange.addr()
 
-    def serve(self):
-        self.exchange.serve()
+    async def all_done(self):
+        await self.exchange.all_done()
 
-
-class StageReader:
-    def __init__(self, coordinator_id):
-        print(f"Stage reader init getting coordinator {coordinator_id}")
-        self.coord = ray.get_actor("RayQueryCoordinator:" + coordinator_id)
-        print("Stage reader init got it")
-        ref = self.coord.get_exchanger.remote()
-        print(f"Stage reader init got exchanger ref {ref}")
-        self.exchanger = ray.get(ref)
-        print("Stage reader init got exchanger")
-        self.coordinator_id = coordinator_id
-
-    def reader(
-        self,
-        stage_id: str,
-        partition: int,
-    ) -> pa.RecordBatchReader:
-        try:
-            print(f"reader [s:{stage_id} p:{partition}] getting reader")
-            schema = ray.get(self.exchanger.get_schema.remote(stage_id))
-            ray_iterable = RayIterable(
-                self.exchanger, stage_id, partition, self.coordinator_id
-            )
-            reader = pa.RecordBatchReader.from_batches(schema, ray_iterable)
-            print(f"reader [s:{stage_id} p:{partition}] got it")
-            return reader
-        except Exception as e:
-            print(f"reader [s:{stage_id} p:{partition}] Unhandled Exception! {e}")
-            raise e
-
-
-class RayIterable:
-    def __init__(self, exchanger, stage_id, partition, coordinator_id):
-        self.exchanger = exchanger
-        self.stage_id = stage_id
-        self.partition = partition
-        self.total_rows = 0
-        self.coord = ray.get_actor("RayQueryCoordinator:" + coordinator_id)
-
-    def __next__(self):
-        obj_ref = self.exchanger.get.remote(self.stage_id, self.partition)
-        # print(f"[RayIterable stage:{self.stage_id} p:{self.partition}] got ref")
-        message = ray.get(obj_ref)
-
-        if message is None:
-            raise StopIteration
-
-        # other wise we know its a list of a single object ref
-        ipc_batch = ray.get(message[0])
-
-        batch = ipc_to_batch(ipc_batch)
-        self.total_rows += len(batch)
-        # print(
-        #    f"[RayIterable stage:{self.stage_id} p:{self.partition}] got batch:\n{print_batch(batch)}"
-        # )
-
-        return batch
-
-    def __iter__(self):
-        return self
-
-    def __del__(self):
-        self.coord.report_totals.remote(
-            self.stage_id, self.partition, self.total_rows, "read"
-        )
-
-
-def print_batch(batch) -> str:
-    return tabulate(batch.to_pylist(), headers="keys", tablefmt="simple_grid")
-
-
-def batch_to_ipc(batch: pa.RecordBatch) -> bytes:
-    # sink = pa.BufferOutputStream()
-    # with pa.ipc.new_stream(sink, batch.schema) as writer:
-    #    writer.write_batch(batch)
-
-    # work around for non alignment issue for FFI buffers
-    # return sink.getvalue()
-    return rust_batch_to_ipc(batch)
-
-
-def ipc_to_batch(data) -> pa.RecordBatch:
-    # with pa.ipc.open_stream(data) as reader:
-    #    return reader.read_next_batch()
-    return rust_ipc_to_batch(data)
+    async def serve(self):
+        await self.exchange.serve()
+        print("RayExchanger done serving")

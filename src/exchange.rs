@@ -22,19 +22,23 @@ use anyhow::Result;
 
 use arrow::array::RecordBatch;
 use arrow_flight::encode::FlightDataEncoderBuilder;
+use arrow_flight::error::FlightError;
 use arrow_flight::utils::flight_data_to_arrow_batch;
+use arrow_flight::Action;
 use async_stream::stream;
 use datafusion::common::internal_datafusion_err;
 use datafusion_python::utils::wait_for_future;
-use futures::TryStreamExt;
+use futures::future::{self, try_join, try_join_all};
+use futures::{TryFutureExt, TryStream, TryStreamExt};
 use local_ip_address::local_ip;
+use prost::bytes::Bytes;
 use tokio::net::TcpListener;
 use tokio_stream::StreamExt;
 
 use tonic::transport::Server;
 use tonic::{Request, Response, Status, Streaming};
 
-use datafusion::error::Result as DFResult;
+use datafusion::error::{DataFusionError, Result as DFResult};
 
 use arrow_flight::{flight_service_server::FlightServiceServer, FlightData, PutResult, Ticket};
 
@@ -54,26 +58,53 @@ struct PartitionKey {
     partition_num: usize,
 }
 
+#[derive(Debug)]
+pub struct Stats {
+    pub stage_num: usize,
+    pub partition_num: usize,
+    pub in_out: String,
+    pub total_rows: usize,
+    pub remote_addr: String,
+}
+
+#[derive(Debug)]
+pub struct ExchangeStats {
+    stats: Vec<Stats>,
+    stats_receiver: Receiver<Stats>,
+}
+
+impl ExchangeStats {
+    pub fn new(stats_receiver: Receiver<Stats>) -> Self {
+        Self {
+            stats: vec![],
+            stats_receiver,
+        }
+    }
+    async fn consume_stats(mut self) -> Vec<Stats> {
+        while let Some(stat) = self.stats_receiver.recv().await {
+            println!("got stat: {stat:?}");
+            self.stats.push(stat);
+        }
+        self.stats
+    }
+}
+
 pub struct Exchange<T> {
     senders: Arc<Mutex<HashMap<PartitionKey, Sender<T>>>>,
     receivers: Arc<Mutex<HashMap<PartitionKey, Receiver<T>>>>,
     created: Arc<Mutex<HashSet<PartitionKey>>>,
     dones: Arc<Mutex<HashMap<PartitionKey, f64>>>,
-}
-
-impl<T> Default for Exchange<T> {
-    fn default() -> Self {
-        Self::new()
-    }
+    stats_sender: Arc<Mutex<Option<Sender<Stats>>>>,
 }
 
 impl<T> Exchange<T> {
-    pub fn new() -> Self {
+    pub fn new(stats_sender: Sender<Stats>) -> Self {
         Self {
             senders: Arc::new(Mutex::new(HashMap::new())),
             receivers: Arc::new(Mutex::new(HashMap::new())),
             created: Arc::new(Mutex::new(HashSet::new())),
             dones: Arc::new(Mutex::new(HashMap::new())),
+            stats_sender: Arc::new(Mutex::new(Some(stats_sender))),
         }
     }
 
@@ -85,13 +116,17 @@ impl<T> Exchange<T> {
             let mut receivers = self.receivers.lock();
             let mut dones = self.dones.lock();
 
-            //let (sender, receiver) = bounded(10); // TODO: what size?
             let (sender, receiver) = channel(10); // TODO: what size?
             senders.insert(key, sender);
             receivers.insert(key, receiver);
             dones.insert(key, 0.0);
             created.insert(key);
         }
+    }
+
+    fn shutdown(&self) {
+        println!("shutdown stats sending channel");
+        self.stats_sender.lock().take();
     }
 
     pub fn put(&self, stage_num: usize, partition_num: usize) -> DFResult<Sender<T>> {
@@ -130,6 +165,11 @@ impl FlightHandler for Exchange<RecordBatch> {
         &self,
         request: Request<Ticket>,
     ) -> Result<Response<crate::flight::DoGetStream>, Status> {
+        let remote_addr = request
+            .remote_addr()
+            .map(|a| a.to_string())
+            .unwrap_or("unknown".to_string());
+
         let ticket = request.into_inner();
 
         let (stage_num, partition_num, _) = extract_ticket(ticket)
@@ -142,6 +182,12 @@ impl FlightHandler for Exchange<RecordBatch> {
             .map_err(|e| Status::internal(format!("Unexpected error getting recv channel {e}")))?;
 
         let mut total_rows = 0;
+        let stats_sender = self
+            .stats_sender
+            .lock()
+            .clone()
+            .ok_or(Status::internal("expected stats_sender"))?;
+
         let stream = stream! {
             while let Some(batch) = recv.recv().await {
 
@@ -150,7 +196,17 @@ impl FlightHandler for Exchange<RecordBatch> {
                 yield Ok(batch);
 
             }
-            println!("{}: sent {} total rows", name, total_rows);
+            if let Err(e) = stats_sender.send(Stats{
+                stage_num,
+                partition_num,
+                in_out: "in".to_string(),
+                total_rows,
+                remote_addr,
+            }).await {
+                yield Err(FlightError::from_external_error(Box::new(
+                    internal_datafusion_err!("error sending stats: {e}"))));
+            }
+            println!("{}: snt {} total rows", name, total_rows);
 
         };
         let out_stream = FlightDataEncoderBuilder::new()
@@ -163,6 +219,11 @@ impl FlightHandler for Exchange<RecordBatch> {
         &self,
         request: Request<Streaming<FlightData>>,
     ) -> Result<Response<crate::flight::DoPutStream>, Status> {
+        let remote_addr = request
+            .remote_addr()
+            .map(|a| a.to_string())
+            .unwrap_or("unknown".to_string());
+
         let mut flight_data_stream = request.into_inner();
 
         // handle first message
@@ -236,6 +297,23 @@ impl FlightHandler for Exchange<RecordBatch> {
             self.dones.lock().insert(key, done);
         }
 
+        let stats_sender = self
+            .stats_sender
+            .lock()
+            .clone()
+            .ok_or(Status::internal("expected stats_sender"))?;
+
+        stats_sender
+            .send(Stats {
+                stage_num,
+                partition_num,
+                in_out: "in".to_string(),
+                total_rows,
+                remote_addr,
+            })
+            .await
+            .map_err(|e| Status::internal(format!("{name} Unexpected error sending stats {e}")))?;
+
         let out_stream = stream! {
             yield Ok(PutResult{app_metadata: vec![].into()});
         };
@@ -247,6 +325,8 @@ impl FlightHandler for Exchange<RecordBatch> {
 #[pyclass]
 pub struct PyExchange {
     listener: Option<TcpListener>,
+    all_done_tx: Arc<Mutex<Sender<()>>>,
+    all_done_rx: Option<Receiver<()>>,
 }
 
 #[pymethods]
@@ -257,7 +337,14 @@ impl PyExchange {
         let my_host_str = format!("{my_local_ip}:0");
         let listener = Some(wait_for_future(py, TcpListener::bind(&my_host_str)).to_py_err()?);
 
-        Ok(Self { listener })
+        let (all_done_tx, all_done_rx) = channel(1);
+        let all_done_tx = Arc::new(Mutex::new(all_done_tx));
+
+        Ok(Self {
+            listener,
+            all_done_tx,
+            all_done_rx: Some(all_done_rx),
+        })
     }
 
     pub fn addr(&self) -> PyResult<String> {
@@ -270,23 +357,70 @@ impl PyExchange {
             .to_py_err()
     }
 
-    fn serve(&mut self, py: Python) -> PyResult<()> {
-        let exchange = Exchange::new();
+    pub fn all_done<'a>(&self, py: Python<'a>) -> PyResult<Bound<'a, PyAny>> {
+        println!("all done");
+        let sender = self.all_done_tx.lock().clone();
+
+        let fut = async move {
+            sender.send(()).await.to_py_err()?;
+            Ok(())
+        };
+        pyo3_async_runtimes::tokio::future_into_py(py, fut)
+    }
+
+    fn serve<'a>(&mut self, py: Python<'a>) -> PyResult<Bound<'a, PyAny>> {
+        // TODO: what channel size?
+        let (stats_sender, stats_receiver) = channel(10);
+        let exchange_stats = ExchangeStats::new(stats_receiver);
+
+        let exchange = Arc::new(Exchange::new(stats_sender));
+
+        let mut all_done_rx = self.all_done_rx.take().unwrap();
+
+        let signal = async move {
+            // TODO: handle Result
+            println!("awaiting the done signal");
+            let result = all_done_rx.recv().await;
+            println!("got done signal {:?}", result);
+        };
+
+        let consume_fut = async move {
+            println!("consuming stats");
+            let stats = exchange_stats.consume_stats().await;
+            println!("got stats: {stats:?}");
+            Ok::<(), PyErr>(())
+        };
+
         let service = FlightServ {
-            handler: Arc::new(exchange),
+            handler: exchange.clone(),
         };
 
         let svc = FlightServiceServer::new(service);
 
-        let fut = Server::builder().add_service(svc).serve_with_incoming(
-            tokio_stream::wrappers::TcpListenerStream::new(self.listener.take().unwrap()),
-        );
+        let listener = self.listener.take().unwrap();
 
-        println!("PyExchange Serving");
-        wait_for_future(py, fut).to_py_err()?;
-        println!("PyExchange DONE serving");
+        let serv = async move {
+            println!("PyExchange Serving");
+            Server::builder()
+                .add_service(svc)
+                .serve_with_incoming_shutdown(
+                    tokio_stream::wrappers::TcpListenerStream::new(listener),
+                    signal,
+                )
+                .await
+                .map_err(|e| PyErr::new::<pyo3::exceptions::PyException, _>(format!("{e}")))?;
+            exchange.shutdown();
+            println!("PyExchange DONE serving");
+            Ok(())
+        };
 
-        Ok(())
+        let fut = async move {
+            try_join(consume_fut, serv).await?;
+            println!("both futures done. all joined");
+            Ok(())
+        };
+
+        pyo3_async_runtimes::tokio::future_into_py(py, fut)
     }
 }
 
@@ -297,7 +431,8 @@ mod test {
 
     #[tokio::test]
     async fn test_exchange() {
-        let e = Exchange::<u32>::new();
+        let (stats_sender, _) = channel(100);
+        let e = Exchange::<u32>::new(stats_sender);
         let msg = 1u32;
 
         let mut receiver = e.get(0, 0).unwrap();
