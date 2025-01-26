@@ -21,6 +21,7 @@ import asyncio
 import ray
 import uuid
 import os
+import time
 
 from datafusion_ray._datafusion_ray_internal import (
     RayContext as RayContextInternal,
@@ -67,10 +68,15 @@ class RayDataFrame:
 
     def collect(self) -> list[pa.RecordBatch]:
         if not self._batches:
+            t1 = time.time()
+            self.stages()
+            t2 = time.time()
+            print(f"creating stages took {t2 -t1}s")
             # let this call execute
             ref = self.coord.get_exchanger_addr.remote()
-            self.stages()
             self.create_ray_stages()
+            t3 = time.time()
+            print(f"creating ray stage actors took {t3 -t2}s")
             self.run_stages()
             # now collect the result
             addr = ray.get(ref)
@@ -135,9 +141,6 @@ class RayDataFrame:
     def run_stages(self):
         ray.get(self.coord.run_stages.remote())
 
-    def totals(self):
-        return ray.get(self.coord.stats.remote())
-
 
 class RayContext:
     def __init__(
@@ -187,7 +190,6 @@ class RayStageCoordinator:
         self.stages = {}
         self.exchanger = RayExchanger.remote()
         self.exchange_addr = ray.get(self.exchanger.addr.remote())
-        self.totals = {}
         self.runtime_env = {}
         self.determine_environment()
 
@@ -256,22 +258,6 @@ class RayStageCoordinator:
                 f"RayQueryCoordinator[{self.my_id}] Unhandled Exception in run stages! {e}"
             )
             raise e
-
-    def report_totals(self, stage_id, partition, total, read_write):
-        if stage_id not in self.totals:
-            self.totals[stage_id] = {}
-        if read_write not in self.totals[stage_id]:
-            self.totals[stage_id][read_write] = {}
-        if "sum" not in self.totals[stage_id][read_write]:
-            self.totals[stage_id][read_write]["sum"] = 0
-        if "partition" not in self.totals[stage_id][read_write]:
-            self.totals[stage_id][read_write]["partition"] = {}
-
-        self.totals[stage_id][read_write]["partition"][partition] = total
-        self.totals[stage_id][read_write]["sum"] += total
-
-    def stats(self):
-        return self.totals
 
 
 @ray.remote(num_cpus=0)
