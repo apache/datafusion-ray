@@ -158,6 +158,9 @@ class RayContext:
     def register_parquet(self, name: str, path: str):
         self.ctx.register_parquet(name, path)
 
+    def register_listing_table(self, name: str, path: str, file_extention="parquet"):
+        self.ctx.register_listing_table(name, path, file_extention)
+
     def execution_plan(self):
         return self.ctx.execution_plan()
 

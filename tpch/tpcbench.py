@@ -34,6 +34,7 @@ def main(
     concurrency: int,
     batch_size: int,
     isolate_partitions: bool,
+    listing_tables: bool,
 ):
 
     # Register the tables
@@ -74,8 +75,12 @@ def main(
     for table in table_names:
         path = os.path.join(data_path, f"{table}.parquet")
         print(f"Registering table {table} using path {path}")
-        ctx.register_parquet(table, path)
-        local_ctx.register_parquet(table, path)
+        if listing_tables:
+            ctx.register_listing_table(table, path)
+            local_ctx.register_listing_table(table, path)
+        else:
+            ctx.register_parquet(table, path)
+            local_ctx.register_parquet(table, path)
 
     results = {
         "engine": "datafusion-python",
@@ -145,6 +150,7 @@ if __name__ == "__main__":
     )
     parser.add_argument("--isolate", action="store_true")
     parser.add_argument("--qnum", type=int, default=-1, help="TPCH query number, 1-22")
+    parser.add_argument("--listing-tables", action="store_true")
     parser.add_argument(
         "--batch-size",
         required=False,
@@ -154,5 +160,10 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     main(
-        args.qnum, args.data, int(args.concurrency), int(args.batch_size), args.isolate
+        args.qnum,
+        args.data,
+        int(args.concurrency),
+        int(args.batch_size),
+        args.isolate,
+        args.listing_tables,
     )

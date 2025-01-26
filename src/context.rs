@@ -15,11 +15,18 @@
 // specific language governing permissions and limitations
 // under the License.
 
+use arrow::datatypes::SchemaRef;
 use arrow::util::pretty::pretty_format_batches;
 use datafusion::common::internal_datafusion_err;
+use datafusion::datasource::file_format::parquet::ParquetFormat;
+use datafusion::datasource::listing::{
+    ListingOptions, ListingTable, ListingTableConfig, ListingTableUrl,
+};
 use datafusion::physical_plan::{collect, displayable};
 use datafusion::{execution::SessionStateBuilder, physical_plan::ExecutionPlan, prelude::*};
+use datafusion_python::context::convert_table_partition_cols;
 use datafusion_python::dataframe::PyDataFrame;
+use datafusion_python::expr::sort_expr::PySortExpr;
 use datafusion_python::{errors::*, utils::wait_for_future};
 use object_store::aws::AmazonS3Builder;
 use pyo3::prelude::*;
@@ -35,7 +42,6 @@ pub struct CoordinatorId(pub String);
 #[pyclass]
 pub struct RayContext {
     ctx: SessionContext,
-    ctx_test: SessionContext,
     bucket: Option<String>,
 }
 
@@ -54,13 +60,8 @@ impl RayContext {
             .build();
 
         let ctx = SessionContext::new_with_state(state);
-        let ctx_test = SessionContext::new();
 
-        Ok(Self {
-            ctx,
-            ctx_test,
-            bucket,
-        })
+        Ok(Self { ctx, bucket })
     }
 
     pub fn register_s3(&self, bucket_name: String) -> PyResult<()> {
@@ -81,8 +82,26 @@ impl RayContext {
         options.file_extension = ".parquet";
 
         wait_for_future(py, self.ctx.register_parquet(&name, &path, options.clone()))?;
-        wait_for_future(py, self.ctx_test.register_parquet(&name, &path, options))?;
         Ok(())
+    }
+
+    #[pyo3(signature = (name, path, file_extension=".parquet"))]
+    pub fn register_listing_table(
+        &mut self,
+        py: Python,
+        name: &str,
+        path: &str,
+        file_extension: &str,
+    ) -> PyResult<()> {
+        let options =
+            ListingOptions::new(Arc::new(ParquetFormat::new())).with_file_extension(file_extension);
+
+        wait_for_future(
+            py,
+            self.ctx
+                .register_listing_table(name, path, options, None, None),
+        )
+        .to_py_err()
     }
 
     pub fn sql(&self, py: Python, query: String, coordinator_id: String) -> PyResult<RayDataFrame> {
@@ -95,48 +114,8 @@ impl RayContext {
         ))
     }
 
-    pub fn test(&self, py: Python, sql: String) -> PyResult<()> {
-        let ctx = self.ctx_test.clone();
-        let logical_plan = wait_for_future(py, ctx.sql(&sql))?.into_optimized_plan()?;
-
-        let og_plan = wait_for_future(py, ctx.state().create_physical_plan(&logical_plan))?;
-        println!(
-            "original plan :\n{}",
-            displayable(og_plan.as_ref()).indent(true)
-        );
-
-        let batches = wait_for_future(py, collect(og_plan.clone(), ctx.task_ctx()))?;
-        println!(
-            "test before round trip batch:{}",
-            pretty_format_batches(&batches).unwrap()
-        );
-
-        let bytes = physical_plan_to_bytes(og_plan)?;
-        let plan = bytes_to_physical_plan(&ctx, &bytes)?;
-
-        println!(
-            "round trip plan :\n{}",
-            displayable(plan.as_ref()).indent(true)
-        );
-
-        let batches = wait_for_future(py, collect(plan, ctx.task_ctx()))?;
-        println!(
-            "test after round trip batch:{}",
-            pretty_format_batches(&batches).unwrap()
-        );
-
-        //println!("are they equal {}", );
-        Ok(())
-    }
-
     pub fn set(&self, option: String, value: String) -> PyResult<()> {
         let state = self.ctx.state_ref();
-        let mut guard = state.write();
-        let config = guard.config_mut();
-        let options = config.options_mut();
-        options.set(&option, &value)?;
-
-        let state = self.ctx_test.state_ref();
         let mut guard = state.write();
         let config = guard.config_mut();
         let options = config.options_mut();
