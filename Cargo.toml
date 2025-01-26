@@ -55,6 +55,7 @@ pyo3 = { version = "0.22.6", features = [
   "abi3-py38",
 ] }
 pyo3-async-runtimes = { version = "0.22", features = ["tokio-runtime"] }
+rust_decimal = "1.36"
 tokio = { version = "1.40", features = [
   "macros",
   "rt",

@@ -17,6 +17,7 @@ use futures::future::try_join_all;
 use futures::stream::FuturesUnordered;
 use object_store::aws::AmazonS3Builder;
 use prost::Message;
+use rust_decimal::prelude::*;
 use std::borrow::Cow;
 use std::future::Future;
 use std::sync::Arc;
@@ -217,11 +218,16 @@ pub async fn consume_stage(
     );
 
     println!("{name} consuming");
+    let fraction = Decimal::from_f64(fraction)
+        .ok_or(internal_datafusion_err!(
+            "{name}: error converting fraction to decimal"
+        ))?
+        .to_string();
 
     let stream_meta = StreamMeta {
         stage_num: stage_id.parse::<u32>()?,
         partition_num: partition as u32,
-        fraction: fraction as f32,
+        fraction,
     };
 
     let descriptor = FlightDescriptor {

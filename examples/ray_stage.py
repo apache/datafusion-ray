@@ -16,12 +16,9 @@
 # under the License.
 
 import argparse
-import glob
-import json
 import time
 import os
 import ray
-import pyarrow as pa
 from datafusion_ray import RayContext
 
 
@@ -51,7 +48,7 @@ def go(data_dir: str, concurrency: int, isolate: bool):
 
     df = ctx.sql(query)
     for stage in df.stages():
-        print(f"Stage ", stage.stage_id)
+        print("Stage ", stage.stage_id)
         print(stage.execution_plan().display_indent())
 
     df.show()

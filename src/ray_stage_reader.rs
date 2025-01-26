@@ -14,6 +14,7 @@ use datafusion::{arrow::datatypes::SchemaRef, execution::SendableRecordBatchStre
 use futures::stream::TryStreamExt;
 use futures::StreamExt;
 use prost::Message;
+use rust_decimal::prelude::*;
 
 use crate::protobuf::StreamMeta;
 use crate::pystage::ExchangeFlightClient;
@@ -129,7 +130,7 @@ impl ExecutionPlan for RayStageReaderExec {
         let meta = StreamMeta {
             stage_num,
             partition_num: partition as u32,
-            fraction: 0.0, // not used in this context
+            fraction: Decimal::zero().to_string(), // not used in this context
         };
 
         let ticket = Ticket {

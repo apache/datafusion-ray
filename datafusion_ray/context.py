@@ -22,8 +22,6 @@ import ray
 import uuid
 import os
 
-from tabulate import tabulate
-
 from datafusion_ray._datafusion_ray_internal import (
     RayContext as RayContextInternal,
     RayDataFrame as RayDataFrameInternal,
@@ -72,10 +70,13 @@ class RayDataFrame:
 
     def collect(self) -> list[pa.RecordBatch]:
         if not self._batches:
+            # let this call execute
+            ref = self.coord.get_exchanger_addr.remote()
             self.stages()
-            addr = ray.get(self.coord.get_exchanger_addr.remote())
             self.create_ray_stages()
             self.run_stages()
+            # now collect the result
+            addr = ray.get(ref)
 
             print("calling df execute")
             reader = self.df.execute(addr)
@@ -85,8 +86,8 @@ class RayDataFrame:
         return self._batches
 
     def show(self) -> None:
-        table = pa.Table.from_batches(self.collect())
-        print(tabulate(table.to_pylist(), headers="keys", tablefmt="outline"))
+        batches = self.collect()
+        print(prettify(batches))
 
     def create_ray_stages(self):
 

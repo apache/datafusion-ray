@@ -24,21 +24,20 @@ use arrow::array::RecordBatch;
 use arrow_flight::encode::FlightDataEncoderBuilder;
 use arrow_flight::error::FlightError;
 use arrow_flight::utils::flight_data_to_arrow_batch;
-use arrow_flight::Action;
 use async_stream::stream;
 use datafusion::common::internal_datafusion_err;
 use datafusion_python::utils::wait_for_future;
-use futures::future::{self, try_join, try_join_all};
-use futures::{TryFutureExt, TryStream, TryStreamExt};
+use futures::future::try_join;
+use futures::TryStreamExt;
 use local_ip_address::local_ip;
-use prost::bytes::Bytes;
+use rust_decimal::prelude::*;
 use tokio::net::TcpListener;
 use tokio_stream::StreamExt;
 
 use tonic::transport::Server;
 use tonic::{Request, Response, Status, Streaming};
 
-use datafusion::error::{DataFusionError, Result as DFResult};
+use datafusion::error::Result as DFResult;
 
 use arrow_flight::{flight_service_server::FlightServiceServer, FlightData, PutResult, Ticket};
 
@@ -67,23 +66,55 @@ pub struct Stats {
     pub remote_addr: String,
 }
 
+type StatMap = HashMap<usize, HashMap<String, HashMap<usize, HashMap<String, usize>>>>;
+
+fn format_stats(sm: &StatMap) -> String {
+    let mut out = String::new();
+
+    for (stage_num, in_out_map) in sm {
+        out.push_str(&format!("Stage: {stage_num}:\n"));
+        for (in_out, part_map) in in_out_map {
+            let mut total = 0;
+            out.push_str(&format!("  {in_out}:\n"));
+            for (part_num, addr_map) in part_map {
+                out.push_str(&format!("    Partition: {part_num}:\n"));
+                for (addr, rows) in addr_map {
+                    total += rows;
+                    out.push_str(&format!("      {addr}: {rows}\n"));
+                }
+            }
+            out.push_str(&format!("    total rows: {total}\n"));
+        }
+    }
+
+    out
+}
+
 #[derive(Debug)]
 pub struct ExchangeStats {
-    stats: Vec<Stats>,
+    stats: StatMap,
     stats_receiver: Receiver<Stats>,
 }
 
 impl ExchangeStats {
     pub fn new(stats_receiver: Receiver<Stats>) -> Self {
         Self {
-            stats: vec![],
+            stats: HashMap::new(),
             stats_receiver,
         }
     }
-    async fn consume_stats(mut self) -> Vec<Stats> {
+    async fn consume_stats(mut self) -> StatMap {
         while let Some(stat) = self.stats_receiver.recv().await {
             println!("got stat: {stat:?}");
-            self.stats.push(stat);
+
+            self.stats
+                .entry(stat.stage_num)
+                .or_default()
+                .entry(stat.in_out)
+                .or_default()
+                .entry(stat.partition_num)
+                .or_default()
+                .insert(stat.remote_addr, stat.total_rows);
         }
         self.stats
     }
@@ -93,7 +124,7 @@ pub struct Exchange<T> {
     senders: Arc<Mutex<HashMap<PartitionKey, Sender<T>>>>,
     receivers: Arc<Mutex<HashMap<PartitionKey, Receiver<T>>>>,
     created: Arc<Mutex<HashSet<PartitionKey>>>,
-    dones: Arc<Mutex<HashMap<PartitionKey, f64>>>,
+    dones: Arc<Mutex<HashMap<PartitionKey, Decimal>>>,
     stats_sender: Arc<Mutex<Option<Sender<Stats>>>>,
 }
 
@@ -119,7 +150,7 @@ impl<T> Exchange<T> {
             let (sender, receiver) = channel(10); // TODO: what size?
             senders.insert(key, sender);
             receivers.insert(key, receiver);
-            dones.insert(key, 0.0);
+            dones.insert(key, Decimal::zero());
             created.insert(key);
         }
     }
@@ -199,7 +230,7 @@ impl FlightHandler for Exchange<RecordBatch> {
             if let Err(e) = stats_sender.send(Stats{
                 stage_num,
                 partition_num,
-                in_out: "in".to_string(),
+                in_out: "out".to_string(),
                 total_rows,
                 remote_addr,
             }).await {
@@ -275,26 +306,33 @@ impl FlightHandler for Exchange<RecordBatch> {
             stage_num,
             partition_num,
         };
-        let mut done = self
-            .dones
-            .lock()
-            .remove(&key)
-            .ok_or(Status::internal("expected to find done fraction"))?;
-        done += done_fraction;
 
-        println!(
-            "{}: received {} total_rows, done = {}, done_fraction {}",
-            name, total_rows, done, done_fraction,
-        );
+        {
+            // block to calculate if we are done with this partition under mutex lock
+            let mut done_guard = self.dones.lock();
 
-        if (done * 10000.0) as u32 == 10000u32 {
-            // we are done!
-            println!("{}: all done", name);
-            // remove the sender so all senders can be dropped and it will close the channel
-            self.senders.lock().remove(&key);
-        } else {
-            // still more partitions to report in
-            self.dones.lock().insert(key, done);
+            let mut done = done_guard
+                .remove(&key)
+                .ok_or(Status::internal("expected to find done fraction"))?;
+
+            done += done_fraction;
+
+            let done_str = format!("{:.5}", done.round_dp(6));
+            println!(
+                "{}: received {} total_rows, done = {}, done_fraction {}",
+                name, total_rows, done_str, done_fraction,
+            );
+
+            // crude rounding
+            if done_str == "1.00000" {
+                // we are done!
+                println!("{}: all done", name);
+                // remove the sender so all senders can be dropped and it will close the channel
+                self.senders.lock().remove(&key);
+            } else {
+                // still more partitions to report in
+                done_guard.insert(key, done);
+            }
         }
 
         let stats_sender = self
@@ -358,7 +396,6 @@ impl PyExchange {
     }
 
     pub fn all_done<'a>(&self, py: Python<'a>) -> PyResult<Bound<'a, PyAny>> {
-        println!("all done");
         let sender = self.all_done_tx.lock().clone();
 
         let fut = async move {
@@ -387,7 +424,7 @@ impl PyExchange {
         let consume_fut = async move {
             println!("consuming stats");
             let stats = exchange_stats.consume_stats().await;
-            println!("got stats: {stats:?}");
+            println!("got stats: {}", format_stats(&stats));
             Ok::<(), PyErr>(())
         };
 

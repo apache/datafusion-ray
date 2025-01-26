@@ -29,7 +29,7 @@ pub struct StreamMeta {
     /// parittion id of the stream
     #[prost(uint32, tag = "2")]
     pub partition_num: u32,
-    /// what fraction of the work do we represent
-    #[prost(float, tag = "3")]
-    pub fraction: f32,
+    /// what fraction of the work do we represent, serialized as a string
+    #[prost(string, tag = "3")]
+    pub fraction: ::prost::alloc::string::String,
 }

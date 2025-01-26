@@ -29,7 +29,7 @@ message StreamMeta {
   uint32 stage_num  = 1;
   // parittion id of the stream
   uint32 partition_num = 2;
-  // what fraction of the work do we represent
-  float fraction = 3;
+  // what fraction of the work do we represent, serialized as a string
+  string fraction = 3;
 }
 

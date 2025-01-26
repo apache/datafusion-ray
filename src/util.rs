@@ -19,9 +19,10 @@ use datafusion::physical_plan::stream::RecordBatchStreamAdapter;
 use datafusion::physical_plan::ExecutionPlan;
 use datafusion::prelude::SessionContext;
 use datafusion_proto::physical_plan::AsExecutionPlan;
-use futures::{Stream, StreamExt};
+use futures::StreamExt;
 use pyo3::prelude::*;
 use pyo3::types::{PyBytes, PyList};
+use rust_decimal::prelude::*;
 
 use crate::codec::RayCodec;
 use crate::protobuf::StreamMeta;
@@ -117,7 +118,7 @@ pub fn flight_data_to_schema(flight_data: &FlightData) -> anyhow::Result<SchemaR
     Ok(schema)
 }
 
-pub fn extract_stream_meta(flight_data: &FlightData) -> anyhow::Result<(usize, usize, f64)> {
+pub fn extract_stream_meta(flight_data: &FlightData) -> anyhow::Result<(usize, usize, Decimal)> {
     let descriptor = flight_data
         .flight_descriptor
         .as_ref()
@@ -129,18 +130,18 @@ pub fn extract_stream_meta(flight_data: &FlightData) -> anyhow::Result<(usize, u
     Ok((
         stream_meta.stage_num as usize,
         stream_meta.partition_num as usize,
-        stream_meta.fraction as f64,
+        Decimal::from_str(&stream_meta.fraction)?,
     ))
 }
 
-pub fn extract_ticket(ticket: Ticket) -> anyhow::Result<(usize, usize, f64)> {
+pub fn extract_ticket(ticket: Ticket) -> anyhow::Result<(usize, usize, Decimal)> {
     let data = ticket.ticket;
 
     let stream_meta = StreamMeta::decode(data)?;
     Ok((
         stream_meta.stage_num as usize,
         stream_meta.partition_num as usize,
-        stream_meta.fraction as f64,
+        Decimal::from_str(&stream_meta.fraction)?,
     ))
 }
 
