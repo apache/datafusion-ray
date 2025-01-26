@@ -60,13 +60,13 @@ def main(
 
     ctx.set("datafusion.execution.target_partitions", f"{concurrency}")
     # ctx.set("datafusion.execution.parquet.pushdown_filters", "true")
-    ctx.set("datafusion.optimizer.enable_round_robin_repartition", "false")
+    # ctx.set("datafusion.optimizer.enable_round_robin_repartition", "false")
     ctx.set("datafusion.execution.coalesce_batches", "false")
 
     local_config = SessionConfig()
     local_config.set("datafusion.execution.target_partitions", f"{concurrency}")
     # local_config.set("datafusion.execution.parquet.pushdown_filters", "true")
-    local_config.set("datafusion.optimizer.enable_round_robin_repartition", "false")
+    # local_config.set("datafusion.optimizer.enable_round_robin_repartition", "false")
     local_config.set("datafusion.execution.coalesce_batches", "false")
 
     local_ctx = SessionContext(local_config)
@@ -76,8 +76,8 @@ def main(
         path = os.path.join(data_path, f"{table}.parquet")
         print(f"Registering table {table} using path {path}")
         if listing_tables:
-            ctx.register_listing_table(table, path)
-            local_ctx.register_listing_table(table, path)
+            ctx.register_listing_table(table, f"{path}/")
+            local_ctx.register_listing_table(table, f"{path}/")
         else:
             ctx.register_parquet(table, path)
             local_ctx.register_parquet(table, path)
