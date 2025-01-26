@@ -17,14 +17,11 @@
 
 import argparse
 import ray
-from datafusion import SessionContext, SessionConfig, DataFrame
+from datafusion import SessionContext, SessionConfig
 from datafusion_ray import RayContext, prettify
 from datetime import datetime
-import pyarrow as pa
-import pyarrow.csv as csv
 import json
 import os
-import io
 import time
 
 import duckdb
@@ -89,7 +86,9 @@ def main(
 
     duckdb.sql("load tpch")
 
-    for qnum in [qnum]:
+    queries = range(1, 23) if qnum == -1 else [qnum]
+    for qnum in queries:
+        print("Running query ", qnum)
         sql: str = duckdb.sql(
             f"select * from tpch_queries() where query_nr=?", params=(qnum,)
         ).df()["query"][0]
@@ -120,6 +119,7 @@ def main(
             # of the answers don't format the output the same
             print(f"Possible wrong answer for TPCH query {qnum}")
             print(expected)
+            raise Exception("Wrong answer")
         results["queries"][qnum] = [end_time - start_time + part1]
 
     results = json.dumps(results, indent=4)
@@ -144,9 +144,7 @@ if __name__ == "__main__":
         "--concurrency", required=True, help="Number of concurrent tasks"
     )
     parser.add_argument("--isolate", action="store_true")
-    parser.add_argument(
-        "--qnum", type=int, required=True, help="TPCH query number, 1-22"
-    )
+    parser.add_argument("--qnum", type=int, default=-1, help="TPCH query number, 1-22")
     parser.add_argument(
         "--batch-size",
         required=False,
