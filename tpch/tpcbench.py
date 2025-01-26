@@ -95,16 +95,7 @@ def main(
         ).df()["query"][0]
 
         # jump through some hoops to get an answer batch to compare to
-        answer_csv = str(
-            duckdb.sql(
-                "select answer from tpch_answers() where query_nr=? and scale_factor=?",
-                params=(qnum, 1),
-            ).arrow()["answer"][0]
-        )
-        answer_batches = csv.read_csv(
-            io.BytesIO(answer_csv.encode("utf-8")),
-            parse_options=csv.ParseOptions(delimiter="|"),
-        ).to_batches()
+        answer_batches = local_ctx.sql(sql).collect()
 
         print("executing ", sql)
 

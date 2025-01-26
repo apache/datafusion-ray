@@ -424,7 +424,7 @@ impl PyExchange {
         let consume_fut = async move {
             println!("consuming stats");
             let stats = exchange_stats.consume_stats().await;
-            println!("got stats: {}", format_stats(&stats));
+            println!("got stats:\n{}", format_stats(&stats));
             Ok::<(), PyErr>(())
         };
 
