@@ -36,6 +36,7 @@ def main(
     isolate_partitions: bool,
     listing_tables: bool,
     validate: bool,
+    exchangers: int,
 ):
 
     # Register the tables
@@ -55,6 +56,7 @@ def main(
 
     ctx = RayContext(
         batch_size=batch_size,
+        num_exchangers=exchangers,
         isolate_partitions=isolate_partitions,
         bucket="rob-tandy-tmp",
     )
@@ -151,6 +153,9 @@ if __name__ == "__main__":
     parser.add_argument("--listing-tables", action="store_true")
     parser.add_argument("--validate", action="store_true")
     parser.add_argument(
+        "--exchangers", type=int, default=1, help="Number of Exchange Actors"
+    )
+    parser.add_argument(
         "--batch-size",
         required=False,
         default=8192,
@@ -166,4 +171,5 @@ if __name__ == "__main__":
         args.isolate,
         args.listing_tables,
         args.validate,
+        args.exchangers,
     )

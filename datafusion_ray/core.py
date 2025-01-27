@@ -38,6 +38,7 @@ class RayDataFrame:
         batch_size=8192,
         isolate_parititions=False,
         bucket: str | None = None,
+        num_exchangers: int = 1,
     ):
         self.df = ray_internal_df
         self.coordinator_id = self.df.coordinator_id
@@ -46,6 +47,7 @@ class RayDataFrame:
         self.batch_size = batch_size
         self.isolate_partitions = isolate_parititions
         self.bucket = bucket
+        self.num_exchangers = num_exchangers
 
     def stages(self):
         # create our coordinator now, which we need to create stages
@@ -54,7 +56,7 @@ class RayDataFrame:
 
             self.coord = RayStageCoordinator.options(
                 name="RayQueryCoordinator:" + self.coordinator_id,
-            ).remote(self.coordinator_id, len(self._stages))
+            ).remote(self.coordinator_id, len(self._stages), self.num_exchangers)
 
             ray.get(self.coord.start_up.remote())
             print("ray coord started up")
@@ -155,11 +157,13 @@ class RayContext:
     def __init__(
         self,
         batch_size: int = 8192,
+        num_exchangers: int = 1,
         isolate_partitions: bool = False,
         bucket: str | None = None,
     ) -> None:
         self.ctx = RayContextInternal(bucket)
         self.batch_size = batch_size
+        self.num_exchangers = num_exchangers
         self.isolate_partitions = isolate_partitions
         self.bucket = bucket
 
@@ -181,7 +185,13 @@ class RayContext:
         self.ctx.set_coordinator_id(coordinator_id)
 
         df = self.ctx.sql(query, coordinator_id)
-        return RayDataFrame(df, self.batch_size, self.isolate_partitions, self.bucket)
+        return RayDataFrame(
+            df,
+            self.batch_size,
+            self.isolate_partitions,
+            self.bucket,
+            self.num_exchangers,
+        )
 
     def local_sql(self, query: str) -> datafusion.DataFrame:
         coordinator_id = str(uuid.uuid4())
@@ -194,27 +204,40 @@ class RayContext:
 
 @ray.remote(num_cpus=0)
 class RayStageCoordinator:
-    def __init__(self, coordinator_id: str, num_stages: int) -> None:
+    def __init__(
+        self, coordinator_id: str, num_stages: int, num_exchangers: int
+    ) -> None:
         self.my_id = coordinator_id
         self.stages = {}
         self.num_stages = num_stages
+        self.num_exchangers = num_exchangers
         self.runtime_env = {}
 
     def start_up(self):
         self.determine_environment()
         print(f"Coordinator staring up {self.num_stages} exchangers")
-        self.exchanges = {
-            i: RayExchanger.remote(f"Stage {i}") for i in range(self.num_stages)
-        }
 
-        refs = [exchange.start_up.remote() for exchange in self.exchanges.values()]
+        self.xs = [
+            RayExchanger.remote(f"Exchanger #{i}") for i in range(self.num_exchangers)
+        ]
+
+        stages_per_exchanger = self.num_stages // self.num_exchangers
+        print("Stages per exchanger: ", stages_per_exchanger)
+
+        self.exchanges = {}
+        for i in range(self.num_stages):
+            exchanger_i = min(len(self.xs) - 1, i // stages_per_exchanger)
+            print("exchanger_i = ", exchanger_i)
+            self.exchanges[i] = self.xs[exchanger_i]
+
+        refs = [exchange.start_up.remote() for exchange in self.xs]
+
         # ensure we've done the necessary initialization before continuing
         ray.wait(refs, num_returns=len(refs))
         print("all exchanges started up")
 
-        for exchange in self.exchanges.values():
-            # don't wait for these to complete
-            exchange.serve.remote()
+        # don't wait for these
+        [exchange.serve.remote() for exchange in self.xs]
 
     def get_exchanger_addr(self, stage_num: int):
         return ray.get(self.exchanges[stage_num].addr.remote())
@@ -281,12 +304,6 @@ class RayStageCoordinator:
         print("running stages")
         try:
             refs = [stage.execute.remote() for stage in self.stages.values()]
-            print("running stages")
-            while len(refs) > 0:
-                finished, refs = ray.wait(refs, num_returns=1)
-                # this stage id is done, tell its exchange
-                stage_id = ray.get(finished[0])
-                print(f"{stage_id} is finished")
 
         except Exception as e:
             print(
