@@ -221,7 +221,7 @@ class RayStageCoordinator:
             RayExchanger.remote(f"Exchanger #{i}") for i in range(self.num_exchangers)
         ]
 
-        stages_per_exchanger = self.num_stages // self.num_exchangers
+        stages_per_exchanger = max(1, self.num_stages // self.num_exchangers)
         print("Stages per exchanger: ", stages_per_exchanger)
 
         self.exchanges = {}
@@ -244,7 +244,7 @@ class RayStageCoordinator:
 
     def all_done(self):
         print("calling exchangers all done")
-        refs = [self.exchanges[i].all_done.remote() for i in range(self.num_stages)]
+        refs = [exchange.all_done.remote() for exchange in self.xs]
         ray.wait(refs, num_returns=len(refs))
         print("done exchangers all done")
 
@@ -266,7 +266,6 @@ class RayStageCoordinator:
         bucket: str | None = None,
     ):
         stage_key = f"{stage_id}-{shadow_partition}"
-        print(f"creating new stage {stage_key} from bytes {len(plan_bytes)}")
         try:
             if stage_key in self.stages:
                 print(f"already started stage {stage_key}")
@@ -303,7 +302,19 @@ class RayStageCoordinator:
     def run_stages(self):
         print("running stages")
         try:
-            refs = [stage.execute.remote() for stage in self.stages.values()]
+            # place holder for limiting the number of pending tasks
+            MAX_NUM_PENDING_TASKS = 1e9
+            refs = []
+            stages = list(self.stages.items())
+            # does .values preserve order? assuming so at the moment
+            # todo, ultimately we need a DAG for this
+            for i in range(len(stages)):
+                if len(refs) > MAX_NUM_PENDING_TASKS:
+                    _, refs = ray.wait(refs, num_returns=1)
+
+                stage_key, stage = stages[i]
+                print(f"Scheduling stage {stage_key}")
+                refs.append(stage.execute.remote())
 
         except Exception as e:
             print(
@@ -339,8 +350,19 @@ class RayStage:
                 fraction,
             )
             self.shadow_partition = shadow_partition
+            shadow = (
+                f", shadowing:{self.shadow_partition}"
+                if self.shadow_partition is not None
+                else ""
+            )
+
+            print(
+                f"RayStage[{self.stage_id}{shadow}] Sending to {exchanger_addr}, consuming from {input_exchange_addrs}"
+            )
         except Exception as e:
-            print(f"RayStage[{self.stage_id}] Unhandled Exception in init: {e}!")
+            print(
+                f"RayStage[{self.stage_id}{shadow}] Unhandled Exception in init: {e}!"
+            )
             raise
 
     def execute(self):
