@@ -34,7 +34,6 @@ impl PhysicalExtensionCodec for RayCodec {
         inputs: &[Arc<dyn ExecutionPlan>],
         registry: &dyn FunctionRegistry,
     ) -> Result<Arc<dyn ExecutionPlan>> {
-        println!("decoding {:?}", buf);
         // TODO: clean this up
         if buf == "PartitionIsolatorExec".as_bytes() {
             if inputs.len() != 1 {
@@ -45,8 +44,6 @@ impl PhysicalExtensionCodec for RayCodec {
                 Ok(Arc::new(PartitionIsolatorExec::new(inputs[0].clone())))
             }
         } else if let Ok(node) = RayStageReaderExecNode::decode(buf) {
-            println!("decoding as stage reader");
-
             let schema: Schema = node
                 .schema
                 .as_ref()
@@ -68,7 +65,6 @@ impl PhysicalExtensionCodec for RayCodec {
                 node.coordinator_id,
             )?))
         } else if let Ok(node) = MaxRowsExecNode::decode(buf) {
-            println!("decoding as max rows");
             if inputs.len() != 1 {
                 Err(internal_datafusion_err!(
                     "MaxRowsExec requires one input, got {}",
@@ -86,7 +82,6 @@ impl PhysicalExtensionCodec for RayCodec {
     }
 
     fn try_encode(&self, node: Arc<dyn ExecutionPlan>, buf: &mut Vec<u8>) -> Result<()> {
-        println!("try encoding {} ", displayable(node.as_ref()).one_line());
         if let Some(reader) = node.as_any().downcast_ref::<RayStageReaderExec>() {
             let schema: protobuf::Schema = reader.schema().try_into()?;
             let partitioning: protobuf::Partitioning = serialize_partitioning(
@@ -103,27 +98,22 @@ impl PhysicalExtensionCodec for RayCodec {
 
             pb.encode(buf)
                 .map_err(|e| internal_datafusion_err!("can't encode ray stage reader pb: {e}"))?;
-            println!("encoded into: {:?}", buf);
             Ok(())
         } else if node
             .as_any()
             .downcast_ref::<PartitionIsolatorExec>()
             .is_some()
         {
-            println!("encoding as ray parition isolator");
             buf.extend_from_slice(b"PartitionIsolatorExec");
-            println!("encoded into: {:?}", buf);
 
             Ok(())
         } else if let Some(max) = node.as_any().downcast_ref::<MaxRowsExec>() {
-            println!("encoding as max rows");
             let pb = MaxRowsExecNode {
                 max_rows: max.max_rows as u64,
             };
             pb.encode(buf)
                 .map_err(|e| internal_datafusion_err!("can't encode max rows pb: {e}"))?;
 
-            println!("encoded into: {:?}", buf);
             Ok(())
         } else {
             internal_err!("Not supported")
