@@ -50,17 +50,14 @@ class RayDataFrame:
     def stages(self):
         # create our coordinator now, which we need to create stages
         if not self._stages:
+            self._stages = self.df.stages(self.batch_size, self.isolate_partitions)
+
             self.coord = RayStageCoordinator.options(
                 name="RayQueryCoordinator:" + self.coordinator_id,
-            ).remote(self.coordinator_id)
+            ).remote(self.coordinator_id, len(self._stages))
 
-            print("getting exchanger")
-            exchanger = ray.get(self.coord.get_exchanger.remote())
-            print("calling serve")
-            exchanger.serve.remote()
-            print("called serve")
-
-            self._stages = self.df.stages(self.batch_size, self.isolate_partitions)
+            ray.get(self.coord.start_up.remote())
+            print("ray coord started up")
         return self._stages
 
     def execution_plan(self):
@@ -72,17 +69,22 @@ class RayDataFrame:
             self.stages()
             t2 = time.time()
             print(f"creating stages took {t2 -t1}s")
-            # let this call execute
-            ref = self.coord.get_exchanger_addr.remote()
+
+            last_stage = max([stage.stage_id for stage in self._stages])
+
+            ref = self.coord.get_exchanger_addr.remote(last_stage)
             self.create_ray_stages()
             t3 = time.time()
             print(f"creating ray stage actors took {t3 -t2}s")
             self.run_stages()
             # now collect the result
             addr = ray.get(ref)
+            print(
+                "addr = ",
+            )
 
             print("calling df execute")
-            reader = self.df.execute(addr)
+            reader = self.df.execute({last_stage: addr})
             print("called df execute, got reader")
             self._batches = list(reader)
             self.coord.all_done.remote()
@@ -114,6 +116,7 @@ class RayDataFrame:
                         refs.append(
                             self.coord.new_stage.remote(
                                 stage.stage_id,
+                                stage.input_stage_ids,
                                 stage.plan_bytes(),
                                 shadow_partition,
                                 1.0 / num_shadows,
@@ -123,14 +126,20 @@ class RayDataFrame:
                 else:
                     refs.append(
                         self.coord.new_stage.remote(
-                            stage.stage_id, stage.plan_bytes(), bucket=self.bucket
+                            stage.stage_id,
+                            stage.input_stage_ids,
+                            stage.plan_bytes(),
+                            bucket=self.bucket,
                         )
                     )
         else:
             print("creating stages")
             refs = [
                 self.coord.new_stage.remote(
-                    stage.stage_id, stage.plan_bytes(), bucket=self.bucket
+                    stage.stage_id,
+                    stage.input_stage_ids,
+                    stage.plan_bytes(),
+                    bucket=self.bucket,
                 )
                 for stage in self.stages()
             ]
@@ -185,24 +194,36 @@ class RayContext:
 
 @ray.remote(num_cpus=0)
 class RayStageCoordinator:
-    def __init__(self, coordinator_id: str) -> None:
+    def __init__(self, coordinator_id: str, num_stages: int) -> None:
         self.my_id = coordinator_id
         self.stages = {}
-        self.exchanger = RayExchanger.remote()
-        self.exchange_addr = ray.get(self.exchanger.addr.remote())
+        self.num_stages = num_stages
         self.runtime_env = {}
+
+    def start_up(self):
         self.determine_environment()
+        print(f"Coordinator staring up {self.num_stages} exchangers")
+        self.exchanges = {
+            i: RayExchanger.remote(f"Stage {i}") for i in range(self.num_stages)
+        }
 
-    def get_exchanger(self):
-        return self.exchanger
+        refs = [exchange.start_up.remote() for exchange in self.exchanges.values()]
+        # ensure we've done the necessary initialization before continuing
+        ray.wait(refs, num_returns=len(refs))
+        print("all exchanges started up")
 
-    def get_exchanger_addr(self):
-        return self.exchange_addr
+        for exchange in self.exchanges.values():
+            # don't wait for these to complete
+            exchange.serve.remote()
+
+    def get_exchanger_addr(self, stage_num: int):
+        return ray.get(self.exchanges[stage_num].addr.remote())
 
     def all_done(self):
-        print("calling exchanger all done")
-        ray.get(self.exchanger.all_done.remote())
-        print("done exchanger all done")
+        print("calling exchangers all done")
+        refs = [self.exchanges[i].all_done.remote() for i in range(self.num_stages)]
+        ray.wait(refs, num_returns=len(refs))
+        print("done exchangers all done")
 
     def determine_environment(self):
         env_keys = "AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_REGION AWS_SESSION_TOKEN".split()
@@ -214,7 +235,8 @@ class RayStageCoordinator:
 
     def new_stage(
         self,
-        stage_id: str,
+        stage_id: int,
+        input_stage_ids: list[int],
         plan_bytes: bytes,
         shadow_partition=None,
         fraction=1.0,
@@ -223,10 +245,16 @@ class RayStageCoordinator:
         stage_key = f"{stage_id}-{shadow_partition}"
         print(f"creating new stage {stage_key} from bytes {len(plan_bytes)}")
         try:
-            print("addr is ", self.exchange_addr)
             if stage_key in self.stages:
                 print(f"already started stage {stage_key}")
                 return self.stages[stage_key]
+
+            exchange_addr = ray.get(self.exchanges[stage_id].addr.remote())
+
+            input_exchange_addrs = {
+                input_stage_id: ray.get(self.exchanges[input_stage_id].addr.remote())
+                for input_stage_id in input_stage_ids
+            }
 
             print(f"creating new stage {stage_key} from bytes {len(plan_bytes)}")
             stage = RayStage.options(
@@ -235,7 +263,8 @@ class RayStageCoordinator:
             ).remote(
                 stage_id,
                 plan_bytes,
-                self.exchange_addr,
+                exchange_addr,
+                input_exchange_addrs,
                 fraction,
                 shadow_partition,
                 bucket,
@@ -251,8 +280,14 @@ class RayStageCoordinator:
     def run_stages(self):
         print("running stages")
         try:
-            for stage_id, stage in self.stages.items():
-                stage.execute.remote()
+            refs = [stage.execute.remote() for stage in self.stages.values()]
+            print("running stages")
+            while len(refs) > 0:
+                finished, refs = ray.wait(refs, num_returns=1)
+                # this stage id is done, tell its exchange
+                stage_id = ray.get(finished[0])
+                print(f"{stage_id} is finished")
+
         except Exception as e:
             print(
                 f"RayQueryCoordinator[{self.my_id}] Unhandled Exception in run stages! {e}"
@@ -267,6 +302,7 @@ class RayStage:
         stage_id: str,
         plan_bytes: bytes,
         exchanger_addr: str,
+        input_exchange_addrs: dict[int, str],
         fraction: float,
         shadow_partition=None,
         bucket: str | None = None,
@@ -274,11 +310,21 @@ class RayStage:
 
         from datafusion_ray._datafusion_ray_internal import PyStage
 
-        self.stage_id = stage_id
-        self.pystage = PyStage(
-            stage_id, plan_bytes, exchanger_addr, shadow_partition, bucket, fraction
-        )
-        self.shadow_partition = shadow_partition
+        try:
+            self.stage_id = stage_id
+            self.pystage = PyStage(
+                stage_id,
+                plan_bytes,
+                exchanger_addr,
+                input_exchange_addrs,
+                shadow_partition,
+                bucket,
+                fraction,
+            )
+            self.shadow_partition = shadow_partition
+        except Exception as e:
+            print(f"RayStage[{self.stage_id}] Unhandled Exception in init: {e}!")
+            raise
 
     def execute(self):
         shadow = (
@@ -293,14 +339,18 @@ class RayStage:
                 f"RayStage[{self.stage_id}{shadow}] Unhandled Exception in execute: {e}!"
             )
             raise e
+        return self.stage_id
 
 
 @ray.remote(num_cpus=0)
 class RayExchanger:
-    def __init__(self):
+    def __init__(self, name: str):
         from datafusion_ray._datafusion_ray_internal import PyExchange
 
-        self.exchange = PyExchange()
+        self.exchange = PyExchange(name)
+
+    def start_up(self):
+        self.exchange.start_up()
 
     def addr(self):
         return self.exchange.addr()

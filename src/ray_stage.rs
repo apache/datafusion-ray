@@ -6,18 +6,17 @@ use datafusion::physical_plan::{DisplayAs, DisplayFormatType, ExecutionPlan, Pla
 use datafusion::{arrow::datatypes::SchemaRef, execution::SendableRecordBatchStream};
 use pyo3::prelude::*;
 
-
 #[derive(Debug)]
 pub struct RayStageExec {
     /// Input plan
     pub(crate) input: Arc<dyn ExecutionPlan>,
     /// Output partitioning
     properties: PlanProperties,
-    pub stage_id: String,
+    pub stage_id: usize,
 }
 
 impl RayStageExec {
-    pub fn new(input: Arc<dyn ExecutionPlan>, stage_id: String) -> Self {
+    pub fn new(input: Arc<dyn ExecutionPlan>, stage_id: usize) -> Self {
         let properties = input.properties().clone();
 
         Self {

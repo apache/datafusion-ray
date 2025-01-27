@@ -45,7 +45,6 @@ use pyo3::prelude::*;
 
 use parking_lot::Mutex;
 
-//use async_channel::{bounded, Receiver, Sender};
 use tokio::sync::mpsc::{channel, Receiver, Sender};
 
 use crate::flight::{FlightHandler, FlightServ};
@@ -147,7 +146,7 @@ impl<T> Exchange<T> {
             let mut receivers = self.receivers.lock();
             let mut dones = self.dones.lock();
 
-            let (sender, receiver) = channel(10); // TODO: what size?
+            let (sender, receiver) = channel(100); // TODO: what size?
             senders.insert(key, sender);
             receivers.insert(key, receiver);
             dones.insert(key, Decimal::zero());
@@ -362,7 +361,9 @@ impl FlightHandler for Exchange<RecordBatch> {
 
 #[pyclass]
 pub struct PyExchange {
+    name: String,
     listener: Option<TcpListener>,
+    addr: Option<String>,
     all_done_tx: Arc<Mutex<Sender<()>>>,
     all_done_rx: Option<Receiver<()>>,
 }
@@ -370,29 +371,42 @@ pub struct PyExchange {
 #[pymethods]
 impl PyExchange {
     #[new]
-    pub fn new(py: Python) -> PyResult<Self> {
-        let my_local_ip = local_ip().to_py_err()?;
-        let my_host_str = format!("{my_local_ip}:0");
-        let listener = Some(wait_for_future(py, TcpListener::bind(&my_host_str)).to_py_err()?);
+    pub fn new(name: String) -> PyResult<Self> {
+        let listener = None;
+        let addr = None;
 
         let (all_done_tx, all_done_rx) = channel(1);
         let all_done_tx = Arc::new(Mutex::new(all_done_tx));
 
         Ok(Self {
+            name,
             listener,
+            addr,
             all_done_tx,
             all_done_rx: Some(all_done_rx),
         })
     }
 
+    /// bind the listener to a socket.  This method must complete
+    /// before any other methods are called.   This is separate
+    /// from new() because Ray does not let you wait (AFAICT) on Actor inits to complete
+    pub fn start_up(&mut self, py: Python) -> PyResult<()> {
+        let my_local_ip = local_ip().to_py_err()?;
+        let my_host_str = format!("{my_local_ip}:0");
+        self.listener = Some(wait_for_future(py, TcpListener::bind(&my_host_str)).to_py_err()?);
+
+        self.addr = Some(format!(
+            "{}",
+            self.listener.as_ref().unwrap().local_addr().unwrap()
+        ));
+
+        Ok(())
+    }
+
     pub fn addr(&self) -> PyResult<String> {
-        self.listener
-            .as_ref()
-            .map(|l| l.local_addr().map(|addr| format!("{addr}")))
-            .transpose()
-            .to_py_err()?
-            .ok_or_else(|| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>("listener not bound"))
-            .to_py_err()
+        self.addr
+            .clone()
+            .ok_or_else(|| PyErr::new::<pyo3::exceptions::PyException, _>("Couldn't get addr"))
     }
 
     pub fn all_done<'a>(&self, py: Python<'a>) -> PyResult<Bound<'a, PyAny>> {
@@ -407,24 +421,26 @@ impl PyExchange {
 
     fn serve<'a>(&mut self, py: Python<'a>) -> PyResult<Bound<'a, PyAny>> {
         // TODO: what channel size?
-        let (stats_sender, stats_receiver) = channel(10);
+        let (stats_sender, stats_receiver) = channel(100);
         let exchange_stats = ExchangeStats::new(stats_receiver);
 
         let exchange = Arc::new(Exchange::new(stats_sender));
 
         let mut all_done_rx = self.all_done_rx.take().unwrap();
 
+        let name = self.name.clone();
         let signal = async move {
             // TODO: handle Result
-            println!("awaiting the done signal");
+            println!("Exchange[{}] awaiting the done signal", name);
             let result = all_done_rx.recv().await;
-            println!("got done signal {:?}", result);
+            println!("Exchange[{}] got done signal {:?}", name, result);
         };
 
+        let name = self.name.clone();
         let consume_fut = async move {
-            println!("consuming stats");
+            println!("Exchange[{}] consuming stats", name);
             let stats = exchange_stats.consume_stats().await;
-            println!("got stats:\n{}", format_stats(&stats));
+            println!("Exchange[{}] got stats:\n{}", name, format_stats(&stats));
             Ok::<(), PyErr>(())
         };
 
@@ -436,8 +452,9 @@ impl PyExchange {
 
         let listener = self.listener.take().unwrap();
 
+        let name = self.name.clone();
         let serv = async move {
-            println!("PyExchange Serving");
+            println!("Exchange[{}] Serving", name);
             Server::builder()
                 .add_service(svc)
                 .serve_with_incoming_shutdown(
@@ -447,13 +464,14 @@ impl PyExchange {
                 .await
                 .map_err(|e| PyErr::new::<pyo3::exceptions::PyException, _>(format!("{e}")))?;
             exchange.shutdown();
-            println!("PyExchange DONE serving");
+            println!("Exchange[{}] DONE serving", name);
             Ok(())
         };
 
+        let name = self.name.clone();
         let fut = async move {
             try_join(consume_fut, serv).await?;
-            println!("both futures done. all joined");
+            println!("Exchange[{}] both futures done. all joined", name);
             Ok(())
         };
 

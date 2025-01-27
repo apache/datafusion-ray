@@ -36,6 +36,7 @@ use datafusion_python::utils::wait_for_future;
 use futures::stream::StreamExt;
 use pyo3::prelude::*;
 use std::borrow::Cow;
+use std::collections::HashMap;
 use std::sync::Arc;
 use tonic::transport::Channel;
 
@@ -44,6 +45,7 @@ use crate::max_rows::MaxRowsExec;
 use crate::pystage::ExchangeFlightClient;
 use crate::ray_stage::RayStageExec;
 use crate::ray_stage_reader::RayStageReaderExec;
+use crate::util::make_client;
 use crate::util::physical_plan_to_bytes;
 use crate::util::ResultExt;
 
@@ -105,7 +107,7 @@ impl RayDataFrame {
 
                 let replacement = Arc::new(RayStageReaderExec::try_new_from_input(
                     input.clone(),
-                    stage_exec.stage_id.clone(),
+                    stage_exec.stage_id,
                     self.coordinator_id.clone(),
                 )?) as Arc<dyn ExecutionPlan>;
 
@@ -126,7 +128,7 @@ impl RayDataFrame {
 
                 let fixed_plan = input.clone().transform_down(down)?.data;
 
-                let stage = PyDataFrameStage::new(stage_exec.stage_id.clone(), fixed_plan);
+                let stage = PyDataFrameStage::new(stage_exec.stage_id, fixed_plan);
 
                 stages.push(stage);
                 Ok(Transformed::no(plan))
@@ -174,7 +176,7 @@ impl RayDataFrame {
 
         let reader_plan = Arc::new(RayStageReaderExec::try_new_from_input(
             last_stage.plan.clone(),
-            last_stage.stage_id.clone(),
+            last_stage.stage_id,
             self.coordinator_id.clone(),
         )?) as Arc<dyn ExecutionPlan>;
 
@@ -193,28 +195,23 @@ impl RayDataFrame {
         Ok(PyExecutionPlan::new(self.physical_plan.clone()))
     }
 
-    pub fn execute(&self, py: Python, exchange_addr: String) -> PyResult<PyRecordBatchStream> {
+    pub fn execute(
+        &self,
+        py: Python,
+        in_exchange_addrs: HashMap<usize, String>,
+    ) -> PyResult<PyRecordBatchStream> {
         // TODO: consolidate this code
+        //
+        let in_client_map: HashMap<usize, FlightClient> = in_exchange_addrs
+            .iter()
+            .map(|(stage_num, addr)| {
+                let client = make_client(py, addr).to_py_err()?;
+                Ok::<_, PyErr>((stage_num.clone(), client))
+            })
+            .collect::<Result<HashMap<_, _>, PyErr>>()?;
 
-        let url = format!("http://{exchange_addr}");
-
-        let chan = Channel::from_shared(url).to_py_err()?;
-        let fut = async {
-            let connect = chan.connect();
-            connect.await
-        };
-        let channel = match wait_for_future(py, fut) {
-            Ok(channel) => channel,
-            _ => {
-                return Err(pyo3::exceptions::PyException::new_err(
-                    "error connecting to exchange".to_string(),
-                ));
-            }
-        };
-
-        let client = FlightClient::new(channel);
-
-        let config = SessionConfig::new().with_extension(Arc::new(ExchangeFlightClient(client)));
+        let config =
+            SessionConfig::new().with_extension(Arc::new(ExchangeFlightClient(in_client_map)));
 
         let state = SessionStateBuilder::new()
             .with_default_features()
@@ -241,11 +238,11 @@ impl RayDataFrame {
 
 #[pyclass]
 pub struct PyDataFrameStage {
-    stage_id: String,
+    stage_id: usize,
     plan: Arc<dyn ExecutionPlan>,
 }
 impl PyDataFrameStage {
-    fn new(stage_id: String, plan: Arc<dyn ExecutionPlan>) -> Self {
+    fn new(stage_id: usize, plan: Arc<dyn ExecutionPlan>) -> Self {
         Self { stage_id, plan }
     }
 }
@@ -253,8 +250,8 @@ impl PyDataFrameStage {
 #[pymethods]
 impl PyDataFrameStage {
     #[getter]
-    fn stage_id(&self) -> &str {
-        &self.stage_id
+    fn stage_id(&self) -> usize {
+        self.stage_id
     }
     pub fn num_output_partitions(&self) -> usize {
         self.plan.output_partitioning().partition_count()
@@ -277,6 +274,20 @@ impl PyDataFrameStage {
                 Ok(Transformed::no(node))
             });
         result
+    }
+
+    #[getter]
+    pub fn input_stage_ids(&self) -> PyResult<Vec<usize>> {
+        let mut result = vec![];
+        self.plan
+            .clone()
+            .transform_down(|node: Arc<dyn ExecutionPlan>| {
+                if let Some(reader) = node.as_any().downcast_ref::<RayStageReaderExec>() {
+                    result.push(reader.stage_id);
+                }
+                Ok(Transformed::no(node))
+            })?;
+        Ok(result)
     }
 
     pub fn execution_plan(&self) -> PyExecutionPlan {

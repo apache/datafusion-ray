@@ -35,6 +35,7 @@ def main(
     batch_size: int,
     isolate_partitions: bool,
     listing_tables: bool,
+    validate: bool,
 ):
 
     # Register the tables
@@ -98,9 +99,6 @@ def main(
             f"select * from tpch_queries() where query_nr=?", params=(qnum,)
         ).df()["query"][0]
 
-        # jump through some hoops to get an answer batch to compare to
-        answer_batches = local_ctx.sql(sql).collect()
-
         print("executing ", sql)
 
         df = ctx.sql(sql)
@@ -116,15 +114,15 @@ def main(
         end_time = time.time()
 
         calculated = prettify(batches)
-        expected = prettify(answer_batches)
-
         print(calculated)
-        if not calculated == expected:
-            # ugh this doesn't work as I wanted.  The duckdb stringified versions
-            # of the answers don't format the output the same
-            print(f"Possible wrong answer for TPCH query {qnum}")
-            print(expected)
-            raise Exception("Wrong answer")
+        if validate:
+            answer_batches = local_ctx.sql(sql).collect()
+            expected = prettify(answer_batches)
+
+            if not calculated == expected:
+                print(f"Possible wrong answer for TPCH query {qnum}")
+                print(expected)
+                raise Exception("Wrong answer")
         results["queries"][qnum] = [end_time - start_time + part1]
 
     results = json.dumps(results, indent=4)
@@ -151,6 +149,7 @@ if __name__ == "__main__":
     parser.add_argument("--isolate", action="store_true")
     parser.add_argument("--qnum", type=int, default=-1, help="TPCH query number, 1-22")
     parser.add_argument("--listing-tables", action="store_true")
+    parser.add_argument("--validate", action="store_true")
     parser.add_argument(
         "--batch-size",
         required=False,
@@ -166,4 +165,5 @@ if __name__ == "__main__":
         int(args.batch_size),
         args.isolate,
         args.listing_tables,
+        args.validate,
     )

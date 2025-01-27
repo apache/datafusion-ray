@@ -23,14 +23,14 @@ use crate::pystage::ExchangeFlightClient;
 pub struct RayStageReaderExec {
     properties: PlanProperties,
     schema: SchemaRef,
-    pub stage_id: String,
+    pub stage_id: usize,
     pub coordinator_id: String,
 }
 
 impl RayStageReaderExec {
     pub fn try_new_from_input(
         input: Arc<dyn ExecutionPlan>,
-        stage_id: String,
+        stage_id: usize,
         coordinator_id: String,
     ) -> Result<Self> {
         let properties = input.properties().clone();
@@ -46,7 +46,7 @@ impl RayStageReaderExec {
     pub fn try_new(
         partitioning: Partitioning,
         schema: SchemaRef,
-        stage_id: String,
+        stage_id: usize,
         coordinator_id: String,
     ) -> Result<Self> {
         let properties = PlanProperties::new(
@@ -102,7 +102,6 @@ impl ExecutionPlan for RayStageReaderExec {
         unimplemented!()
     }
 
-    /// We will have to defer this functionality to python as Ray does not yet have Rust bindings.
     fn execute(
         &self,
         partition: usize,
@@ -112,24 +111,24 @@ impl ExecutionPlan for RayStageReaderExec {
             "RayStageReaderExec[{}-{}] execute",
             self.stage_id, partition
         );
-        let inner = context
+        let in_client_map = &context
             .session_config()
             .get_extension::<ExchangeFlightClient>()
             .ok_or(internal_datafusion_err!("Flight Client not in context"))?
-            .0
-            .inner()
-            .clone();
+            .clone()
+            .0;
 
-        let mut client = FlightClient::new_from_inner(inner);
-
-        let stage_num = self
-            .stage_id
-            .parse::<u32>()
-            .map_err(|e| internal_datafusion_err!("Failed to parse stage id: {}", e))?;
+        let mut client = in_client_map
+            .get(&self.stage_id)
+            .map(|flight_client| FlightClient::new_from_inner(flight_client.inner().clone()))
+            .ok_or(internal_datafusion_err!(
+                "Flight Client not found for stage {}",
+                self.stage_id
+            ))?;
 
         let meta = StreamMeta {
-            stage_num,
-            partition_num: partition as u32,
+            stage_id: self.stage_id as u64,
+            partition: partition as u64,
             fraction: Decimal::zero().to_string(), // not used in this context
         };
 

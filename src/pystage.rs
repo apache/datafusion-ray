@@ -1,6 +1,7 @@
 use crate::isolator::{PartitionIsolatorExec, ShadowPartitionNumber};
 use crate::protobuf::StreamMeta;
-use crate::util::{bytes_to_physical_plan, physical_plan_to_bytes, ResultExt};
+use crate::ray_stage_reader::RayStageReaderExec;
+use crate::util::{bytes_to_physical_plan, make_client, physical_plan_to_bytes, ResultExt};
 use arrow::datatypes::Schema;
 use arrow::pyarrow::PyArrowType;
 use arrow::util::pretty::pretty_format_batches;
@@ -19,10 +20,8 @@ use object_store::aws::AmazonS3Builder;
 use prost::Message;
 use rust_decimal::prelude::*;
 use std::borrow::Cow;
-use std::future::Future;
+use std::collections::HashMap;
 use std::sync::Arc;
-use tokio::{join, try_join};
-use tonic::transport::Channel;
 use url::Url;
 
 use datafusion::execution::{SessionStateBuilder, TaskContext};
@@ -34,13 +33,14 @@ use pyo3::prelude::*;
 
 use anyhow::Result;
 
-pub struct ExchangeFlightClient(pub FlightClient);
+pub struct ExchangeFlightClient(pub HashMap<usize, FlightClient>);
 
 #[pyclass]
 pub struct PyStage {
-    client: FlightClient,
+    name: String,
+    out_client: FlightClient,
     #[pyo3(get)]
-    stage_id: String,
+    stage_id: usize,
     pub(crate) plan: Arc<dyn ExecutionPlan>,
     ctx: SessionContext,
     fraction: f64,
@@ -50,37 +50,37 @@ pub struct PyStage {
 #[pymethods]
 impl PyStage {
     #[new]
-    #[pyo3(signature = (stage_id, plan_bytes, exchange_addr, shadow_partition_number=None, bucket=None, fraction=1.0))]
+    #[pyo3(signature = (stage_id, plan_bytes, out_exchange_addr, in_exchange_addrs, shadow_partition_number=None, bucket=None, fraction=1.0))]
     pub fn from_bytes(
         py: Python,
-        stage_id: String,
+        stage_id: usize,
         plan_bytes: Vec<u8>,
-        exchange_addr: String,
+        out_exchange_addr: String,
+        in_exchange_addrs: HashMap<usize, String>,
         shadow_partition_number: Option<usize>,
         bucket: Option<String>,
         fraction: f64,
     ) -> PyResult<Self> {
-        let url = format!("http://{exchange_addr}");
-
-        let chan = Channel::from_shared(url).to_py_err()?;
-        let fut = async { chan.connect().await };
-        let channel = match wait_for_future(py, fut) {
-            Ok(channel) => channel,
-            _ => {
-                return Err(pyo3::exceptions::PyException::new_err(
-                    "error connecting to exchange".to_string(),
-                ));
-            }
-        };
-
-        let client = FlightClient::new(channel);
+        let name = format!(
+            "PyStage[{}-{}]",
+            stage_id,
+            shadow_partition_number
+                .map(|s| s.to_string())
+                .unwrap_or("n/a".into())
+        );
+        let out_client = make_client(py, &out_exchange_addr)?;
 
         // make our own clone as FlightClient is not Clone, but inner is
-        let inner = client.inner().clone();
-        let client_clone = FlightClient::new_from_inner(inner);
+        let out_client_map: HashMap<usize, FlightClient> = in_exchange_addrs
+            .iter()
+            .map(|(stage_num, addr)| {
+                let client = make_client(py, addr).to_py_err()?;
+                Ok::<_, PyErr>((stage_num.clone(), client))
+            })
+            .collect::<Result<HashMap<_, _>, PyErr>>()?;
 
         let mut config =
-            SessionConfig::new().with_extension(Arc::new(ExchangeFlightClient(client_clone)));
+            SessionConfig::new().with_extension(Arc::new(ExchangeFlightClient(out_client_map)));
 
         // this only matters if the plan includes an PartitionIsolatorExec
         // and will be ignored otherwise
@@ -106,15 +106,16 @@ impl PyStage {
             println!("registered object store {s3_url}");
         }
 
-        println!("creating physical plan from bytes");
+        println!("{name} creating physical plan from bytes");
         let plan = bytes_to_physical_plan(&ctx, &plan_bytes).to_py_err()?;
         println!(
-            "created physical plan:\n{}",
+            "{name} created physical plan:\n{}",
             displayable(plan.as_ref()).indent(true)
         );
 
         Ok(Self {
-            client,
+            name,
+            out_client,
             stage_id,
             plan,
             ctx,
@@ -124,15 +125,15 @@ impl PyStage {
     }
 
     pub fn execute(&mut self, py: Python) -> PyResult<()> {
-        println!("PyStage[{}] executing", self.stage_id);
+        println!("{} executing", self.name);
 
         let futs = (0..self.num_output_partitions()).map(|partition| {
             let ctx = self.ctx.task_ctx();
             // make our own clone as FlightClient is not Clone, but inner is
-            let inner = self.client.inner().clone();
+            let inner = self.out_client.inner().clone();
             let client_clone = FlightClient::new_from_inner(inner);
             let plan = self.plan.clone();
-            let stage_id = self.stage_id.clone();
+            let stage_id = self.stage_id;
             let fraction = self.fraction;
             let shadow_partition_number = self.shadow_partition_number;
 
@@ -147,12 +148,12 @@ impl PyStage {
             ))
         });
 
-        let stage_id = self.stage_id.clone();
+        let name = self.name.clone();
         let fut = async {
             match try_join_all(futs).await {
                 Ok(_) => Ok(()),
                 Err(e) => {
-                    println!("PyStage[{stage_id}] ERROR executing {e}");
+                    println!("{name}:ERROR executing {e}");
                     Err(e)
                 }
             }
@@ -163,25 +164,6 @@ impl PyStage {
 
     pub fn num_output_partitions(&self) -> usize {
         self.plan.output_partitioning().partition_count()
-    }
-
-    /// How many partitions are we shadowing if at all
-    pub fn num_shadow_partitions(&self) -> Option<usize> {
-        let mut result = None;
-        self.plan
-            .clone()
-            .transform_down(|node: Arc<dyn ExecutionPlan>| {
-                if let Some(isolator) = node.as_any().downcast_ref::<PartitionIsolatorExec>() {
-                    let children = isolator.children();
-                    if children.len() != 1 {
-                        return internal_err!("PartitionIsolatorExec must have exactly one child");
-                    }
-                    result = Some(children[0].output_partitioning().partition_count());
-                    //TODO: break early
-                }
-                Ok(Transformed::no(node))
-            });
-        result
     }
 
     pub fn execution_plan(&self) -> PyExecutionPlan {
@@ -200,7 +182,7 @@ impl PyStage {
 }
 
 pub async fn consume_stage(
-    stage_id: String,
+    stage_id: usize,
     shadow_partition_number: Option<usize>,
     fraction: f64,
     ctx: Arc<TaskContext>,
@@ -225,8 +207,8 @@ pub async fn consume_stage(
         .to_string();
 
     let stream_meta = StreamMeta {
-        stage_num: stage_id.parse::<u32>()?,
-        partition_num: partition as u32,
+        stage_id: stage_id as u64,
+        partition: partition as u64,
         fraction,
     };
 

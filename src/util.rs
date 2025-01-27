@@ -10,7 +10,7 @@ use arrow::ipc::writer::{IpcWriteOptions, StreamWriter};
 use arrow::ipc::{root_as_message, MetadataVersion};
 use arrow::pyarrow::*;
 use arrow::util::pretty;
-use arrow_flight::{FlightData, Ticket};
+use arrow_flight::{FlightClient, FlightData, Ticket};
 use async_stream::stream;
 use datafusion::common::internal_datafusion_err;
 use datafusion::error::DataFusionError;
@@ -19,10 +19,12 @@ use datafusion::physical_plan::stream::RecordBatchStreamAdapter;
 use datafusion::physical_plan::ExecutionPlan;
 use datafusion::prelude::SessionContext;
 use datafusion_proto::physical_plan::AsExecutionPlan;
+use datafusion_python::utils::wait_for_future;
 use futures::StreamExt;
 use pyo3::prelude::*;
 use pyo3::types::{PyBytes, PyList};
 use rust_decimal::prelude::*;
+use tonic::transport::Channel;
 
 use crate::codec::RayCodec;
 use crate::protobuf::StreamMeta;
@@ -128,8 +130,8 @@ pub fn extract_stream_meta(flight_data: &FlightData) -> anyhow::Result<(usize, u
 
     let stream_meta = StreamMeta::decode(cmd)?;
     Ok((
-        stream_meta.stage_num as usize,
-        stream_meta.partition_num as usize,
+        stream_meta.stage_id as usize,
+        stream_meta.partition as usize,
         Decimal::from_str(&stream_meta.fraction)?,
     ))
 }
@@ -139,8 +141,8 @@ pub fn extract_ticket(ticket: Ticket) -> anyhow::Result<(usize, usize, Decimal)>
 
     let stream_meta = StreamMeta::decode(data)?;
     Ok((
-        stream_meta.stage_num as usize,
-        stream_meta.partition_num as usize,
+        stream_meta.stage_id as usize,
+        stream_meta.partition as usize,
         Decimal::from_str(&stream_meta.fraction)?,
     ))
 }
@@ -201,6 +203,24 @@ pub fn prettify(batches: Bound<'_, PyList>) -> PyResult<String> {
         .to_py_err()
         .map(|d| d.to_string())
         .to_py_err()
+}
+
+pub fn make_client(py: Python, exchange_addr: &str) -> PyResult<FlightClient> {
+    let url = format!("http://{exchange_addr}");
+
+    let chan = Channel::from_shared(url).to_py_err()?;
+    let fut = async { chan.connect().await };
+    let channel = match wait_for_future(py, fut) {
+        Ok(channel) => channel,
+        _ => {
+            return Err(pyo3::exceptions::PyException::new_err(
+                "error connecting to exchange".to_string(),
+            ));
+        }
+    };
+
+    let flight_client = FlightClient::new(channel);
+    Ok(flight_client)
 }
 
 #[cfg(test)]
