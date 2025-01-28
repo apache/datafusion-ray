@@ -215,7 +215,7 @@ class RayStageCoordinator:
 
     def start_up(self):
         self.determine_environment()
-        print(f"Coordinator staring up {self.num_stages} exchangers")
+        print(f"Coordinator starting up {self.num_exchangers} exchangers")
 
         self.xs = [
             RayExchanger.remote(f"Exchanger #{i}") for i in range(self.num_exchangers)
@@ -224,23 +224,25 @@ class RayStageCoordinator:
         stages_per_exchanger = max(1, self.num_stages // self.num_exchangers)
         print("Stages per exchanger: ", stages_per_exchanger)
 
-        self.exchanges = {}
-        for i in range(self.num_stages):
-            exchanger_i = min(len(self.xs) - 1, i // stages_per_exchanger)
-            print("exchanger_i = ", exchanger_i)
-            self.exchanges[i] = self.xs[exchanger_i]
-
         refs = [exchange.start_up.remote() for exchange in self.xs]
 
         # ensure we've done the necessary initialization before continuing
         ray.wait(refs, num_returns=len(refs))
         print("all exchanges started up")
 
+        self.exchanges = {}
+        self.exchange_addrs = {}
+        for i in range(self.num_stages):
+            exchanger_i = min(len(self.xs) - 1, i // stages_per_exchanger)
+            print("exchanger_i = ", exchanger_i)
+            self.exchanges[i] = self.xs[exchanger_i]
+            self.exchange_addrs[i] = ray.get(self.xs[exchanger_i].addr.remote())
+
         # don't wait for these
         [exchange.serve.remote() for exchange in self.xs]
 
     def get_exchanger_addr(self, stage_num: int):
-        return ray.get(self.exchanges[stage_num].addr.remote())
+        return self.exchange_addrs[stage_num]
 
     def all_done(self):
         print("calling exchangers all done")
@@ -271,10 +273,10 @@ class RayStageCoordinator:
                 print(f"already started stage {stage_key}")
                 return self.stages[stage_key]
 
-            exchange_addr = ray.get(self.exchanges[stage_id].addr.remote())
+            exchange_addr = self.exchange_addrs[stage_id]
 
             input_exchange_addrs = {
-                input_stage_id: ray.get(self.exchanges[input_stage_id].addr.remote())
+                input_stage_id: self.exchange_addrs[input_stage_id]
                 for input_stage_id in input_stage_ids
             }
 
@@ -302,19 +304,25 @@ class RayStageCoordinator:
     def run_stages(self):
         print("running stages")
         try:
+            #
+            # Leaving out for now as I'm unsure how this interacts with https://github.com/ray-project/ray/issues/3644
+            #
             # place holder for limiting the number of pending tasks
-            MAX_NUM_PENDING_TASKS = 1e9
-            refs = []
-            stages = list(self.stages.items())
+            # MAX_NUM_PENDING_TASKS = 1e9
+            # refs = []
+            # stages = list(self.stages.items())
             # does .values preserve order? assuming so at the moment
             # todo, ultimately we need a DAG for this
-            for i in range(len(stages)):
-                if len(refs) > MAX_NUM_PENDING_TASKS:
-                    _, refs = ray.wait(refs, num_returns=1)
+            # for i in range(len(stages)):
+            #    if len(refs) > MAX_NUM_PENDING_TASKS:
+            #        _, refs = ray.wait(refs, num_returns=1)
 
-                stage_key, stage = stages[i]
+            #    stage_key, stage = stages[i]
+            #    print(f"Scheduling stage {stage_key}")
+            #    refs.append(stage.execute.remote())
+            for stage_key, stage in self.stages.items():
                 print(f"Scheduling stage {stage_key}")
-                refs.append(stage.execute.remote())
+                stage.execute.remote()
 
         except Exception as e:
             print(
@@ -371,6 +379,7 @@ class RayStage:
             if self.shadow_partition is not None
             else ""
         )
+        print(f"RayStage[{self.stage_id}{shadow}] commencing execution")
         try:
             self.pystage.execute()
         except Exception as e:

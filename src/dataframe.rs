@@ -150,6 +150,7 @@ impl RayDataFrame {
                         as Arc<dyn ExecutionPlan>,
                     max_rows,
                 )) as Arc<dyn ExecutionPlan>;
+
                 Ok(Transformed::yes(replacement))
             } else {
                 Ok(Transformed::no(plan))

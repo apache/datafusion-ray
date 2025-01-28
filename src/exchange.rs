@@ -16,19 +16,21 @@
 // under the License.
 
 use std::collections::{HashMap, HashSet};
+use std::error::Error;
 use std::sync::Arc;
 
 use anyhow::Result;
 
 use arrow::array::RecordBatch;
+use arrow::error::ArrowError;
 use arrow_flight::encode::FlightDataEncoderBuilder;
 use arrow_flight::error::FlightError;
 use arrow_flight::utils::flight_data_to_arrow_batch;
 use async_stream::stream;
 use datafusion::common::internal_datafusion_err;
 use datafusion_python::utils::wait_for_future;
-use futures::future::try_join;
-use futures::TryStreamExt;
+use futures::future::{try_join, TryFutureExt};
+use futures::{TryStream, TryStreamExt};
 use local_ip_address::local_ip;
 use rust_decimal::prelude::*;
 use tokio::net::TcpListener;
@@ -44,11 +46,15 @@ use arrow_flight::{flight_service_server::FlightServiceServer, FlightData, PutRe
 use pyo3::prelude::*;
 
 use parking_lot::Mutex;
+use tokio::sync::Mutex as TokioMutex;
 
 use tokio::sync::mpsc::{channel, Receiver, Sender};
 
 use crate::flight::{FlightHandler, FlightServ};
-use crate::util::{extract_stream_meta, extract_ticket, flight_data_to_schema, ResultExt};
+use crate::util::{
+    extract_stream_meta, extract_ticket, flight_data_to_schema, lag_reporting_stream,
+    report_on_lag, ResultExt,
+};
 
 #[derive(Hash, PartialEq, Eq, Copy, Clone)]
 struct PartitionKey {
@@ -124,7 +130,10 @@ pub struct Exchange<T> {
     receivers: Arc<Mutex<HashMap<PartitionKey, Receiver<T>>>>,
     created: Arc<Mutex<HashSet<PartitionKey>>>,
     dones: Arc<Mutex<HashMap<PartitionKey, Decimal>>>,
-    stats_sender: Arc<Mutex<Option<Sender<Stats>>>>,
+
+    /// sender channel for stats.  As we need to use a clone of this
+    /// sent across stream boundaries, we need an async Mutex
+    stats_sender: Arc<TokioMutex<Option<Sender<Stats>>>>,
 }
 
 impl<T> Exchange<T> {
@@ -134,7 +143,7 @@ impl<T> Exchange<T> {
             receivers: Arc::new(Mutex::new(HashMap::new())),
             created: Arc::new(Mutex::new(HashSet::new())),
             dones: Arc::new(Mutex::new(HashMap::new())),
-            stats_sender: Arc::new(Mutex::new(Some(stats_sender))),
+            stats_sender: Arc::new(TokioMutex::new(Some(stats_sender))),
         }
     }
 
@@ -146,7 +155,7 @@ impl<T> Exchange<T> {
             let mut receivers = self.receivers.lock();
             let mut dones = self.dones.lock();
 
-            let (sender, receiver) = channel(100); // TODO: what size?
+            let (sender, receiver) = channel(1000); // TODO: what size?
             senders.insert(key, sender);
             receivers.insert(key, receiver);
             dones.insert(key, Decimal::zero());
@@ -154,9 +163,9 @@ impl<T> Exchange<T> {
         }
     }
 
-    fn shutdown(&self) {
+    async fn shutdown(&self) {
         println!("shutdown stats sending channel");
-        self.stats_sender.lock().take();
+        self.stats_sender.lock().await.take();
     }
 
     pub fn put(&self, stage_num: usize, partition_num: usize) -> DFResult<Sender<T>> {
@@ -206,19 +215,23 @@ impl FlightHandler for Exchange<RecordBatch> {
             .map_err(|e| Status::internal(format!("Unexpected error extracting ticket {e}")))?;
 
         let name = format!("[Exchange::get_stream {}:{}]", stage_num, partition_num);
+        let name_c = name.clone();
+        println!("{name} got request");
 
         let mut recv = self
             .get(stage_num, partition_num)
             .map_err(|e| Status::internal(format!("Unexpected error getting recv channel {e}")))?;
 
         let mut total_rows = 0;
-        let stats_sender = self
+        /*let stats_sender = self
             .stats_sender
             .lock()
+            .await
             .clone()
             .ok_or(Status::internal("expected stats_sender"))?;
-
+        */
         let stream = stream! {
+
             while let Some(batch) = recv.recv().await {
 
                 total_rows += batch.num_rows();
@@ -226,7 +239,7 @@ impl FlightHandler for Exchange<RecordBatch> {
                 yield Ok(batch);
 
             }
-            if let Err(e) = stats_sender.send(Stats{
+            /*if let Err(e) = stats_sender.send(Stats{
                 stage_num,
                 partition_num,
                 in_out: "out".to_string(),
@@ -236,12 +249,15 @@ impl FlightHandler for Exchange<RecordBatch> {
                 yield Err(FlightError::from_external_error(Box::new(
                     internal_datafusion_err!("error sending stats: {e}"))));
             }
-            println!("{}: snt {} total rows", name, total_rows);
+            println!("{}: snt {} total rows", name_c, total_rows);
+            */
 
         };
         let out_stream = FlightDataEncoderBuilder::new()
-            .build(stream)
+            .build(lag_reporting_stream(&name, stream))
             .map_err(|_| Status::internal("Unexpected error building stream {e}"));
+
+        println!("{name} sending response stream");
         Ok(Response::new(Box::pin(out_stream)))
     }
 
@@ -272,6 +288,7 @@ impl FlightHandler for Exchange<RecordBatch> {
             }?;
 
         let name = format!("[Exchange::put_stream {}:{}]", stage_num, partition_num);
+        println!("{name} got request");
 
         let dictionaries_by_id = HashMap::new();
         let mut total_rows = 0;
@@ -280,82 +297,92 @@ impl FlightHandler for Exchange<RecordBatch> {
             Status::internal(format!("{name} Unexpected error geting sender channel {e}"))
         })?;
 
-        // TODO spawn a task for this?
-        while let Some(flight_data) = flight_data_stream.next().await {
-            let flight_data = flight_data.map_err(|e| {
-                Status::internal(format!("{name} Unexpected error reading batch {e}"))
-            })?;
-
-            let batch =
-                flight_data_to_arrow_batch(&flight_data, schema.clone(), &dictionaries_by_id)
-                    .map_err(|e| {
-                        Status::internal(format!("{name} Unexpected error making batch {e}"))
-                    })?;
-
-            total_rows += batch.num_rows();
-            //println!("{}: writing {} to channel", name, batch.num_rows());
-            let res = sender.send(batch).await;
-
-            res.map_err(|e| {
-                Status::internal(format!("{name} Unexpected error sending record batch {e}"))
-            })?;
-        }
-        // ok now we're done, so mark our done fraction
-        let key = PartitionKey {
-            stage_num,
-            partition_num,
-        };
-
-        {
-            // block to calculate if we are done with this partition under mutex lock
-            let mut done_guard = self.dones.lock();
-
-            let mut done = done_guard
-                .remove(&key)
-                .ok_or(Status::internal("expected to find done fraction"))?;
-
-            done += done_fraction;
-
-            let done_str = format!("{:.5}", done.round_dp(6));
-            println!(
-                "{}: received {} total_rows, done = {}, done_fraction {}",
-                name, total_rows, done_str, done_fraction,
-            );
-
-            // crude rounding
-            if done_str == "1.00000" {
-                // we are done!
-                println!("{}: all done", name);
-                // remove the sender so all senders can be dropped and it will close the channel
-                self.senders.lock().remove(&key);
-            } else {
-                // still more partitions to report in
-                done_guard.insert(key, done);
-            }
-        }
-
-        let stats_sender = self
+        let dones = self.dones.clone();
+        let senders = self.senders.clone();
+        /*let stats_sender = self
             .stats_sender
             .lock()
+            .await
             .clone()
             .ok_or(Status::internal("expected stats_sender"))?;
+        */
+        let name_c = name.clone();
+        let out_stream = stream! {
+            println!("{name_c} put stream started");
+            while let Some(flight_data) = flight_data_stream.next().await {
+                let maybe_batch = flight_data.and_then(|fd| {
+                    flight_data_to_arrow_batch(&fd, schema.clone(), &dictionaries_by_id)
+                        .map_err(|e| Status::from_error(Box::new(e)))
+                });
+                let res = match maybe_batch {
+                    Ok(batch) => {
+                        total_rows += batch.num_rows();
+                        sender
+                            .send(batch)
+                            .await
+                            .map_err(|e| Status::from_error(Box::new(e)))
+                    }
+                    Err(e) => Err(e),
+                };
 
-        stats_sender
-            .send(Stats {
+                let out = res.map(|_|PutResult{app_metadata: vec![].into()});
+                yield out;
+            }
+
+            // Done with stream consumption, now do some house keeping
+            let key = PartitionKey {
                 stage_num,
                 partition_num,
-                in_out: "in".to_string(),
-                total_rows,
-                remote_addr,
-            })
-            .await
-            .map_err(|e| Status::internal(format!("{name} Unexpected error sending stats {e}")))?;
+            };
 
-        let out_stream = stream! {
-            yield Ok(PutResult{app_metadata: vec![].into()});
+            let found_done = {
+                // calculate if we are done with this partition under mutex lock
+                let mut done_guard = dones.lock();
+                done_guard.remove(&key).map(|mut done| {
+
+                done += done_fraction;
+
+                let done_str = format!("{:.5}", done.round_dp(6));
+                println!(
+                    "{}: received {} total_rows, done = {}, done_fraction {}",
+                    name_c, total_rows, done_str, done_fraction,
+                );
+
+                // crude rounding
+                if done_str == "1.00000" {
+                    // we are done!
+                    println!("{}: all done", name_c);
+                    // remove the sender so all senders can be dropped, which will close the
+                    // channel
+                    senders.lock().remove(&key);
+                } else {
+                    // still more partitions to report in
+                    done_guard.insert(key, done);
+                }
+                })
+            };
+
+            if found_done.is_none() {
+                yield Err(Status::internal(format!("{name_c} unexpected error finding done")));
+            }
+
+            /*if let Err(e) = stats_sender.send(
+                Stats {
+                    stage_num,
+                    partition_num,
+                    in_out: "in".to_string(),
+                    total_rows,
+                    remote_addr,
+                }).await {
+                yield Err(Status::internal(format!("{name_c} Error sending stats {e}")));
+            }*/
+
+            println!("{name_c} put stream done");
+
         };
-
-        Ok(Response::new(Box::pin(out_stream)))
+        Ok(Response::new(Box::pin(lag_reporting_stream(
+            &name, out_stream,
+        ))))
     }
 }
 
@@ -421,7 +448,7 @@ impl PyExchange {
 
     fn serve<'a>(&mut self, py: Python<'a>) -> PyResult<Bound<'a, PyAny>> {
         // TODO: what channel size?
-        let (stats_sender, stats_receiver) = channel(100);
+        let (stats_sender, stats_receiver) = channel(10000);
         let exchange_stats = ExchangeStats::new(stats_receiver);
 
         let exchange = Arc::new(Exchange::new(stats_sender));
@@ -462,8 +489,9 @@ impl PyExchange {
                     signal,
                 )
                 .await
+                .inspect_err(|e| println!("Exchange[{}] ERROR serving {e}", name))
                 .map_err(|e| PyErr::new::<pyo3::exceptions::PyException, _>(format!("{e}")))?;
-            exchange.shutdown();
+            exchange.shutdown().await;
             println!("Exchange[{}] DONE serving", name);
             Ok(())
         };
@@ -486,7 +514,7 @@ mod test {
 
     #[tokio::test]
     async fn test_exchange() {
-        let (stats_sender, _) = channel(100);
+        let (stats_sender, _) = channel(10);
         let e = Exchange::<u32>::new(stats_sender);
         let msg = 1u32;
 

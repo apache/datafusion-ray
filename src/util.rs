@@ -1,5 +1,7 @@
+use std::future::Future;
 use std::io::Cursor;
 use std::sync::Arc;
+use std::time::Duration;
 
 use arrow::array::RecordBatch;
 use arrow::datatypes::SchemaRef;
@@ -20,10 +22,11 @@ use datafusion::physical_plan::ExecutionPlan;
 use datafusion::prelude::SessionContext;
 use datafusion_proto::physical_plan::AsExecutionPlan;
 use datafusion_python::utils::wait_for_future;
-use futures::StreamExt;
+use futures::{Stream, StreamExt};
 use pyo3::prelude::*;
 use pyo3::types::{PyBytes, PyList};
 use rust_decimal::prelude::*;
+use tokio::time::timeout;
 use tonic::transport::Channel;
 
 use crate::codec::RayCodec;
@@ -221,6 +224,47 @@ pub fn make_client(py: Python, exchange_addr: &str) -> PyResult<FlightClient> {
 
     let flight_client = FlightClient::new(channel);
     Ok(flight_client)
+}
+
+pub async fn report_on_lag<F, T>(name: &str, fut: F) -> T
+where
+    F: Future<Output = T>,
+{
+    let name = name.to_owned();
+    let (tx, mut rx) = tokio::sync::oneshot::channel::<()>();
+    let expire = Duration::from_secs(2);
+
+    let report = async move {
+        tokio::time::sleep(expire).await;
+        while rx.try_recv().is_err() {
+            println!("{name} waiting to complete");
+            tokio::time::sleep(expire).await;
+        }
+    };
+    tokio::spawn(report);
+
+    let out = fut.await;
+    tx.send(()).unwrap();
+    out
+}
+
+/// A utility wrapper for a stream that will print a message if it has been over
+/// 2 seconds since receiving data.  Useful for debugging which streams are stuck
+pub fn lag_reporting_stream<S, T>(name: &str, in_stream: S) -> impl Stream<Item = T> + Send
+where
+    S: Stream<Item = T> + Send,
+    T: Send,
+{
+    let mut stream = Box::pin(in_stream);
+    let name = name.to_owned();
+
+    let out_stream = async_stream::stream! {
+        while let Some(item) = report_on_lag(&name, stream.next()).await {
+            yield item;
+        };
+    };
+
+    Box::pin(out_stream)
 }
 
 #[cfg(test)]

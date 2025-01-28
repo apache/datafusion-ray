@@ -18,6 +18,7 @@ use rust_decimal::prelude::*;
 
 use crate::protobuf::StreamMeta;
 use crate::pystage::ExchangeFlightClient;
+use crate::util::lag_reporting_stream;
 
 #[derive(Debug)]
 pub struct RayStageReaderExec {
@@ -107,14 +108,14 @@ impl ExecutionPlan for RayStageReaderExec {
         partition: usize,
         context: std::sync::Arc<datafusion::execution::TaskContext>,
     ) -> Result<SendableRecordBatchStream> {
-        println!(
-            "RayStageReaderExec[{}-{}] execute",
-            self.stage_id, partition
-        );
+        let name = format!("RayStageReaderExec[{}-{}]:", self.stage_id, partition);
+        println!("{name} execute");
         let in_client_map = &context
             .session_config()
             .get_extension::<ExchangeFlightClient>()
-            .ok_or(internal_datafusion_err!("Flight Client not in context"))?
+            .ok_or(internal_datafusion_err!(
+                "{name} Flight Client not in context"
+            ))?
             .clone()
             .0;
 
@@ -122,7 +123,7 @@ impl ExecutionPlan for RayStageReaderExec {
             .get(&self.stage_id)
             .map(|flight_client| FlightClient::new_from_inner(flight_client.inner().clone()))
             .ok_or(internal_datafusion_err!(
-                "Flight Client not found for stage {}",
+                "{name} Flight Client not found for stage {}",
                 self.stage_id
             ))?;
 
@@ -136,25 +137,25 @@ impl ExecutionPlan for RayStageReaderExec {
             ticket: meta.encode_to_vec().into(),
         };
 
-        let stage_id = self.stage_id.clone();
+        let stage_id = self.stage_id;
         let out_stream = async_stream::stream! {
+            println!("{name} connecting to exchange do_get");
             let flight_rbr_stream = client.do_get(ticket).await;
+            println!("{name} exchange do_get got response");
 
             let mut total_rows = 0;
-            if let Ok(mut flight_rbr_stream) = flight_rbr_stream {
+            if let Ok(flight_rbr_stream) = flight_rbr_stream {
+                let mut flight_rbr_stream = lag_reporting_stream(&name, flight_rbr_stream);
 
                 while let Some(batch) = flight_rbr_stream.next().await {
                     total_rows += batch.as_ref().map(|b| b.num_rows()).unwrap_or(0);
                     yield batch
-                        .map_err(|e| internal_datafusion_err!("Error reading batch: {}", e));
+                        .map_err(|e| internal_datafusion_err!("{name} Error reading batch: {}", e));
                 }
             } else {
-                yield Err(internal_datafusion_err!("Error getting stream"));
+                yield Err(internal_datafusion_err!("{name} Error getting stream"));
             }
-            println!(
-                "RayStageReaderExec[{}-{}] read {} total rows",
-                stage_id, partition, total_rows
-            );
+            println!("{name} read {} total rows", total_rows);
 
 
         };

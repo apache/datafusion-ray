@@ -50,6 +50,17 @@ of [Apache Arrow], [Apache DataFusion], and [Ray].
 
 ## Example
 
+- In the `tpch` directory, use `make_data.py` to create a TPCH dataset at the specifed scale factor, then
+
+```bash
+RAY_COLOR_PREFIX=1 RAY_DEDUP_LOGS=0 python tpcbench.py --data=file:///path/to/your/tpch/directory/ --concurrency=4 --batch-size=4096 --validate
+```
+
 ## Status
 
-- This branch is a work in progress refactoring datafusion-ray and using arrow flight for streaming batches between partitions during execution.
+- DataFusion Ray can execute all TPCH queries.
+
+## Known Issues
+
+- Using `--isolate` (in `tpcbench.py`) to execute individual partitions in their own Ray Actors currently can produce incorrect results.
+- The DataFusion config setting, `datafusion.execution.parquet.pushdown_filters`, can produce incorrect results. We think this could be related to an issue with round trip physical path serialization.
