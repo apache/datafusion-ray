@@ -18,7 +18,6 @@ use rust_decimal::prelude::*;
 
 use crate::protobuf::StreamMeta;
 use crate::pystage::ExchangeFlightClient;
-use crate::util::lag_reporting_stream;
 
 #[derive(Debug)]
 pub struct RayStageReaderExec {
@@ -144,8 +143,7 @@ impl ExecutionPlan for RayStageReaderExec {
             println!("{name} exchange do_get got response");
 
             let mut total_rows = 0;
-            if let Ok(flight_rbr_stream) = flight_rbr_stream {
-                let mut flight_rbr_stream = lag_reporting_stream(&name, flight_rbr_stream);
+            if let Ok(mut flight_rbr_stream) = flight_rbr_stream {
 
                 while let Some(batch) = flight_rbr_stream.next().await {
                     total_rows += batch.as_ref().map(|b| b.num_rows()).unwrap_or(0);

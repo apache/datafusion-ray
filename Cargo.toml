@@ -47,7 +47,7 @@ object_store = { version = "0.11.0", features = [
   "azure",
   "http",
 ] }
-parking_lot = "0.12"
+parking_lot = { version = "0.12", features = ["deadlock_detection"] }
 prost = "0.13"
 pyo3 = { version = "0.22.6", features = [
   "extension-module",

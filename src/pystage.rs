@@ -1,9 +1,7 @@
 use crate::isolator::{PartitionIsolatorExec, ShadowPartitionNumber};
 use crate::protobuf::StreamMeta;
 use crate::ray_stage_reader::RayStageReaderExec;
-use crate::util::{
-    bytes_to_physical_plan, lag_reporting_stream, make_client, physical_plan_to_bytes, ResultExt,
-};
+use crate::util::{bytes_to_physical_plan, make_client, physical_plan_to_bytes, ResultExt};
 use arrow::datatypes::Schema;
 use arrow::pyarrow::PyArrowType;
 use arrow::util::pretty::pretty_format_batches;
@@ -130,8 +128,7 @@ impl PyStage {
     pub fn execute(&mut self, py: Python) -> PyResult<()> {
         println!("{} executing", self.name);
 
-        //let futs = (0..self.num_output_partitions()).map(|partition| {
-        for partition in (0..self.num_output_partitions()) {
+        let futs = (0..self.num_output_partitions()).map(|partition| {
             let ctx = self.ctx.task_ctx();
             // make our own clone as FlightClient is not Clone, but inner is
             let inner = self.out_client.inner().clone();
@@ -141,24 +138,18 @@ impl PyStage {
             let fraction = self.fraction;
             let shadow_partition_number = self.shadow_partition_number;
 
-            //tokio::spawn(consume_stage(
-            wait_for_future(
-                py,
-                consume_stage(
-                    stage_id,
-                    shadow_partition_number,
-                    fraction,
-                    ctx,
-                    partition,
-                    plan,
-                    client_clone,
-                    //))
-                ),
-            )
-            .to_py_err()?;
-        }
+            tokio::spawn(consume_stage(
+                stage_id,
+                shadow_partition_number,
+                fraction,
+                ctx,
+                partition,
+                plan,
+                client_clone,
+            ))
+        });
 
-        /*let name = self.name.clone();
+        let name = self.name.clone();
         let fut = async {
             match try_join_all(futs).await {
                 Ok(_) => Ok(()),
@@ -170,8 +161,6 @@ impl PyStage {
         };
 
         wait_for_future(py, fut).to_py_err()
-        */
-        Ok(())
     }
 
     pub fn num_output_partitions(&self) -> usize {
@@ -242,7 +231,6 @@ pub async fn consume_stage(
                 got_first_batch = true;
             }
             total_rows += batch.as_ref().map(|b| b.num_rows()).unwrap_or(0);
-            //println!("{name_c}: yielding batch:{}", batch.as_ref().map(|b| pretty_format_batches(&[b.clone()]).unwrap().to_string()).unwrap_or("".to_string()));
 
             yield batch;
         }
@@ -254,20 +242,13 @@ pub async fn consume_stage(
     let flight_data_stream = FlightDataEncoderBuilder::new()
         .with_flight_descriptor(Some(descriptor))
         .with_schema(plan.schema())
-        //.build(counting_stream.map_err(|e| FlightError::from_external_error(Box::new(e))));
-        .build(
-            lag_reporting_stream(&name, counting_stream)
-                .map_err(|e| FlightError::from_external_error(Box::new(e))),
-        );
+        .build(counting_stream.map_err(|e| FlightError::from_external_error(Box::new(e))));
 
     let name_c = name.clone();
-    println!("{name_c} sending do_put to exchanger");
     let mut response = client
         .do_put(flight_data_stream)
         .await
         .map_err(|e| internal_datafusion_err!("{name_c}: error getting back do put result: {e}"))?;
-
-    println!("{name_c} got do_put response");
 
     let name_c = name.clone();
     while let Some(result) = response.next().await {
