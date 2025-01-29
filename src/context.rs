@@ -15,17 +15,26 @@
 // specific language governing permissions and limitations
 // under the License.
 
+use arrow::datatypes::SchemaRef;
+use arrow::util::pretty::pretty_format_batches;
+use datafusion::common::internal_datafusion_err;
+use datafusion::datasource::file_format::parquet::ParquetFormat;
+use datafusion::datasource::listing::{
+    ListingOptions, ListingTable, ListingTableConfig, ListingTableUrl,
+};
+use datafusion::physical_plan::{collect, displayable};
 use datafusion::{execution::SessionStateBuilder, physical_plan::ExecutionPlan, prelude::*};
+use datafusion_python::context::convert_table_partition_cols;
 use datafusion_python::dataframe::PyDataFrame;
+use datafusion_python::expr::sort_expr::PySortExpr;
 use datafusion_python::{errors::*, utils::wait_for_future};
 use object_store::aws::AmazonS3Builder;
 use pyo3::prelude::*;
-use std::env;
 use std::sync::Arc;
 
-use crate::dataframe::RayDataFrame;
+use crate::dataframe::{PyRecordBatchStream, RayDataFrame};
 use crate::physical::RayShuffleOptimizerRule;
-use crate::util::ResultExt;
+use crate::util::{bytes_to_physical_plan, physical_plan_to_bytes, ResultExt};
 use url::Url;
 
 pub struct CoordinatorId(pub String);
@@ -72,8 +81,27 @@ impl RayContext {
         let mut options = ParquetReadOptions::default();
         options.file_extension = ".parquet";
 
-        wait_for_future(py, self.ctx.register_parquet(&name, &path, options))?;
+        wait_for_future(py, self.ctx.register_parquet(&name, &path, options.clone()))?;
         Ok(())
+    }
+
+    #[pyo3(signature = (name, path, file_extension=".parquet"))]
+    pub fn register_listing_table(
+        &mut self,
+        py: Python,
+        name: &str,
+        path: &str,
+        file_extension: &str,
+    ) -> PyResult<()> {
+        let options =
+            ListingOptions::new(Arc::new(ParquetFormat::new())).with_file_extension(file_extension);
+
+        wait_for_future(
+            py,
+            self.ctx
+                .register_listing_table(name, path, options, None, None),
+        )
+        .to_py_err()
     }
 
     pub fn sql(&self, py: Python, query: String, coordinator_id: String) -> PyResult<RayDataFrame> {
@@ -84,12 +112,6 @@ impl RayContext {
             coordinator_id,
             self.bucket.clone(),
         ))
-    }
-
-    pub fn local_sql(&self, py: Python, query: String) -> PyResult<PyDataFrame> {
-        wait_for_future(py, self.ctx.sql(&query))
-            .map(PyDataFrame::new)
-            .to_py_err()
     }
 
     pub fn set(&self, option: String, value: String) -> PyResult<()> {

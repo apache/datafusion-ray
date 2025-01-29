@@ -18,8 +18,8 @@
 use std::path::Path;
 
 fn main() -> Result<(), String> {
-    use std::io::Write;
-    /*
+    /*    use std::io::Write;
+
         let out = std::path::PathBuf::from(std::env::var("OUT_DIR").unwrap());
 
         // for use in docker build where file changes can be wonky

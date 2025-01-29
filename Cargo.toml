@@ -25,17 +25,21 @@ version = "0.1.0"
 edition = "2021"
 readme = "README.md"
 license = "Apache-2.0"
-rust-version = "1.62"
+rust-version = "1.70"
 build = "build.rs"
 
 [dependencies]
+anyhow = "1"
 arrow = { version = "53.3", features = ["pyarrow", "ipc"] }
+arrow-flight = "53.3"
 async-stream = "0.3"
+async-channel = "2.3"
 datafusion = { version = "43.0", features = ["pyarrow", "avro"] }
 datafusion-python = { version = "43.1" }
 datafusion-proto = "43.0"
 futures = "0.3"
 glob = "0.3.1"
+local-ip-address = "0.6"
 log = "0.4"
 object_store = { version = "0.11.0", features = [
   "aws",
@@ -43,6 +47,7 @@ object_store = { version = "0.11.0", features = [
   "azure",
   "http",
 ] }
+parking_lot = { version = "0.12", features = ["deadlock_detection"] }
 prost = "0.13"
 pyo3 = { version = "0.22.6", features = [
   "extension-module",
@@ -50,11 +55,20 @@ pyo3 = { version = "0.22.6", features = [
   "abi3-py38",
 ] }
 pyo3-async-runtimes = { version = "0.22", features = ["tokio-runtime"] }
+rust_decimal = "1.36"
 tokio = { version = "1.40", features = [
   "macros",
   "rt",
   "rt-multi-thread",
   "sync",
+  "time",
+] }
+tokio-stream = "0.1"
+
+tonic = { version = "0.12.3", default-features = false, features = [
+  "transport",
+  "codegen",
+  "prost",
 ] }
 uuid = "1.11.0"
 url = "2"

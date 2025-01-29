@@ -19,12 +19,12 @@
 
 # DataFusion on Ray
 
-> This was originally a research project donated from [ray-sql] to evaluate performing distributed SQL queries from 
+> This was originally a research project donated from [ray-sql] to evaluate performing distributed SQL queries from
 > Python, using [Ray] and [Apache DataFusion]
 
 [ray-sql]: https://github.com/datafusion-contrib/ray-sql
 
-DataFusion Ray is a distributed Python DataFrame and SQL query engine powered by the Rust implementation 
+DataFusion Ray is a distributed Python DataFrame and SQL query engine powered by the Rust implementation
 of [Apache Arrow], [Apache DataFusion], and [Ray].
 
 [Ray]: https://www.ray.io/
@@ -35,7 +35,7 @@ of [Apache Arrow], [Apache DataFusion], and [Ray].
 
 ### Comparison to DataFusion Ballista
 
-- Unlike [DataFusion Ballista], DataFusion Ray does not provide its own distributed scheduler and instead relies on 
+- Unlike [DataFusion Ballista], DataFusion Ray does not provide its own distributed scheduler and instead relies on
   Ray for this functionality. As a result of this design choice, DataFusion Ray is a much smaller and simpler project.
 - DataFusion Ray is Python-first, and DataFusion Ballista is Rust-first
 
@@ -43,110 +43,24 @@ of [Apache Arrow], [Apache DataFusion], and [Ray].
 
 ### Comparison to DataFusion Python
 
-- [DataFusion Python] provides a Python DataFrame and SQL API for in-process execution. DataFusion Ray extends 
+- [DataFusion Python] provides a Python DataFrame and SQL API for in-process execution. DataFusion Ray extends
   DataFusion Python to provide scalability across multiple nodes.
 
 [DataFusion Python]: https://github.com/apache/datafusion-python
 
 ## Example
 
-Run the following example live in your browser using a Google Colab [notebook](https://colab.research.google.com/drive/1tmSX0Lu6UFh58_-DBUVoyYx6BoXHOszP?usp=sharing).
+- In the `tpch` directory, use `make_data.py` to create a TPCH dataset at the specifed scale factor, then
 
-```python
-import os
-import ray
-
-from datafusion_ray import DatafusionRayContext
-
-SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
-
-# Start a local cluster
-ray.init(resources={"worker": 1})
-
-# Create a context and register a table
-ctx = DatafusionRayContext(2)
-# Register either a CSV or Parquet file
-# ctx.register_csv("tips", f"{SCRIPT_DIR}/tips.csv", True)
-ctx.register_parquet("tips", f"{SCRIPT_DIR}/tips.parquet")
-
-result_set = ctx.sql(
-  "select sex, smoker, avg(tip/total_bill) as tip_pct from tips group by sex, smoker"
-)
-for record_batch in result_set:
-  print(record_batch.to_pandas())
+```bash
+RAY_COLOR_PREFIX=1 RAY_DEDUP_LOGS=0 python tpcbench.py --data=file:///path/to/your/tpch/directory/ --concurrency=4 --batch-size=4096 --validate
 ```
 
 ## Status
 
-- DataFusion Ray can run all queries in the TPC-H benchmark
+- DataFusion Ray can execute all TPCH queries.
 
-## Features
+## Known Issues
 
-- Mature SQL support (CTEs, joins, subqueries, etc) thanks to DataFusion
-- Support for CSV and Parquet files
-
-## Building
-
-```bash
-# prepare development environment (used to build wheel / install in development)
-python3 -m venv venv
-# activate the venv
-source venv/bin/activate
-# update pip itself if necessary
-python -m pip install -U pip
-# install dependencies (for Python 3.8+)
-python -m pip install -r requirements-in.txt
-```
-
-Whenever rust code changes (your changes or via `git pull`):
-
-```bash
-# make sure you activate the venv using "source venv/bin/activate" first
-maturin develop; python -m pytest 
-```
-
-## Testing
-
-Running local Rust tests require generating the tpch-data. This can be done
-by running the following commands:
-
-```bash
-export TPCH_TEST_PARTITIONS=1
-export TPCH_SCALING_FACTOR=1
-./scripts/gen-test-data.sh
-```
-
-This will generate data into a top-level `data` directory.
-
-Tests can be run with:
-
-```shell
-export TPCH_DATA_PATH=`pwd`/data
-cargo test
-```
-
-## Benchmarking
-
-Create a release build when running benchmarks, then use pip to install the wheel.
-
-```bash
-maturin develop --release
-```
-
-## How to update dependencies
-
-To change test dependencies, change the `requirements.in` and run
-
-```bash
-# install pip-tools (this can be done only once), also consider running in venv
-python -m pip install pip-tools
-python -m piptools compile --generate-hashes -o requirements-310.txt
-```
-
-To update dependencies, run with `-U`
-
-```bash
-python -m piptools compile -U --generate-hashes -o requirements-310.txt
-```
-
-More details [here](https://github.com/jazzband/pip-tools)
+- Using `--isolate` (in `tpcbench.py`) to execute individual partitions in their own Ray Actors currently can produce incorrect results.
+- The DataFusion config setting, `datafusion.execution.parquet.pushdown_filters`, can produce incorrect results. We think this could be related to an issue with round trip physical path serialization.

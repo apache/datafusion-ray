@@ -18,9 +18,8 @@
 import argparse
 import ray
 from datafusion import SessionContext, SessionConfig
-from datafusion_ray import RayContext
+from datafusion_ray import RayContext, prettify
 from datetime import datetime
-import pyarrow as pa
 import json
 import os
 import time
@@ -29,7 +28,16 @@ import duckdb
 from datafusion.object_store import AmazonS3
 
 
-def main(data_path: str, concurrency: int, batch_size: int, isolate_partitions: bool):
+def main(
+    qnum: int,
+    data_path: str,
+    concurrency: int,
+    batch_size: int,
+    isolate_partitions: bool,
+    listing_tables: bool,
+    validate: bool,
+    exchangers: int,
+):
 
     # Register the tables
     table_names = [
@@ -48,18 +56,34 @@ def main(data_path: str, concurrency: int, batch_size: int, isolate_partitions: 
 
     ctx = RayContext(
         batch_size=batch_size,
+        num_exchangers=exchangers,
         isolate_partitions=isolate_partitions,
         bucket="rob-tandy-tmp",
     )
 
     ctx.set("datafusion.execution.target_partitions", f"{concurrency}")
-    ctx.set("datafusion.execution.parquet.pushdown_filters", "true")
+    # ctx.set("datafusion.execution.parquet.pushdown_filters", "true")
     ctx.set("datafusion.optimizer.enable_round_robin_repartition", "false")
+    ctx.set("datafusion.execution.coalesce_batches", "false")
+
+    local_config = SessionConfig()
+    local_config.set("datafusion.execution.target_partitions", f"{concurrency}")
+    # local_config.set("datafusion.execution.parquet.pushdown_filters", "true")
+    local_config.set("datafusion.optimizer.enable_round_robin_repartition", "false")
+    local_config.set("datafusion.execution.coalesce_batches", "false")
+
+    local_ctx = SessionContext(local_config)
+    local_ctx.register_object_store("s3://", AmazonS3(bucket_name="rob-tandy-tmp"))
 
     for table in table_names:
-        path = f"{data_path}/{table}.parquet"
+        path = os.path.join(data_path, f"{table}.parquet")
         print(f"Registering table {table} using path {path}")
-        ctx.register_parquet(table, path)
+        if listing_tables:
+            ctx.register_listing_table(table, f"{path}/")
+            local_ctx.register_listing_table(table, f"{path}/")
+        else:
+            ctx.register_parquet(table, path)
+            local_ctx.register_parquet(table, path)
 
     results = {
         "engine": "datafusion-python",
@@ -70,30 +94,38 @@ def main(data_path: str, concurrency: int, batch_size: int, isolate_partitions: 
 
     duckdb.sql("load tpch")
 
-    # for query in range(1, num_queries + 1):
-    #
-    # for qnum in range(1, 23):
-    for qnum in [1, 2, 3, 4, 5]:
+    queries = range(1, 23) if qnum == -1 else [qnum]
+    for qnum in queries:
+        print("Running query ", qnum)
         sql: str = duckdb.sql(
             f"select * from tpch_queries() where query_nr=?", params=(qnum,)
         ).df()["query"][0]
+
         print("executing ", sql)
 
-        start_time = time.time()
         df = ctx.sql(sql)
+        start_time = time.time()
+        end_time = time.time()
+        part1 = end_time - start_time
         for stage in df.stages():
             print("Stage ", stage.stage_id)
             print(stage.execution_plan().display_indent())
 
+        start_time = time.time()
         batches = df.collect()
-        table = pa.Table.from_batches(batches)
         end_time = time.time()
-        df.show()
-        size = sum([batch.get_total_buffer_size() for batch in batches])
-        print(
-            f"testQuery {qnum} took {end_time - start_time} seconds, {len(batches)} batches, result size {size}"
-        )
-        results["queries"][qnum] = [end_time - start_time]
+
+        calculated = prettify(batches)
+        print(calculated)
+        if validate:
+            answer_batches = local_ctx.sql(sql).collect()
+            expected = prettify(answer_batches)
+
+            if not calculated == expected:
+                print(f"Possible wrong answer for TPCH query {qnum}")
+                print(expected)
+                # raise Exception("Wrong answer")
+        results["queries"][qnum] = [end_time - start_time + part1]
 
     results = json.dumps(results, indent=4)
     current_time_millis = int(datetime.now().timestamp() * 1000)
@@ -117,6 +149,12 @@ if __name__ == "__main__":
         "--concurrency", required=True, help="Number of concurrent tasks"
     )
     parser.add_argument("--isolate", action="store_true")
+    parser.add_argument("--qnum", type=int, default=-1, help="TPCH query number, 1-22")
+    parser.add_argument("--listing-tables", action="store_true")
+    parser.add_argument("--validate", action="store_true")
+    parser.add_argument(
+        "--exchangers", type=int, default=1, help="Number of Exchange Actors"
+    )
     parser.add_argument(
         "--batch-size",
         required=False,
@@ -125,4 +163,13 @@ if __name__ == "__main__":
     )
     args = parser.parse_args()
 
-    main(args.data, int(args.concurrency), int(args.batch_size), args.isolate)
+    main(
+        args.qnum,
+        args.data,
+        int(args.concurrency),
+        int(args.batch_size),
+        args.isolate,
+        args.listing_tables,
+        args.validate,
+        args.exchangers,
+    )

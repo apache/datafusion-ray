@@ -15,21 +15,39 @@
 // specific language governing permissions and limitations
 // under the License.
 
+use arrow::array::RecordBatch;
+use arrow::pyarrow::ToPyArrow;
+use arrow_flight::FlightClient;
+use datafusion::common::internal_datafusion_err;
+use datafusion::common::internal_err;
 use datafusion::common::tree_node::Transformed;
 use datafusion::common::tree_node::TreeNode;
+use datafusion::execution::SendableRecordBatchStream;
+use datafusion::execution::SessionStateBuilder;
 use datafusion::physical_plan::coalesce_batches::CoalesceBatchesExec;
+use datafusion::physical_plan::coalesce_partitions::CoalescePartitionsExec;
 use datafusion::physical_plan::displayable;
-use datafusion::physical_plan::joins::HashJoinExec;
 use datafusion::physical_plan::repartition::RepartitionExec;
-use datafusion::physical_plan::ExecutionPlan;
+use datafusion::physical_plan::{ExecutionPlan, ExecutionPlanProperties};
+use datafusion::prelude::SessionConfig;
+use datafusion::prelude::SessionContext;
 use datafusion_python::physical_plan::PyExecutionPlan;
+use datafusion_python::utils::wait_for_future;
+use futures::stream::StreamExt;
 use pyo3::prelude::*;
+use std::borrow::Cow;
+use std::collections::HashMap;
 use std::sync::Arc;
+use tonic::transport::Channel;
 
 use crate::isolator::PartitionIsolatorExec;
-use crate::pystage::PyStage;
+use crate::max_rows::MaxRowsExec;
+use crate::pystage::ExchangeFlightClient;
 use crate::ray_stage::RayStageExec;
 use crate::ray_stage_reader::RayStageReaderExec;
+use crate::util::make_client;
+use crate::util::physical_plan_to_bytes;
+use crate::util::ResultExt;
 
 pub struct CoordinatorId(pub String);
 
@@ -40,6 +58,7 @@ pub struct RayDataFrame {
     coordinator_id: String,
     #[pyo3(get)]
     bucket: Option<String>,
+    final_plan: Option<Arc<dyn ExecutionPlan>>,
 }
 
 impl RayDataFrame {
@@ -52,14 +71,21 @@ impl RayDataFrame {
             physical_plan,
             coordinator_id,
             bucket,
+            final_plan: None,
         }
     }
 }
 
 #[pymethods]
 impl RayDataFrame {
-    fn stages(&self, batch_size: usize, isolate_partitions: bool) -> PyResult<Vec<PyStage>> {
+    fn stages(
+        &mut self,
+        batch_size: usize,
+        isolate_partitions: bool,
+    ) -> PyResult<Vec<PyDataFrameStage>> {
         let mut stages = vec![];
+        let max_rows = batch_size;
+        let inner_batch_size = batch_size;
 
         // TODO: This can be done more efficiently, likely in one pass but I'm
         // struggling to get the TreeNodeRecursion return values to make it do
@@ -81,7 +107,7 @@ impl RayDataFrame {
 
                 let replacement = Arc::new(RayStageReaderExec::try_new_from_input(
                     input.clone(),
-                    stage_exec.stage_id.clone(),
+                    stage_exec.stage_id,
                     self.coordinator_id.clone(),
                 )?) as Arc<dyn ExecutionPlan>;
 
@@ -102,11 +128,7 @@ impl RayDataFrame {
 
                 let fixed_plan = input.clone().transform_down(down)?.data;
 
-                let stage = PyStage::new(
-                    stage_exec.stage_id.clone(),
-                    fixed_plan,
-                    self.coordinator_id.clone(),
-                );
+                let stage = PyDataFrameStage::new(stage_exec.stage_id, fixed_plan);
 
                 stages.push(stage);
                 Ok(Transformed::no(plan))
@@ -122,9 +144,13 @@ impl RayDataFrame {
                     replacement = replacement.clone().with_new_children(vec![new_child])?;
                 }
                 // insert a coalescing batches here too so that we aren't sending
-                // too small of batches over the network
-                replacement = Arc::new(CoalesceBatchesExec::new(replacement, batch_size))
-                    as Arc<dyn ExecutionPlan>;
+                // too small (or too big) of batches over the network
+                replacement = Arc::new(MaxRowsExec::new(
+                    Arc::new(CoalesceBatchesExec::new(replacement, inner_batch_size))
+                        as Arc<dyn ExecutionPlan>,
+                    max_rows,
+                )) as Arc<dyn ExecutionPlan>;
+
                 Ok(Transformed::yes(replacement))
             } else {
                 Ok(Transformed::no(plan))
@@ -133,10 +159,193 @@ impl RayDataFrame {
 
         self.physical_plan.clone().transform_up(up)?;
 
+        // add coalesce and max rows to last stage
+        let mut last_stage = stages
+            .pop()
+            .ok_or(internal_datafusion_err!("No stages found"))?;
+
+        last_stage = PyDataFrameStage::new(
+            last_stage.stage_id,
+            Arc::new(MaxRowsExec::new(
+                Arc::new(CoalesceBatchesExec::new(last_stage.plan, inner_batch_size))
+                    as Arc<dyn ExecutionPlan>,
+                max_rows,
+            )) as Arc<dyn ExecutionPlan>,
+        );
+
+        // done fixing last stage
+
+        let reader_plan = Arc::new(RayStageReaderExec::try_new_from_input(
+            last_stage.plan.clone(),
+            last_stage.stage_id,
+            self.coordinator_id.clone(),
+        )?) as Arc<dyn ExecutionPlan>;
+
+        stages.push(last_stage);
+
+        if reader_plan.output_partitioning().partition_count() > 1 {
+            self.final_plan = Some(Arc::new(CoalescePartitionsExec::new(reader_plan)));
+        } else {
+            self.final_plan = Some(reader_plan);
+        };
+
         Ok(stages)
     }
 
     fn execution_plan(&self) -> PyResult<PyExecutionPlan> {
         Ok(PyExecutionPlan::new(self.physical_plan.clone()))
+    }
+
+    pub fn execute(
+        &self,
+        py: Python,
+        in_exchange_addrs: HashMap<usize, String>,
+    ) -> PyResult<PyRecordBatchStream> {
+        // TODO: consolidate this code
+        //
+        let in_client_map: HashMap<usize, FlightClient> = in_exchange_addrs
+            .iter()
+            .map(|(stage_num, addr)| {
+                let client = make_client(py, addr).to_py_err()?;
+                Ok::<_, PyErr>((stage_num.clone(), client))
+            })
+            .collect::<Result<HashMap<_, _>, PyErr>>()?;
+
+        let config =
+            SessionConfig::new().with_extension(Arc::new(ExchangeFlightClient(in_client_map)));
+
+        let state = SessionStateBuilder::new()
+            .with_default_features()
+            .with_config(config)
+            .build();
+        let ctx = SessionContext::new_with_state(state);
+
+        println!(
+            "consuming query results using plan:\n{}",
+            self.final_plan
+                .as_ref()
+                .map(|plan| displayable(plan.as_ref()).indent(true).to_string())
+                .unwrap_or("NotFound".to_string())
+        );
+
+        self.final_plan
+            .clone()
+            .ok_or_else(|| internal_datafusion_err!("No final plan found"))
+            .and_then(|plan| plan.execute(0, ctx.task_ctx()))
+            .map(PyRecordBatchStream::new)
+            .to_py_err()
+    }
+}
+
+#[pyclass]
+pub struct PyDataFrameStage {
+    stage_id: usize,
+    plan: Arc<dyn ExecutionPlan>,
+}
+impl PyDataFrameStage {
+    fn new(stage_id: usize, plan: Arc<dyn ExecutionPlan>) -> Self {
+        Self { stage_id, plan }
+    }
+}
+
+#[pymethods]
+impl PyDataFrameStage {
+    #[getter]
+    fn stage_id(&self) -> usize {
+        self.stage_id
+    }
+    pub fn num_output_partitions(&self) -> usize {
+        self.plan.output_partitioning().partition_count()
+    }
+
+    /// How many partitions are we shadowing if at all
+    pub fn num_shadow_partitions(&self) -> Option<usize> {
+        let mut result = None;
+        self.plan
+            .clone()
+            .transform_down(|node: Arc<dyn ExecutionPlan>| {
+                if let Some(isolator) = node.as_any().downcast_ref::<PartitionIsolatorExec>() {
+                    let children = isolator.children();
+                    if children.len() != 1 {
+                        return internal_err!("PartitionIsolatorExec must have exactly one child");
+                    }
+                    result = Some(children[0].output_partitioning().partition_count());
+                    //TODO: break early
+                }
+                Ok(Transformed::no(node))
+            });
+        result
+    }
+
+    #[getter]
+    pub fn input_stage_ids(&self) -> PyResult<Vec<usize>> {
+        let mut result = vec![];
+        self.plan
+            .clone()
+            .transform_down(|node: Arc<dyn ExecutionPlan>| {
+                if let Some(reader) = node.as_any().downcast_ref::<RayStageReaderExec>() {
+                    result.push(reader.stage_id);
+                }
+                Ok(Transformed::no(node))
+            })?;
+        Ok(result)
+    }
+
+    pub fn execution_plan(&self) -> PyExecutionPlan {
+        PyExecutionPlan::new(self.plan.clone())
+    }
+
+    pub fn plan_bytes(&self) -> PyResult<Cow<[u8]>> {
+        let plan_bytes = physical_plan_to_bytes(self.plan.clone())?;
+        Ok(Cow::Owned(plan_bytes))
+    }
+}
+
+#[pyclass]
+pub struct PyRecordBatch {
+    batch: RecordBatch,
+}
+
+#[pymethods]
+impl PyRecordBatch {
+    fn to_pyarrow(&self, py: Python) -> PyResult<PyObject> {
+        self.batch.to_pyarrow(py)
+    }
+}
+
+impl From<RecordBatch> for PyRecordBatch {
+    fn from(batch: RecordBatch) -> Self {
+        Self { batch }
+    }
+}
+
+#[pyclass]
+pub struct PyRecordBatchStream {
+    stream: SendableRecordBatchStream,
+}
+
+impl PyRecordBatchStream {
+    pub fn new(stream: SendableRecordBatchStream) -> Self {
+        Self { stream }
+    }
+}
+
+#[pymethods]
+impl PyRecordBatchStream {
+    fn next(&mut self, py: Python) -> PyResult<Option<PyObject>> {
+        let result = self.stream.next();
+        match wait_for_future(py, result) {
+            None => Ok(None),
+            Some(Ok(b)) => Ok(Some(b.to_pyarrow(py)?)),
+            Some(Err(e)) => Err(e.into()),
+        }
+    }
+
+    fn __next__(&mut self, py: Python) -> PyResult<Option<PyObject>> {
+        self.next(py)
+    }
+
+    fn __iter__(slf: PyRef<'_, Self>) -> PyRef<'_, Self> {
+        slf
     }
 }

@@ -1,63 +1,92 @@
 use crate::isolator::{PartitionIsolatorExec, ShadowPartitionNumber};
-use crate::util::{bytes_to_physical_plan, physical_plan_to_bytes, ResultExt};
+use crate::protobuf::StreamMeta;
+use crate::ray_stage_reader::RayStageReaderExec;
+use crate::util::{bytes_to_physical_plan, make_client, physical_plan_to_bytes, ResultExt};
 use arrow::datatypes::Schema;
 use arrow::pyarrow::PyArrowType;
-use datafusion::common::internal_err;
+use arrow::util::pretty::pretty_format_batches;
+use arrow_flight::encode::FlightDataEncoderBuilder;
+use arrow_flight::error::FlightError;
+use arrow_flight::flight_descriptor::DescriptorType;
+use arrow_flight::{FlightClient, FlightDescriptor};
+use async_stream::stream;
 use datafusion::common::tree_node::{Transformed, TreeNode};
-use datafusion::physical_plan::displayable;
+use datafusion::common::{internal_datafusion_err, internal_err};
+use datafusion::physical_plan::{collect, displayable};
 use datafusion_python::physical_plan::PyExecutionPlan;
+use futures::future::try_join_all;
+use futures::stream::FuturesUnordered;
 use object_store::aws::AmazonS3Builder;
+use prost::Message;
+use rust_decimal::prelude::*;
 use std::borrow::Cow;
-use std::env;
+use std::collections::HashMap;
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 use url::Url;
 
-use arrow::array::RecordBatch;
-use datafusion::arrow::pyarrow::ToPyArrow;
-use datafusion::execution::SessionStateBuilder;
+use datafusion::execution::{SessionStateBuilder, TaskContext};
+use datafusion::physical_plan::{ExecutionPlan, ExecutionPlanProperties};
 use datafusion::prelude::{SessionConfig, SessionContext};
-use datafusion::{
-    execution::SendableRecordBatchStream,
-    physical_plan::{ExecutionPlan, ExecutionPlanProperties},
-};
 use datafusion_python::utils::wait_for_future;
-use futures::StreamExt;
+use futures::{StreamExt, TryStreamExt};
 use pyo3::prelude::*;
 
-use crate::context::CoordinatorId;
+use anyhow::Result;
+
+pub struct ExchangeFlightClient(pub HashMap<usize, FlightClient>);
 
 #[pyclass]
 pub struct PyStage {
+    name: String,
+    out_client: FlightClient,
     #[pyo3(get)]
-    stage_id: String,
+    stage_id: usize,
     pub(crate) plan: Arc<dyn ExecutionPlan>,
     ctx: SessionContext,
+    fraction: f64,
+    shadow_partition_number: Option<usize>,
 }
 
 #[pymethods]
 impl PyStage {
     #[new]
-    #[pyo3(signature = (stage_id, plan_bytes, coordinator_id, shadow_partition_number=None, bucket=None))]
+    #[pyo3(signature = (stage_id, plan_bytes, out_exchange_addr, in_exchange_addrs, shadow_partition_number=None, bucket=None, fraction=1.0))]
     pub fn from_bytes(
-        stage_id: String,
+        py: Python,
+        stage_id: usize,
         plan_bytes: Vec<u8>,
-        coordinator_id: String,
+        out_exchange_addr: String,
+        in_exchange_addrs: HashMap<usize, String>,
         shadow_partition_number: Option<usize>,
         bucket: Option<String>,
+        fraction: f64,
     ) -> PyResult<Self> {
-        println!(
-            "PyStage[{}-s{}] from_bytes, bucket {}",
+        let name = format!(
+            "PyStage[{}-{}]",
             stage_id,
-            shadow_partition_number.or(Some(0)).unwrap(),
-            bucket.as_ref().or(Some(&"None".to_string())).unwrap()
+            shadow_partition_number
+                .map(|s| s.to_string())
+                .unwrap_or("n/a".into())
         );
+        let out_client = make_client(py, &out_exchange_addr)?;
+
+        // make our own clone as FlightClient is not Clone, but inner is
+        let out_client_map: HashMap<usize, FlightClient> = in_exchange_addrs
+            .iter()
+            .map(|(stage_num, addr)| {
+                let client = make_client(py, addr).to_py_err()?;
+                Ok::<_, PyErr>((stage_num.clone(), client))
+            })
+            .collect::<Result<HashMap<_, _>, PyErr>>()?;
+
         let mut config =
-            SessionConfig::new().with_extension(Arc::new(CoordinatorId(coordinator_id)));
+            SessionConfig::new().with_extension(Arc::new(ExchangeFlightClient(out_client_map)));
 
         // this only matters if the plan includes an PartitionIsolatorExec
         // and will be ignored otherwise
         if let Some(shadow) = shadow_partition_number {
-            config = config.with_extension(Arc::new(ShadowPartitionNumber(shadow)));
+            config = config.with_extension(Arc::new(ShadowPartitionNumber(shadow)))
         }
 
         let state = SessionStateBuilder::new()
@@ -67,7 +96,7 @@ impl PyStage {
         let ctx = SessionContext::new_with_state(state);
 
         if let Some(bucket) = bucket {
-            let mut s3 = AmazonS3Builder::from_env().with_bucket_name(&bucket);
+            let s3 = AmazonS3Builder::from_env().with_bucket_name(&bucket);
 
             let s3 = s3.build().to_py_err()?;
 
@@ -78,51 +107,64 @@ impl PyStage {
             println!("registered object store {s3_url}");
         }
 
-        println!("creating physical plan from bytes");
+        println!("{name} creating physical plan from bytes");
         let plan = bytes_to_physical_plan(&ctx, &plan_bytes).to_py_err()?;
         println!(
-            "created physical plan:\n{}",
+            "{name} created physical plan:\n{}",
             displayable(plan.as_ref()).indent(true)
         );
 
         Ok(Self {
+            name,
+            out_client,
             stage_id,
             plan,
             ctx,
+            fraction,
+            shadow_partition_number,
         })
     }
 
-    pub fn execute(&self, py: Python, partition: usize) -> PyResult<PyRecordBatchStream> {
-        println!("PyStage[{}] executing", self.stage_id);
-        let ctx = self.ctx.task_ctx();
+    pub fn execute(&mut self, py: Python) -> PyResult<()> {
+        println!("{} executing", self.name);
 
-        let result = async { self.plan.execute(partition, ctx) };
-        let stream = wait_for_future(py, result)?;
-        println!("PyStage[{}] got stream", self.stage_id);
-        Ok(PyRecordBatchStream::new(stream))
+        let futs = (0..self.num_output_partitions()).map(|partition| {
+            let ctx = self.ctx.task_ctx();
+            // make our own clone as FlightClient is not Clone, but inner is
+            let inner = self.out_client.inner().clone();
+            let client_clone = FlightClient::new_from_inner(inner);
+            let plan = self.plan.clone();
+            let stage_id = self.stage_id;
+            let fraction = self.fraction;
+            let shadow_partition_number = self.shadow_partition_number;
+
+            tokio::spawn(consume_stage(
+                stage_id,
+                shadow_partition_number,
+                fraction,
+                ctx,
+                partition,
+                plan,
+                client_clone,
+            ))
+        });
+
+        let name = self.name.clone();
+        let fut = async {
+            match try_join_all(futs).await {
+                Ok(_) => Ok(()),
+                Err(e) => {
+                    println!("{name}:ERROR executing {e}");
+                    Err(e)
+                }
+            }
+        };
+
+        wait_for_future(py, fut).to_py_err()
     }
 
     pub fn num_output_partitions(&self) -> usize {
         self.plan.output_partitioning().partition_count()
-    }
-
-    /// How many partitions are we shadowing if at all
-    pub fn num_shadow_partitions(&self) -> Option<usize> {
-        let mut result = None;
-        self.plan
-            .clone()
-            .transform_down(|node: Arc<dyn ExecutionPlan>| {
-                if let Some(isolator) = node.as_any().downcast_ref::<PartitionIsolatorExec>() {
-                    let children = isolator.children();
-                    if children.len() != 1 {
-                        return internal_err!("PartitionIsolatorExec must have exactly one child");
-                    }
-                    result = Some(children[0].output_partitioning().partition_count());
-                    //TODO: break early
-                }
-                Ok(Transformed::no(node))
-            });
-        result
     }
 
     pub fn execution_plan(&self) -> PyExecutionPlan {
@@ -140,69 +182,82 @@ impl PyStage {
     }
 }
 
-impl PyStage {
-    pub fn new(stage_id: String, plan: Arc<dyn ExecutionPlan>, coordinator_id: String) -> Self {
-        let config = SessionConfig::new().with_extension(Arc::new(CoordinatorId(coordinator_id)));
+pub async fn consume_stage(
+    stage_id: usize,
+    shadow_partition_number: Option<usize>,
+    fraction: f64,
+    ctx: Arc<TaskContext>,
+    partition: usize,
+    plan: Arc<dyn ExecutionPlan>,
+    mut client: FlightClient,
+) -> Result<()> {
+    let name = format!(
+        "PyStage[{}:output partition:{}-s{}]",
+        stage_id,
+        partition,
+        shadow_partition_number
+            .map(|s| s.to_string())
+            .unwrap_or("n/a".into())
+    );
 
-        let state = SessionStateBuilder::new()
-            .with_default_features()
-            .with_config(config)
-            .build();
-        let ctx = SessionContext::new_with_state(state);
+    println!("{name} consuming");
+    let fraction = Decimal::from_f64(fraction)
+        .ok_or(internal_datafusion_err!(
+            "{name}: error converting fraction to decimal"
+        ))?
+        .to_string();
 
-        Self {
-            stage_id,
-            plan,
-            ctx,
+    let stream_meta = StreamMeta {
+        stage_id: stage_id as u64,
+        partition: partition as u64,
+        fraction,
+    };
+
+    let descriptor = FlightDescriptor {
+        r#type: DescriptorType::Cmd.into(),
+        cmd: stream_meta.encode_to_vec().into(),
+        path: vec![],
+    };
+    let mut total_rows = 0;
+    let mut plan_output_stream = plan.execute(partition, ctx)?;
+
+    let name_c = name.clone();
+    let counting_stream = stream! {
+        println!("{name_c}: starting plan consumption");
+        let mut got_first_batch = false;
+        while let Some(batch) = plan_output_stream.next().await {
+            if !got_first_batch {
+                println!("{name_c}: got first batch");
+                got_first_batch = true;
+            }
+            total_rows += batch.as_ref().map(|b| b.num_rows()).unwrap_or(0);
+
+            yield batch;
+        }
+        println!(
+            "{name_c} produced {total_rows} total rows",
+        );
+    };
+
+    let flight_data_stream = FlightDataEncoderBuilder::new()
+        .with_flight_descriptor(Some(descriptor))
+        .with_schema(plan.schema())
+        .build(counting_stream.map_err(|e| FlightError::from_external_error(Box::new(e))));
+
+    let name_c = name.clone();
+    let mut response = client
+        .do_put(flight_data_stream)
+        .await
+        .map_err(|e| internal_datafusion_err!("{name_c}: error getting back do put result: {e}"))?;
+
+    let name_c = name.clone();
+    while let Some(result) = response.next().await {
+        if let Err(e) = result {
+            return Err(internal_datafusion_err!(
+                "{name_c}: error getting back do put result: {e}"
+            )
+            .into());
         }
     }
-}
-
-#[pyclass]
-pub struct PyRecordBatch {
-    batch: RecordBatch,
-}
-
-#[pymethods]
-impl PyRecordBatch {
-    fn to_pyarrow(&self, py: Python) -> PyResult<PyObject> {
-        self.batch.to_pyarrow(py)
-    }
-}
-
-impl From<RecordBatch> for PyRecordBatch {
-    fn from(batch: RecordBatch) -> Self {
-        Self { batch }
-    }
-}
-
-#[pyclass]
-pub struct PyRecordBatchStream {
-    stream: SendableRecordBatchStream,
-}
-
-impl PyRecordBatchStream {
-    pub fn new(stream: SendableRecordBatchStream) -> Self {
-        Self { stream }
-    }
-}
-
-#[pymethods]
-impl PyRecordBatchStream {
-    fn next(&mut self, py: Python) -> PyResult<Option<PyObject>> {
-        let result = self.stream.next();
-        match wait_for_future(py, result) {
-            None => Ok(None),
-            Some(Ok(b)) => Ok(Some(b.to_pyarrow(py)?)),
-            Some(Err(e)) => Err(e.into()),
-        }
-    }
-
-    fn __next__(&mut self, py: Python) -> PyResult<Option<PyObject>> {
-        self.next(py)
-    }
-
-    fn __iter__(slf: PyRef<'_, Self>) -> PyRef<'_, Self> {
-        slf
-    }
+    Ok(())
 }

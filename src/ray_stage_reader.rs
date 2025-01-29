@@ -1,34 +1,36 @@
 use std::{fmt::Formatter, sync::Arc};
 
-use arrow::ffi_stream::ArrowArrayStreamReader;
 use arrow::record_batch::RecordBatchReader;
-use datafusion::arrow::pyarrow::FromPyArrow;
+use arrow_flight::{FlightClient, Ticket};
 use datafusion::common::internal_datafusion_err;
 use datafusion::error::Result;
+use datafusion::execution::RecordBatchStream;
 use datafusion::physical_expr::EquivalenceProperties;
 use datafusion::physical_plan::stream::RecordBatchStreamAdapter;
 use datafusion::physical_plan::{
     DisplayAs, DisplayFormatType, ExecutionMode, ExecutionPlan, Partitioning, PlanProperties,
 };
 use datafusion::{arrow::datatypes::SchemaRef, execution::SendableRecordBatchStream};
-use futures::stream::{self, TryStreamExt};
-use log::debug;
-use pyo3::prelude::*;
+use futures::stream::TryStreamExt;
+use futures::StreamExt;
+use prost::Message;
+use rust_decimal::prelude::*;
 
-use crate::context::CoordinatorId;
+use crate::protobuf::StreamMeta;
+use crate::pystage::ExchangeFlightClient;
 
 #[derive(Debug)]
 pub struct RayStageReaderExec {
     properties: PlanProperties,
     schema: SchemaRef,
-    pub stage_id: String,
+    pub stage_id: usize,
     pub coordinator_id: String,
 }
 
 impl RayStageReaderExec {
     pub fn try_new_from_input(
         input: Arc<dyn ExecutionPlan>,
-        stage_id: String,
+        stage_id: usize,
         coordinator_id: String,
     ) -> Result<Self> {
         let properties = input.properties().clone();
@@ -44,7 +46,7 @@ impl RayStageReaderExec {
     pub fn try_new(
         partitioning: Partitioning,
         schema: SchemaRef,
-        stage_id: String,
+        stage_id: usize,
         coordinator_id: String,
     ) -> Result<Self> {
         let properties = PlanProperties::new(
@@ -100,82 +102,64 @@ impl ExecutionPlan for RayStageReaderExec {
         unimplemented!()
     }
 
-    /// We will spawn a Ray Task for our child inputs and consume their output stream.
-    /// We will have to defer this functionality to python as Ray does not yet have Rust bindings.
     fn execute(
         &self,
         partition: usize,
         context: std::sync::Arc<datafusion::execution::TaskContext>,
     ) -> Result<SendableRecordBatchStream> {
-        // serialize our input plan
-        let coordinator_id = context
+        let name = format!("RayStageReaderExec[{}-{}]:", self.stage_id, partition);
+        println!("{name} execute");
+        let in_client_map = &context
             .session_config()
-            .get_extension::<CoordinatorId>()
-            .ok_or(internal_datafusion_err!("CoordinatorId not set"))?
-            .0
-            .clone();
+            .get_extension::<ExchangeFlightClient>()
+            .ok_or(internal_datafusion_err!(
+                "{name} Flight Client not in context"
+            ))?
+            .clone()
+            .0;
 
-        debug!("RayStageReaderExec[stage={}] ::execute", self.stage_id);
+        let mut client = in_client_map
+            .get(&self.stage_id)
+            .map(|flight_client| FlightClient::new_from_inner(flight_client.inner().clone()))
+            .ok_or(internal_datafusion_err!(
+                "{name} Flight Client not found for stage {}",
+                self.stage_id
+            ))?;
 
-        // TODO: Move initialization of ray stage reader object to constructor
-        // but it causes problems with serialization at this time.
-
-        // defer execution to the python object which will spawn a Ray Task
-        // to execute this partition and send us back a stream of the results
-        //
-        println!(
-            "RayStageReaderExec[{}] executing partition {}",
-            self.stage_id, partition
-        );
-        let record_batch_reader = Python::with_gil(|py| {
-            println!(
-                "RayStageReaderExec[{}] partition {} in python",
-                self.stage_id, partition
-            );
-            let module = PyModule::import_bound(py, "datafusion_ray.context")?;
-            println!(
-                "RayStageReaderExec[{}] partition {} in python got module",
-                self.stage_id, partition
-            );
-            let py_stage_reader = module.call_method1("StageReader", (coordinator_id,))?;
-            println!(
-                "RayStageReaderExec[{}] partition {} in python created stage reader",
-                self.stage_id, partition
-            );
-
-            let py_obj =
-                py_stage_reader.call_method1("reader", (self.stage_id.clone(), partition))?;
-            println!(
-                "RayStageReaderExec[{}] partition {} in python called method",
-                self.stage_id, partition
-            );
-            let record_batch_reader = ArrowArrayStreamReader::from_pyarrow_bound(&py_obj)?;
-            Ok::<ArrowArrayStreamReader, PyErr>(record_batch_reader)
-        })
-        .map_err(|e| internal_datafusion_err!("Error executing RayStageReaderExec: {:?}", e));
-
-        let record_batch_reader = match record_batch_reader {
-            Ok(rbr) => rbr,
-            Err(e) => {
-                println!(
-                    "RayStageReaderExec[{}] partition {} error: {:?}",
-                    self.stage_id, partition, e
-                );
-                return Err(e);
-            }
+        let meta = StreamMeta {
+            stage_id: self.stage_id as u64,
+            partition: partition as u64,
+            fraction: Decimal::zero().to_string(), // not used in this context
         };
-        println!(
-            "RayStageReaderExec[{}] partition {} made reader",
-            self.stage_id, partition
-        );
 
-        let schema = record_batch_reader.schema();
+        let ticket = Ticket {
+            ticket: meta.encode_to_vec().into(),
+        };
 
-        let the_stream = stream::iter(record_batch_reader)
-            .map_err(|e| internal_datafusion_err!("Error reading record batch: {:?}", e));
+        let stage_id = self.stage_id;
+        let out_stream = async_stream::stream! {
+            println!("{name} connecting to exchange do_get");
+            let flight_rbr_stream = client.do_get(ticket).await;
+            println!("{name} exchange do_get got response");
 
-        let adapted_stream = RecordBatchStreamAdapter::new(schema, the_stream);
+            let mut total_rows = 0;
+            if let Ok(mut flight_rbr_stream) = flight_rbr_stream {
 
-        Ok(Box::pin(adapted_stream))
+                while let Some(batch) = flight_rbr_stream.next().await {
+                    total_rows += batch.as_ref().map(|b| b.num_rows()).unwrap_or(0);
+                    yield batch
+                        .map_err(|e| internal_datafusion_err!("{name} Error reading batch: {}", e));
+                }
+            } else {
+                yield Err(internal_datafusion_err!("{name} Error getting stream"));
+            }
+            println!("{name} read {} total rows", total_rows);
+
+
+        };
+
+        let adapter = RecordBatchStreamAdapter::new(self.schema.clone(), out_stream);
+
+        Ok(Box::pin(adapter))
     }
 }
