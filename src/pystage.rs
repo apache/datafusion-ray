@@ -14,7 +14,7 @@ use datafusion::common::tree_node::{Transformed, TreeNode};
 use datafusion::common::{internal_datafusion_err, internal_err};
 use datafusion::physical_plan::{collect, displayable};
 use datafusion_python::physical_plan::PyExecutionPlan;
-use futures::future::try_join_all;
+use futures::future::{join_all, try_join_all};
 use futures::stream::FuturesUnordered;
 use object_store::aws::AmazonS3Builder;
 use prost::Message;
@@ -34,12 +34,12 @@ use pyo3::prelude::*;
 
 use anyhow::Result;
 
-pub struct ExchangeFlightClient(pub HashMap<usize, FlightClient>);
+/// a map of (stage_id, partition_id) to FlightClient used to speak to that Exchanger
+pub(crate) struct ExchangeAddrs(pub HashMap<(usize, usize), String>);
 
 #[pyclass]
 pub struct PyStage {
     name: String,
-    out_client: FlightClient,
     #[pyo3(get)]
     stage_id: usize,
     pub(crate) plan: Arc<dyn ExecutionPlan>,
@@ -51,13 +51,12 @@ pub struct PyStage {
 #[pymethods]
 impl PyStage {
     #[new]
-    #[pyo3(signature = (stage_id, plan_bytes, out_exchange_addr, in_exchange_addrs, shadow_partition_number=None, bucket=None, fraction=1.0))]
+    #[pyo3(signature = (stage_id, plan_bytes, exchange_addrs, shadow_partition_number=None, bucket=None, fraction=1.0))]
     pub fn from_bytes(
         py: Python,
         stage_id: usize,
         plan_bytes: Vec<u8>,
-        out_exchange_addr: String,
-        in_exchange_addrs: HashMap<usize, String>,
+        exchange_addrs: HashMap<(usize, usize), String>,
         shadow_partition_number: Option<usize>,
         bucket: Option<String>,
         fraction: f64,
@@ -69,19 +68,9 @@ impl PyStage {
                 .map(|s| s.to_string())
                 .unwrap_or("n/a".into())
         );
-        let out_client = make_client(py, &out_exchange_addr)?;
-
-        // make our own clone as FlightClient is not Clone, but inner is
-        let out_client_map: HashMap<usize, FlightClient> = in_exchange_addrs
-            .iter()
-            .map(|(stage_num, addr)| {
-                let client = make_client(py, addr).to_py_err()?;
-                Ok::<_, PyErr>((stage_num.clone(), client))
-            })
-            .collect::<Result<HashMap<_, _>, PyErr>>()?;
 
         let mut config =
-            SessionConfig::new().with_extension(Arc::new(ExchangeFlightClient(out_client_map)));
+            SessionConfig::new().with_extension(Arc::new(ExchangeAddrs(exchange_addrs)));
 
         // this only matters if the plan includes an PartitionIsolatorExec
         // and will be ignored otherwise
@@ -116,7 +105,6 @@ impl PyStage {
 
         Ok(Self {
             name,
-            out_client,
             stage_id,
             plan,
             ctx,
@@ -128,39 +116,47 @@ impl PyStage {
     pub fn execute(&mut self, py: Python) -> PyResult<()> {
         println!("{} executing", self.name);
 
+        let addrs = &self
+            .ctx
+            .state()
+            .config()
+            .get_extension::<ExchangeAddrs>()
+            .ok_or(internal_datafusion_err!("Flight Client not in context"))?
+            .clone()
+            .0;
+
         let futs = (0..self.num_output_partitions()).map(|partition| {
             let ctx = self.ctx.task_ctx();
-            // make our own clone as FlightClient is not Clone, but inner is
-            let inner = self.out_client.inner().clone();
-            let client_clone = FlightClient::new_from_inner(inner);
             let plan = self.plan.clone();
-            let stage_id = self.stage_id;
-            let fraction = self.fraction;
-            let shadow_partition_number = self.shadow_partition_number;
+            let stage_id = self.stage_id.clone();
+            let fraction = self.fraction.clone();
+            let shadow_partition_number = self.shadow_partition_number.clone();
 
-            tokio::spawn(consume_stage(
-                stage_id,
-                shadow_partition_number,
-                fraction,
-                ctx,
-                partition,
-                plan,
-                client_clone,
-            ))
+            async move {
+                // TODO propagate these errors appropriately
+                let client = addrs
+                    .get(&(stage_id, partition))
+                    .map(|addr| make_client(addr))
+                    .expect("cannot find addr")
+                    .await
+                    .expect("cannot make client");
+
+                tokio::spawn(consume_stage(
+                    stage_id,
+                    shadow_partition_number,
+                    fraction,
+                    ctx,
+                    partition,
+                    plan,
+                    client,
+                ));
+            }
         });
 
-        let name = self.name.clone();
-        let fut = async {
-            match try_join_all(futs).await {
-                Ok(_) => Ok(()),
-                Err(e) => {
-                    println!("{name}:ERROR executing {e}");
-                    Err(e)
-                }
-            }
-        };
+        let fut = join_all(futs);
 
-        wait_for_future(py, fut).to_py_err()
+        wait_for_future(py, fut);
+        Ok(())
     }
 
     pub fn num_output_partitions(&self) -> usize {

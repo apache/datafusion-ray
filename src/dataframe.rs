@@ -42,7 +42,7 @@ use tonic::transport::Channel;
 
 use crate::isolator::PartitionIsolatorExec;
 use crate::max_rows::MaxRowsExec;
-use crate::pystage::ExchangeFlightClient;
+use crate::pystage::ExchangeAddrs;
 use crate::ray_stage::RayStageExec;
 use crate::ray_stage_reader::RayStageReaderExec;
 use crate::util::make_client;
@@ -198,21 +198,9 @@ impl RayDataFrame {
 
     pub fn execute(
         &self,
-        py: Python,
-        in_exchange_addrs: HashMap<usize, String>,
+        exchange_addrs: HashMap<(usize, usize), String>,
     ) -> PyResult<PyRecordBatchStream> {
-        // TODO: consolidate this code
-        //
-        let in_client_map: HashMap<usize, FlightClient> = in_exchange_addrs
-            .iter()
-            .map(|(stage_num, addr)| {
-                let client = make_client(py, addr).to_py_err()?;
-                Ok::<_, PyErr>((stage_num.clone(), client))
-            })
-            .collect::<Result<HashMap<_, _>, PyErr>>()?;
-
-        let config =
-            SessionConfig::new().with_extension(Arc::new(ExchangeFlightClient(in_client_map)));
+        let config = SessionConfig::new().with_extension(Arc::new(ExchangeAddrs(exchange_addrs)));
 
         let state = SessionStateBuilder::new()
             .with_default_features()

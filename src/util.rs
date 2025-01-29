@@ -208,20 +208,15 @@ pub fn prettify(batches: Bound<'_, PyList>) -> PyResult<String> {
         .to_py_err()
 }
 
-pub fn make_client(py: Python, exchange_addr: &str) -> PyResult<FlightClient> {
+pub async fn make_client(exchange_addr: &str) -> Result<FlightClient, DataFusionError> {
     let url = format!("http://{exchange_addr}");
 
-    let chan = Channel::from_shared(url).to_py_err()?;
-    let fut = async { chan.connect().await };
-    let channel = match wait_for_future(py, fut) {
-        Ok(channel) => channel,
-        _ => {
-            return Err(pyo3::exceptions::PyException::new_err(
-                "error connecting to exchange".to_string(),
-            ));
-        }
-    };
-
+    let chan = Channel::from_shared(url.clone())
+        .map_err(|e| internal_datafusion_err!("Cannot create channel from url {url}: {e}"))?;
+    let channel = chan
+        .connect()
+        .await
+        .map_err(|e| internal_datafusion_err!("Cannot connect to channel {e}"))?;
     let flight_client = FlightClient::new(channel);
     Ok(flight_client)
 }

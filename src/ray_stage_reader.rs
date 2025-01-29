@@ -17,7 +17,8 @@ use prost::Message;
 use rust_decimal::prelude::*;
 
 use crate::protobuf::StreamMeta;
-use crate::pystage::ExchangeFlightClient;
+use crate::pystage::ExchangeAddrs;
+use crate::util::make_client;
 
 #[derive(Debug)]
 pub struct RayStageReaderExec {
@@ -109,22 +110,14 @@ impl ExecutionPlan for RayStageReaderExec {
     ) -> Result<SendableRecordBatchStream> {
         let name = format!("RayStageReaderExec[{}-{}]:", self.stage_id, partition);
         println!("{name} execute");
-        let in_client_map = &context
+        let addr_map = &context
             .session_config()
-            .get_extension::<ExchangeFlightClient>()
+            .get_extension::<ExchangeAddrs>()
             .ok_or(internal_datafusion_err!(
                 "{name} Flight Client not in context"
             ))?
             .clone()
             .0;
-
-        let mut client = in_client_map
-            .get(&self.stage_id)
-            .map(|flight_client| FlightClient::new_from_inner(flight_client.inner().clone()))
-            .ok_or(internal_datafusion_err!(
-                "{name} Flight Client not found for stage {}",
-                self.stage_id
-            ))?;
 
         let meta = StreamMeta {
             stage_id: self.stage_id as u64,
@@ -137,8 +130,18 @@ impl ExecutionPlan for RayStageReaderExec {
         };
 
         let stage_id = self.stage_id;
+        let addr_map = addr_map.clone();
         let out_stream = async_stream::stream! {
-            println!("{name} connecting to exchange do_get");
+            println!("{name} connecting to exchange");
+
+            let mut client = addr_map
+                .get(&(stage_id, partition))
+                .map(|addr|make_client(addr))
+                .expect("no addr found")
+                .await
+                .expect("Couldn't make flight client");
+
+
             let flight_rbr_stream = client.do_get(ticket).await;
             println!("{name} exchange do_get got response");
 
