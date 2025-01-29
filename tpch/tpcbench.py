@@ -91,6 +91,8 @@ def main(
         "data_path": data_path,
         "queries": {},
     }
+    if validate:
+        results["local_queries"] = {}
 
     duckdb.sql("load tpch")
 
@@ -114,18 +116,22 @@ def main(
         start_time = time.time()
         batches = df.collect()
         end_time = time.time()
+        results["queries"][qnum] = end_time - start_time + part1
 
         calculated = prettify(batches)
         print(calculated)
         if validate:
+            start_time = time.time()
             answer_batches = local_ctx.sql(sql).collect()
+            end_time = time.time()
+            results["local_queries"][qnum] = end_time - start_time
+
             expected = prettify(answer_batches)
 
             if not calculated == expected:
                 print(f"Possible wrong answer for TPCH query {qnum}")
                 print(expected)
                 # raise Exception("Wrong answer")
-        results["queries"][qnum] = [end_time - start_time + part1]
 
     results = json.dumps(results, indent=4)
     current_time_millis = int(datetime.now().timestamp() * 1000)

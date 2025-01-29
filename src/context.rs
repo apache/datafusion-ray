@@ -124,6 +124,14 @@ impl RayContext {
         Ok(())
     }
 
+    pub fn get_target_partitions(&self) -> usize {
+        let state = self.ctx.state_ref();
+        let guard = state.read();
+        let config = guard.config();
+        let options = config.options();
+        options.execution.target_partitions
+    }
+
     pub fn set_coordinator_id(&self, id: String) -> PyResult<()> {
         let state = self.ctx.state_ref();
         let mut guard = state.write();
