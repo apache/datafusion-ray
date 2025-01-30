@@ -132,16 +132,19 @@ pub struct Exchange<T> {
     /// sender channel for stats.  As we need to use a clone of this
     /// sent across stream boundaries, we need an async Mutex
     stats_sender: Arc<TokioMutex<Option<Sender<Stats>>>>,
+
+    channel_size: usize,
 }
 
 impl<T> Exchange<T> {
-    pub fn new(stats_sender: Sender<Stats>) -> Self {
+    pub fn new(stats_sender: Sender<Stats>, channel_size: usize) -> Self {
         Self {
             senders: Arc::new(Mutex::new(HashMap::new())),
             receivers: Arc::new(Mutex::new(HashMap::new())),
             created: Arc::new(Mutex::new(HashSet::new())),
             dones: Arc::new(Mutex::new(HashMap::new())),
             stats_sender: Arc::new(TokioMutex::new(Some(stats_sender))),
+            channel_size,
         }
     }
 
@@ -149,7 +152,7 @@ impl<T> Exchange<T> {
         let mut created = self.created.lock();
 
         if !created.contains(&key) {
-            let (sender, receiver) = channel(1000); // TODO: what size?
+            let (sender, receiver) = channel(self.channel_size); // TODO: what size?
 
             self.senders.lock().insert(key, sender);
             self.receivers.lock().insert(key, receiver);
@@ -382,12 +385,13 @@ pub struct PyExchange {
     addr: Option<String>,
     all_done_tx: Arc<Mutex<Sender<()>>>,
     all_done_rx: Option<Receiver<()>>,
+    channel_size: usize,
 }
 
 #[pymethods]
 impl PyExchange {
     #[new]
-    pub fn new(name: String) -> PyResult<Self> {
+    pub fn new(name: String, channel_size: usize) -> PyResult<Self> {
         let listener = None;
         let addr = None;
 
@@ -400,6 +404,7 @@ impl PyExchange {
             addr,
             all_done_tx,
             all_done_rx: Some(all_done_rx),
+            channel_size,
         })
     }
 
@@ -440,7 +445,7 @@ impl PyExchange {
         let (stats_sender, stats_receiver) = channel(10000);
         let exchange_stats = ExchangeStats::new(stats_receiver);
 
-        let exchange = Arc::new(Exchange::new(stats_sender));
+        let exchange = Arc::new(Exchange::new(stats_sender, self.channel_size));
 
         let mut all_done_rx = self.all_done_rx.take().unwrap();
 
@@ -504,7 +509,7 @@ mod test {
     #[tokio::test]
     async fn test_exchange() {
         let (stats_sender, _) = channel(10);
-        let e = Exchange::<u32>::new(stats_sender);
+        let e = Exchange::<u32>::new(stats_sender, 10);
         let msg = 1u32;
 
         let mut receiver = e.get(0, 0).unwrap();

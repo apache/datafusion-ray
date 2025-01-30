@@ -392,7 +392,7 @@ class RayExchanger:
     def __init__(self, name: str):
         from datafusion_ray._datafusion_ray_internal import PyExchange
 
-        self.exchange = PyExchange(name)
+        self.exchange = PyExchange(name, 64)
 
     def start_up(self):
         self.exchange.start_up()
