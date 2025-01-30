@@ -33,7 +33,7 @@ use pyo3::prelude::*;
 use std::sync::Arc;
 
 use crate::dataframe::{PyRecordBatchStream, RayDataFrame};
-use crate::physical::RayShuffleOptimizerRule;
+use crate::physical::RayStageOptimizerRule;
 use crate::util::{bytes_to_physical_plan, physical_plan_to_bytes, ResultExt};
 use url::Url;
 
@@ -49,7 +49,7 @@ pub struct RayContext {
 impl RayContext {
     #[new]
     pub fn new(bucket: Option<String>) -> PyResult<Self> {
-        let rule = RayShuffleOptimizerRule::new();
+        let rule = RayStageOptimizerRule::new();
 
         let config = SessionConfig::default().with_information_schema(true);
 
@@ -105,13 +105,9 @@ impl RayContext {
     }
 
     pub fn sql(&self, py: Python, query: String, coordinator_id: String) -> PyResult<RayDataFrame> {
-        let physical_plan = wait_for_future(py, self.sql_to_physical_plan(query))?;
+        let df = wait_for_future(py, self.ctx.sql(&query))?;
 
-        Ok(RayDataFrame::new(
-            physical_plan,
-            coordinator_id,
-            self.bucket.clone(),
-        ))
+        Ok(RayDataFrame::new(df, coordinator_id, self.bucket.clone()))
     }
 
     pub fn set(&self, option: String, value: String) -> PyResult<()> {
@@ -138,14 +134,5 @@ impl RayContext {
         let config = guard.config_mut();
         config.set_extension(Arc::new(CoordinatorId(id)));
         Ok(())
-    }
-}
-impl RayContext {
-    async fn sql_to_physical_plan(&self, sql: String) -> Result<Arc<dyn ExecutionPlan>> {
-        let logical_plan = self.ctx.sql(&sql).await?.into_optimized_plan()?;
-
-        let plan = self.ctx.state().create_physical_plan(&logical_plan).await?;
-
-        Ok(plan)
     }
 }

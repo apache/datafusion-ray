@@ -22,16 +22,22 @@ use datafusion::common::internal_datafusion_err;
 use datafusion::common::internal_err;
 use datafusion::common::tree_node::Transformed;
 use datafusion::common::tree_node::TreeNode;
+use datafusion::common::tree_node::TreeNodeRecursion;
 use datafusion::execution::SendableRecordBatchStream;
 use datafusion::execution::SessionStateBuilder;
+use datafusion::logical_expr::LogicalPlan;
 use datafusion::physical_plan::coalesce_batches::CoalesceBatchesExec;
 use datafusion::physical_plan::coalesce_partitions::CoalescePartitionsExec;
 use datafusion::physical_plan::displayable;
+use datafusion::physical_plan::joins::NestedLoopJoinExec;
 use datafusion::physical_plan::repartition::RepartitionExec;
+use datafusion::physical_plan::sorts::sort::SortExec;
 use datafusion::physical_plan::{ExecutionPlan, ExecutionPlanProperties};
+use datafusion::prelude::DataFrame;
 use datafusion::prelude::SessionConfig;
 use datafusion::prelude::SessionContext;
 use datafusion_python::physical_plan::PyExecutionPlan;
+use datafusion_python::sql::logical::PyLogicalPlan;
 use datafusion_python::utils::wait_for_future;
 use futures::stream::StreamExt;
 use pyo3::prelude::*;
@@ -53,7 +59,7 @@ pub struct CoordinatorId(pub String);
 
 #[pyclass]
 pub struct RayDataFrame {
-    physical_plan: Arc<dyn ExecutionPlan>,
+    df: DataFrame,
     #[pyo3(get)]
     coordinator_id: String,
     #[pyo3(get)]
@@ -62,13 +68,9 @@ pub struct RayDataFrame {
 }
 
 impl RayDataFrame {
-    pub fn new(
-        physical_plan: Arc<dyn ExecutionPlan>,
-        coordinator_id: String,
-        bucket: Option<String>,
-    ) -> Self {
+    pub fn new(df: DataFrame, coordinator_id: String, bucket: Option<String>) -> Self {
         Self {
-            physical_plan,
+            df,
             coordinator_id,
             bucket,
             final_plan: None,
@@ -80,6 +82,7 @@ impl RayDataFrame {
 impl RayDataFrame {
     fn stages(
         &mut self,
+        py: Python,
         batch_size: usize,
         isolate_partitions: bool,
     ) -> PyResult<Vec<PyDataFrameStage>> {
@@ -111,15 +114,21 @@ impl RayDataFrame {
                     self.coordinator_id.clone(),
                 )?) as Arc<dyn ExecutionPlan>;
 
-                Ok(Transformed::yes(replacement))
+                Ok(Transformed {
+                    data: replacement,
+                    transformed: true,
+                    tnr: TreeNodeRecursion::Jump,
+                })
             } else {
                 Ok(Transformed::no(plan))
             }
         };
 
+        let mut consume_all_partitions = false;
         // Step 1: we walk up the tree from the leaves to find the stages
         let up = |plan: Arc<dyn ExecutionPlan>| {
-            //println!("examining plan: {}", displayable(plan.as_ref()).one_line());
+            //println!("examining plan up: {}", displayable(plan.as_ref()).one_line());
+            //
 
             if let Some(stage_exec) = plan.as_any().downcast_ref::<RayStageExec>() {
                 let input = plan.children();
@@ -128,7 +137,8 @@ impl RayDataFrame {
 
                 let fixed_plan = input.clone().transform_down(down)?.data;
 
-                let stage = PyDataFrameStage::new(stage_exec.stage_id, fixed_plan);
+                let stage =
+                    PyDataFrameStage::new(stage_exec.stage_id, fixed_plan, consume_all_partitions);
 
                 stages.push(stage);
                 Ok(Transformed::no(plan))
@@ -151,18 +161,50 @@ impl RayDataFrame {
                     max_rows,
                 )) as Arc<dyn ExecutionPlan>;
 
+                consume_all_partitions = true;
+
+                Ok(Transformed::yes(replacement))
+            } else if plan.as_any().downcast_ref::<SortExec>().is_some() {
+                let mut replacement = plan.clone();
+
+                replacement = Arc::new(MaxRowsExec::new(
+                    Arc::new(CoalesceBatchesExec::new(replacement, inner_batch_size))
+                        as Arc<dyn ExecutionPlan>,
+                    max_rows,
+                )) as Arc<dyn ExecutionPlan>;
+
+                consume_all_partitions = false;
+
+                Ok(Transformed::yes(replacement))
+            } else if plan.as_any().downcast_ref::<NestedLoopJoinExec>().is_some() {
+                let mut replacement = plan.clone();
+
+                replacement = Arc::new(MaxRowsExec::new(
+                    Arc::new(CoalesceBatchesExec::new(replacement, inner_batch_size))
+                        as Arc<dyn ExecutionPlan>,
+                    max_rows,
+                )) as Arc<dyn ExecutionPlan>;
+
+                consume_all_partitions = true;
+
                 Ok(Transformed::yes(replacement))
             } else {
                 Ok(Transformed::no(plan))
             }
         };
 
-        self.physical_plan.clone().transform_up(up)?;
+        let physical_plan = wait_for_future(py, self.df.clone().create_physical_plan())?;
+
+        physical_plan.transform_up(up)?;
 
         // add coalesce and max rows to last stage
         let mut last_stage = stages
             .pop()
             .ok_or(internal_datafusion_err!("No stages found"))?;
+
+        if last_stage.num_output_partitions() > 1 {
+            return internal_err!("Last stage expected to have one partition").to_py_err();
+        }
 
         last_stage = PyDataFrameStage::new(
             last_stage.stage_id,
@@ -171,6 +213,8 @@ impl RayDataFrame {
                     as Arc<dyn ExecutionPlan>,
                 max_rows,
             )) as Arc<dyn ExecutionPlan>,
+            true, // this doesn't really matter here as there is only one
+                  // partition on the final stage
         );
 
         // done fixing last stage
@@ -183,17 +227,22 @@ impl RayDataFrame {
 
         stages.push(last_stage);
 
-        if reader_plan.output_partitioning().partition_count() > 1 {
-            self.final_plan = Some(Arc::new(CoalescePartitionsExec::new(reader_plan)));
-        } else {
-            self.final_plan = Some(reader_plan);
-        };
+        self.final_plan = Some(reader_plan);
 
         Ok(stages)
     }
 
-    fn execution_plan(&self) -> PyResult<PyExecutionPlan> {
-        Ok(PyExecutionPlan::new(self.physical_plan.clone()))
+    fn execution_plan(&self, py: Python) -> PyResult<PyExecutionPlan> {
+        let plan = wait_for_future(py, self.df.clone().create_physical_plan())?;
+        Ok(PyExecutionPlan::new(plan))
+    }
+
+    fn logical_plan(&self) -> PyResult<PyLogicalPlan> {
+        Ok(PyLogicalPlan::new(self.df.logical_plan().clone()))
+    }
+
+    fn optimized_logical_plan(&self) -> PyResult<PyLogicalPlan> {
+        Ok(PyLogicalPlan::new(self.df.clone().into_optimized_plan()?))
     }
 
     pub fn execute(
@@ -229,10 +278,15 @@ impl RayDataFrame {
 pub struct PyDataFrameStage {
     stage_id: usize,
     plan: Arc<dyn ExecutionPlan>,
+    consume_all_partitions: bool,
 }
 impl PyDataFrameStage {
-    fn new(stage_id: usize, plan: Arc<dyn ExecutionPlan>) -> Self {
-        Self { stage_id, plan }
+    fn new(stage_id: usize, plan: Arc<dyn ExecutionPlan>, consume_all_partitions: bool) -> Self {
+        Self {
+            stage_id,
+            plan,
+            consume_all_partitions,
+        }
     }
 }
 
@@ -263,6 +317,10 @@ impl PyDataFrameStage {
                 Ok(Transformed::no(node))
             });
         result
+    }
+
+    pub fn consume_all_partitions(&self) -> bool {
+        self.consume_all_partitions
     }
 
     #[getter]

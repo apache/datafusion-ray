@@ -73,6 +73,12 @@ class RayDataFrame:
     def execution_plan(self):
         return self.df.execution_plan()
 
+    def logical_plan(self):
+        return self.df.logical_plan()
+
+    def optimized_logical_plan(self):
+        return self.df.optimized_logical_plan()
+
     def collect(self) -> list[pa.RecordBatch]:
         if not self._batches:
             t1 = time.time()
@@ -113,48 +119,66 @@ class RayDataFrame:
         #
         # Otherwise, we will just launch each stage once and it will take care
         # care of all input parititions itself.
-        #
-        if self.isolate_partitions:
-            print("spawning stages per partition")
-            refs = []
-            for stage in self.stages():
-                num_shadows = stage.num_shadow_partitions()
-                print(f"stage {stage.stage_id} has {num_shadows} shadows")
+        print("spawning stages per partition")
+        refs = []
+        for stage in self.stages():
+            num_shadows = stage.num_shadow_partitions()
+            num_output_partitions = stage.num_output_partitions()
+            if self.isolate_partitions:
+                print(
+                    f"stage {stage.stage_id} has {num_shadows} shadows, consuming_all_partitions={stage.consume_all_partitions()}"
+                )
                 if num_shadows:
                     for shadow_partition in range(num_shadows):
                         print(f"starting stage {stage.stage_id}:s{shadow_partition}")
                         refs.append(
                             self.coord.new_stage.remote(
                                 stage.stage_id,
-                                stage.input_stage_ids,
                                 stage.plan_bytes(),
-                                shadow_partition,
-                                1.0 / num_shadows,
-                                self.bucket,
+                                required_output_partitions=list(
+                                    range(num_output_partitions)
+                                ),
+                                shadow_partition=shadow_partition,
+                                fraction=1.0 / num_shadows,
+                                bucket=self.bucket,
                             )
                         )
-                else:
+                elif stage.consume_all_partitions():
+                    # even though we said isolate partitions, this stage needs to be run alone and consume all
                     refs.append(
                         self.coord.new_stage.remote(
                             stage.stage_id,
-                            stage.input_stage_ids,
                             stage.plan_bytes(),
+                            required_output_partitions=list(
+                                range(num_output_partitions)
+                            ),
                             bucket=self.bucket,
                         )
                     )
-        else:
-            print("creating stages")
-            refs = [
-                self.coord.new_stage.remote(
-                    stage.stage_id,
-                    stage.input_stage_ids,
-                    stage.plan_bytes(),
-                    bucket=self.bucket,
-                )
-                for stage in self.stages()
-            ]
-        # wait for all stages to be created
 
+                else:
+                    # we are running a single partition as its own Actor
+                    for partition in range(num_output_partitions):
+                        refs.append(
+                            self.coord.new_stage.remote(
+                                stage.stage_id,
+                                stage.plan_bytes(),
+                                required_output_partitions=[partition],
+                                bucket=self.bucket,
+                            )
+                        )
+            else:
+                # we are running each stage as its own actor
+                refs.append(
+                    self.coord.new_stage.remote(
+                        stage.stage_id,
+                        stage.plan_bytes(),
+                        required_output_partitions=list(range(num_output_partitions)),
+                        bucket=self.bucket,
+                    )
+                )
+
+        # wait for all stages to be created
         ray.wait(refs, num_returns=len(refs))
 
     def run_stages(self):
@@ -185,9 +209,6 @@ class RayContext:
     def register_listing_table(self, name: str, path: str, file_extention="parquet"):
         self.ctx.register_listing_table(name, path, file_extention)
 
-    def execution_plan(self):
-        return self.ctx.execution_plan()
-
     def sql(self, query: str) -> RayDataFrame:
         coordinator_id = str(uuid.uuid4())
         self.ctx.set_coordinator_id(coordinator_id)
@@ -201,11 +222,6 @@ class RayContext:
             self.bucket,
             self.num_exchangers,
         )
-
-    def local_sql(self, query: str) -> datafusion.DataFrame:
-        coordinator_id = str(uuid.uuid4())
-        self.ctx.set_coordinator_id(coordinator_id)
-        return self.ctx.local_sql(query)
 
     def set(self, option: str, value: str) -> None:
         self.ctx.set(option, value)
@@ -274,13 +290,13 @@ class RayStageCoordinator:
     def new_stage(
         self,
         stage_id: int,
-        input_stage_ids: list[int],
         plan_bytes: bytes,
+        required_output_partitions: list[int],
         shadow_partition=None,
         fraction=1.0,
         bucket: str | None = None,
     ):
-        stage_key = f"{stage_id}-{shadow_partition}"
+        stage_key = f"{stage_id}-{shadow_partition}-{required_output_partitions}"
         try:
 
             print(f"creating new stage {stage_key} from bytes {len(plan_bytes)}")
@@ -291,6 +307,7 @@ class RayStageCoordinator:
                 stage_id,
                 plan_bytes,
                 self.exchange_addrs,
+                required_output_partitions,
                 fraction,
                 shadow_partition,
                 bucket,
@@ -340,6 +357,7 @@ class RayStage:
         stage_id: str,
         plan_bytes: bytes,
         exchanger_addrs: dict[tuple[int, int], str],
+        required_output_partitions: list[int],
         fraction: float,
         shadow_partition=None,
         bucket: str | None = None,
@@ -360,6 +378,7 @@ class RayStage:
                 stage_id,
                 plan_bytes,
                 exchanger_addrs,
+                required_output_partitions,
                 shadow_partition,
                 bucket,
                 fraction,

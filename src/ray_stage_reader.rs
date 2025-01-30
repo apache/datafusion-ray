@@ -8,7 +8,8 @@ use datafusion::execution::RecordBatchStream;
 use datafusion::physical_expr::EquivalenceProperties;
 use datafusion::physical_plan::stream::RecordBatchStreamAdapter;
 use datafusion::physical_plan::{
-    DisplayAs, DisplayFormatType, ExecutionMode, ExecutionPlan, Partitioning, PlanProperties,
+    displayable, DisplayAs, DisplayFormatType, ExecutionMode, ExecutionPlan, Partitioning,
+    PlanProperties,
 };
 use datafusion::{arrow::datatypes::SchemaRef, execution::SendableRecordBatchStream};
 use futures::stream::TryStreamExt;
@@ -35,6 +36,13 @@ impl RayStageReaderExec {
         coordinator_id: String,
     ) -> Result<Self> {
         let properties = input.properties().clone();
+        /*println!(
+            "RayStageReaderExec::try_new_from_input.  input:\n{}\nPartitioning:{}",
+            displayable(input.as_ref())
+                .set_show_schema(true)
+                .indent(true),
+            properties.partitioning
+        );*/
 
         Self::try_new(
             properties.partitioning.clone(),
@@ -52,7 +60,7 @@ impl RayStageReaderExec {
     ) -> Result<Self> {
         let properties = PlanProperties::new(
             EquivalenceProperties::new(schema.clone()),
-            partitioning,
+            Partitioning::UnknownPartitioning(partitioning.partition_count()),
             ExecutionMode::Unbounded,
         );
 

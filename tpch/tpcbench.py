@@ -93,6 +93,7 @@ def main(
     }
     if validate:
         results["local_queries"] = {}
+        results["validated"] = {}
 
     duckdb.sql("load tpch")
 
@@ -105,12 +106,16 @@ def main(
 
         print("executing ", sql)
 
-        df = ctx.sql(sql)
         start_time = time.time()
+        df = ctx.sql(sql)
         end_time = time.time()
+        print("Logical plan \n", df.logical_plan().display_indent())
+        print("Optimized Logical plan \n", df.optimized_logical_plan().display_indent())
         part1 = end_time - start_time
         for stage in df.stages():
-            print("Stage ", stage.stage_id)
+            print(
+                f"Stage {stage.stage_id} output partitions:{stage.num_output_partitions()} shadow partitions: {stage.num_shadow_partitions()} consume all: {stage.consume_all_partitions()}"
+            )
             print(stage.execution_plan().display_indent())
 
         start_time = time.time()
@@ -128,10 +133,8 @@ def main(
 
             expected = prettify(answer_batches)
 
-            if not calculated == expected:
-                print(f"Possible wrong answer for TPCH query {qnum}")
-                print(expected)
-                # raise Exception("Wrong answer")
+            results["validated"][qnum] = calculated == expected
+        print(f"done with query {qnum}")
 
     results = json.dumps(results, indent=4)
     current_time_millis = int(datetime.now().timestamp() * 1000)
