@@ -125,15 +125,16 @@ impl PyStage {
             .clone()
             .0;
 
-        let futs = (0..self.num_output_partitions()).map(|partition| {
+        //let futs = (0..self.num_output_partitions()).map(|partition| {
+        for partition in 0..self.num_output_partitions() {
             let ctx = self.ctx.task_ctx();
             let plan = self.plan.clone();
             let stage_id = self.stage_id.clone();
             let fraction = self.fraction.clone();
             let shadow_partition_number = self.shadow_partition_number.clone();
 
-            async move {
-                // TODO propagate these errors appropriately
+            // TODO propagate these errors appropriately
+            wait_for_future(py, async {
                 let client = addrs
                     .get(&(stage_id, partition))
                     .map(|addr| make_client(addr))
@@ -141,7 +142,7 @@ impl PyStage {
                     .await
                     .expect("cannot make client");
 
-                tokio::spawn(consume_stage(
+                consume_stage(
                     stage_id,
                     shadow_partition_number,
                     fraction,
@@ -149,13 +150,12 @@ impl PyStage {
                     partition,
                     plan,
                     client,
-                ));
-            }
-        });
+                )
+                .await
+            })
+            .to_py_err()?;
+        }
 
-        let fut = join_all(futs);
-
-        wait_for_future(py, fut);
         Ok(())
     }
 
