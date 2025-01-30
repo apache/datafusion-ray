@@ -47,12 +47,13 @@ pub struct PyStage {
     fraction: f64,
     shadow_partition_number: Option<usize>,
     required_output_partitions: Vec<usize>,
+    sequential: bool,
 }
 
 #[pymethods]
 impl PyStage {
     #[new]
-    #[pyo3(signature = (stage_id, plan_bytes, exchange_addrs, required_output_partitions, shadow_partition_number=None, bucket=None, fraction=1.0))]
+    #[pyo3(signature = (stage_id, plan_bytes, exchange_addrs, required_output_partitions, shadow_partition_number=None, bucket=None, fraction=1.0, sequential=false))]
     pub fn from_bytes(
         stage_id: usize,
         plan_bytes: Vec<u8>,
@@ -61,6 +62,7 @@ impl PyStage {
         shadow_partition_number: Option<usize>,
         bucket: Option<String>,
         fraction: f64,
+        sequential: bool,
     ) -> PyResult<Self> {
         let name = format!(
             "PyStage[{}-{}]",
@@ -112,6 +114,7 @@ impl PyStage {
             fraction,
             shadow_partition_number,
             required_output_partitions,
+            sequential,
         })
     }
 
@@ -127,35 +130,67 @@ impl PyStage {
             .clone()
             .0;
 
-        let futs = self.required_output_partitions.iter().map(|partition| {
-            let ctx = self.ctx.task_ctx();
-            let plan = self.plan.clone();
-            let stage_id = self.stage_id.clone();
-            let fraction = self.fraction.clone();
-            let shadow_partition_number = self.shadow_partition_number.clone();
+        if self.sequential {
+            for partition in self.required_output_partitions.iter() {
+                let ctx = self.ctx.task_ctx();
+                let plan = self.plan.clone();
+                let stage_id = self.stage_id.clone();
+                let fraction = self.fraction.clone();
+                let shadow_partition_number = self.shadow_partition_number.clone();
 
-            // TODO propagate these errors appropriately
-            async move {
-                let client = addrs
-                    .get(&(stage_id, *partition))
-                    .map(|addr| make_client(addr))
-                    .expect("cannot find addr")
+                // TODO propagate these errors appropriately
+                wait_for_future(py, async move {
+                    let client = addrs
+                        .get(&(stage_id, *partition))
+                        .map(|addr| make_client(addr))
+                        .expect("cannot find addr")
+                        .await
+                        .expect("cannot make client");
+
+                    consume_stage(
+                        stage_id,
+                        shadow_partition_number,
+                        fraction,
+                        ctx,
+                        *partition,
+                        plan,
+                        client,
+                    )
                     .await
-                    .expect("cannot make client");
-
-                tokio::spawn(consume_stage(
-                    stage_id,
-                    shadow_partition_number,
-                    fraction,
-                    ctx,
-                    *partition,
-                    plan,
-                    client,
-                ));
+                    .expect("error consuming stage");
+                });
             }
-        });
+        } else {
+            let futs = self.required_output_partitions.iter().map(|partition| {
+                let ctx = self.ctx.task_ctx();
+                let plan = self.plan.clone();
+                let stage_id = self.stage_id.clone();
+                let fraction = self.fraction.clone();
+                let shadow_partition_number = self.shadow_partition_number.clone();
 
-        wait_for_future(py, join_all(futs));
+                // TODO propagate these errors appropriately
+                async move {
+                    let client = addrs
+                        .get(&(stage_id, *partition))
+                        .map(|addr| make_client(addr))
+                        .expect("cannot find addr")
+                        .await
+                        .expect("cannot make client");
+
+                    tokio::spawn(consume_stage(
+                        stage_id,
+                        shadow_partition_number,
+                        fraction,
+                        ctx,
+                        *partition,
+                        plan,
+                        client,
+                    ));
+                }
+            });
+
+            wait_for_future(py, join_all(futs));
+        }
 
         Ok(())
     }
