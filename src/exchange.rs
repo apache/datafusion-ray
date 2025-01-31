@@ -71,6 +71,7 @@ pub struct Stats {
     pub remote_addr: String,
 }
 
+/// map of stage num -> "in/out" -> partition num -> remode addr -> total rows
 type StatMap = HashMap<usize, HashMap<String, HashMap<usize, HashMap<String, usize>>>>;
 
 fn format_stats(sm: &StatMap) -> String {
@@ -123,12 +124,34 @@ impl ExchangeStats {
     }
 }
 
+/// a struct holding the current status of a channel
+#[derive(Default, Clone, Copy)]
+pub(crate) struct ChannelData {
+    pub bytes: usize,
+    pub batches: usize,
+    pub rows: usize,
+}
+
+impl ChannelData {
+    pub fn inc(&mut self, batch: &RecordBatch) {
+        self.batches += 1;
+        self.rows += batch.num_rows();
+        self.bytes += batch.get_array_memory_size();
+    }
+
+    pub fn dec(&mut self, batch: &RecordBatch) {
+        self.batches -= 1;
+        self.rows -= batch.num_rows();
+        self.bytes -= batch.get_array_memory_size();
+    }
+}
+
 pub struct Exchange<T> {
     senders: Arc<Mutex<HashMap<PartitionKey, Sender<T>>>>,
-    size_peekers: Arc<Mutex<HashMap<PartitionKey, Sender<T>>>>,
     receivers: Arc<Mutex<HashMap<PartitionKey, Receiver<T>>>>,
     created: Arc<Mutex<HashSet<PartitionKey>>>,
     dones: Arc<Mutex<HashMap<PartitionKey, Decimal>>>,
+    exchange_channel_data: Arc<Mutex<HashMap<PartitionKey, ChannelData>>>,
 
     /// sender channel for stats.  As we need to use a clone of this
     /// sent across stream boundaries, we need an async Mutex
@@ -141,10 +164,10 @@ impl<T> Exchange<T> {
     pub fn new(stats_sender: Sender<Stats>, channel_size: usize) -> Self {
         Self {
             senders: Arc::new(Mutex::new(HashMap::new())),
-            size_peekers: Arc::new(Mutex::new(HashMap::new())),
             receivers: Arc::new(Mutex::new(HashMap::new())),
             created: Arc::new(Mutex::new(HashSet::new())),
             dones: Arc::new(Mutex::new(HashMap::new())),
+            exchange_channel_data: Arc::new(Mutex::new(HashMap::new())),
             stats_sender: Arc::new(TokioMutex::new(Some(stats_sender))),
             channel_size,
         }
@@ -156,7 +179,9 @@ impl<T> Exchange<T> {
         if !created.contains(&key) {
             let (sender, receiver) = channel(self.channel_size); // TODO: what size?
 
-            self.size_peekers.lock().insert(key, sender.clone());
+            self.exchange_channel_data
+                .lock()
+                .insert(key, Default::default());
             self.senders.lock().insert(key, sender);
             self.receivers.lock().insert(key, receiver);
             self.dones.lock().insert(key, Decimal::zero());
@@ -169,16 +194,13 @@ impl<T> Exchange<T> {
         self.stats_sender.lock().await.take();
     }
 
-    pub fn channel_size(&self, stage_num: usize, partition_num: usize) -> Option<(usize, usize)> {
+    pub fn channel_data(&self, stage_num: usize, partition_num: usize) -> Option<ChannelData> {
         let key = PartitionKey {
             stage_num,
             partition_num,
         };
 
-        self.senders
-            .lock()
-            .get(&key)
-            .map(|sender| (sender.capacity(), sender.max_capacity()))
+        self.exchange_channel_data.lock().get(&key).map(|v| *v)
     }
 
     pub fn put(&self, stage_num: usize, partition_num: usize) -> DFResult<Sender<T>> {
@@ -242,10 +264,18 @@ impl FlightHandler for Exchange<RecordBatch> {
             .clone()
             .ok_or(Status::internal("expected stats_sender"))?;
 
+        let exchange_data = self.exchange_channel_data.clone();
+
         let stream = stream! {
+            let key = PartitionKey {
+                stage_num,
+                partition_num,
+            };
+
 
             while let Some(batch) = recv.recv().await {
 
+                exchange_data.lock().get_mut(&key).map(|data| data.dec(&batch));
                 total_rows += batch.num_rows();
                 yield Ok(batch);
 
@@ -308,7 +338,7 @@ impl FlightHandler for Exchange<RecordBatch> {
 
         let dones = self.dones.clone();
         let senders = self.senders.clone();
-        let size_peekers = self.size_peekers.clone();
+        let exchange_data = self.exchange_channel_data.clone();
         let stats_sender = self
             .stats_sender
             .lock()
@@ -317,6 +347,10 @@ impl FlightHandler for Exchange<RecordBatch> {
             .ok_or(Status::internal("expected stats_sender"))?;
         let name_c = name.clone();
         let out_stream = stream! {
+            let key = PartitionKey {
+                stage_num,
+                partition_num,
+            };
             while let Some(flight_data) = flight_data_stream.next().await {
                 let maybe_batch = flight_data.and_then(|fd| {
                     flight_data_to_arrow_batch(&fd, schema.clone(), &dictionaries_by_id)
@@ -324,6 +358,8 @@ impl FlightHandler for Exchange<RecordBatch> {
                 });
                 let res = match maybe_batch {
                     Ok(batch) => {
+
+                        exchange_data.lock().get_mut(&key).map(|data| data.dec(&batch));
                         total_rows += batch.num_rows();
                         sender
                             .send(batch)
@@ -338,10 +374,6 @@ impl FlightHandler for Exchange<RecordBatch> {
             }
 
             // Done with stream consumption, now do some house keeping
-            let key = PartitionKey {
-                stage_num,
-                partition_num,
-            };
 
             let done_with_partition = {
                 let mut guard = dones.lock();
@@ -364,7 +396,6 @@ impl FlightHandler for Exchange<RecordBatch> {
                     // remove the sender so all senders can be dropped, which will close the
                     // channel
                     senders.lock().remove(&key);
-                    size_peekers.lock().remove(&key);
                 }
                 Some(false) => {
                     // still more partitions to report in
@@ -460,17 +491,17 @@ impl PyExchange {
         pyo3_async_runtimes::tokio::future_into_py(py, fut)
     }
 
-    pub fn channel_size(
+    pub fn channel_data(
         &self,
         stage_num: usize,
         partition_num: usize,
-    ) -> PyResult<Option<(usize, usize)>> {
+    ) -> PyResult<Option<(usize, usize, usize)>> {
         self.exchange
             .as_ref()
             .ok_or(internal_datafusion_err!("Exchange not created"))
             .to_py_err()?
-            .channel_size(stage_num, partition_num)
-            .map(Ok)
+            .channel_data(stage_num, partition_num)
+            .map(|cd| Ok((cd.bytes, cd.batches, cd.rows)))
             .transpose()
     }
 

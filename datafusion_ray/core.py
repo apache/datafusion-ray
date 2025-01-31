@@ -417,8 +417,8 @@ class RayExchanger:
     def start_up(self):
         self.exchange.start_up()
 
-    def channel_size(self, stage_id: int, partition_id: int):
-        return self.exchange.channel_size(stage_id, partition_id)
+    def channel_data(self, stage_id: int, partition_id: int):
+        return self.exchange.channel_data(stage_id, partition_id)
 
     def addr(self):
         return self.exchange.addr()

@@ -96,4 +96,11 @@ name = "datafusion_ray._datafusion_ray_internal"
 
 [profile.release]
 codegen-units = 1
+opt-level = 3
+debug = 0
 lto = true
+
+[profile.dev]
+opt-level = 1
+[profile.dev.package."*"]
+opt-level = 3
