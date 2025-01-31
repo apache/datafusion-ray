@@ -50,35 +50,18 @@ def main(
         "region",
         "supplier",
     ]
-    # Connect to a cluster
-    # use ray job submit
-    ray.init()
-
-    ctx = RayContext(
-        batch_size=batch_size,
-        num_exchangers=exchangers,
-        isolate_partitions=isolate_partitions,
-        bucket="rob-tandy-tmp",
-    )
-
-    ctx.set("datafusion.execution.target_partitions", f"{concurrency}")
-    # ctx.set("datafusion.execution.parquet.pushdown_filters", "true")
-    ctx.set("datafusion.optimizer.enable_round_robin_repartition", "false")
-    ctx.set("datafusion.execution.coalesce_batches", "false")
 
     local_config = SessionConfig()
+    # local_config.set("","")
 
     local_ctx = SessionContext(local_config)
-    local_ctx.register_object_store("s3://", AmazonS3(bucket_name="rob-tandy-tmp"))
 
     for table in table_names:
         path = os.path.join(data_path, f"{table}.parquet")
         print(f"Registering table {table} using path {path}")
         if listing_tables:
-            ctx.register_listing_table(table, f"{path}/")
             local_ctx.register_listing_table(table, f"{path}/")
         else:
-            ctx.register_parquet(table, path)
             local_ctx.register_parquet(table, path)
 
     results = {
@@ -103,34 +86,16 @@ def main(
         print("executing ", sql)
 
         start_time = time.time()
-        df = ctx.sql(sql)
+        df = local_ctx.sql(sql)
         end_time = time.time()
-        print("Logical plan \n", df.logical_plan().display_indent())
-        print("Optimized Logical plan \n", df.optimized_logical_plan().display_indent())
         part1 = end_time - start_time
-        for stage in df.stages():
-            print(
-                f"Stage {stage.stage_id} output partitions:{stage.num_output_partitions()} shadow partitions: {stage.num_shadow_partitions()} consume all: {stage.consume_all_partitions()}"
-            )
-            print(stage.execution_plan().display_indent())
+        print("=== Physical Plan ===")
+        print(df.execution_plan().display_indent(True))
 
         start_time = time.time()
-        batches = df.collect()
+        answer_batches = df.collect()
         end_time = time.time()
-        results["queries"][qnum] = end_time - start_time + part1
-
-        calculated = prettify(batches)
-        print(calculated)
-        if validate:
-            start_time = time.time()
-            answer_batches = local_ctx.sql(sql).collect()
-            end_time = time.time()
-            results["local_queries"][qnum] = end_time - start_time
-
-            expected = prettify(answer_batches)
-
-            results["validated"][qnum] = calculated == expected
-        print(f"done with query {qnum}")
+        results["local_queries"][qnum] = end_time - start_time
 
     results = json.dumps(results, indent=4)
     current_time_millis = int(datetime.now().timestamp() * 1000)

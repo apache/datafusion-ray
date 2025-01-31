@@ -181,6 +181,9 @@ class RayDataFrame:
         # wait for all stages to be created
         ray.wait(refs, num_returns=len(refs))
 
+    def run_stage(self, stage_key):
+        ray.get(self.coord.run_stage.remote(stage_key))
+
     def run_stages(self):
         ray.get(self.coord.run_stages.remote())
 
@@ -320,25 +323,19 @@ class RayStageCoordinator:
             )
             raise e
 
+    def run_stage(self, stage_key):
+        print(f"running stage {stage_key}")
+        try:
+            self.stages[stage_key].execute.remote()
+        except Exception as e:
+            print(
+                f"RayQueryCoordinator[{self.my_id}] Unhandled Exception in run stage! {e}"
+            )
+            raise e
+
     def run_stages(self):
         print("running stages")
         try:
-            #
-            # Leaving out for now as I'm unsure how this interacts with https://github.com/ray-project/ray/issues/3644
-            #
-            # place holder for limiting the number of pending tasks
-            # MAX_NUM_PENDING_TASKS = 1e9
-            # refs = []
-            # stages = list(self.stages.items())
-            # does .values preserve order? assuming so at the moment
-            # todo, ultimately we need a DAG for this
-            # for i in range(len(stages)):
-            #    if len(refs) > MAX_NUM_PENDING_TASKS:
-            #        _, refs = ray.wait(refs, num_returns=1)
-
-            #    stage_key, stage = stages[i]
-            #    print(f"Scheduling stage {stage_key}")
-            #    refs.append(stage.execute.remote())
             for stage_key, stage in self.stages.items():
                 print(f"Scheduling stage {stage_key}")
                 stage.execute.remote()
@@ -412,7 +409,7 @@ class RayExchanger:
     def __init__(self, name: str):
         from datafusion_ray._datafusion_ray_internal import PyExchange
 
-        self.exchange = PyExchange(name, 64)
+        self.exchange = PyExchange(name, 32)
 
     def start_up(self):
         self.exchange.start_up()
