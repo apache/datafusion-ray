@@ -136,6 +136,9 @@ pub(crate) struct ChannelData {
     pub peak_bytes: i64,
     pub peak_batches: i64,
     pub peak_rows: i64,
+    pub sent_bytes: i64,
+    pub sent_batches: i64,
+    pub sent_rows: i64,
 }
 
 impl ChannelData {
@@ -153,16 +156,23 @@ impl ChannelData {
         self.batches -= 1;
         self.rows -= batch.num_rows() as i64;
         self.bytes -= batch.get_array_memory_size() as i64;
+
+        self.sent_batches += 1;
+        self.sent_rows += batch.num_rows() as i64;
+        self.sent_bytes += batch.get_array_memory_size() as i64;
     }
 }
 impl Display for ChannelData {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         let current_bytes = format!("{}", ByteSize(self.bytes as u64));
         let peak_bytes = format!("{}", ByteSize(self.peak_bytes as u64));
+        let sent_bytes = format!("{}", ByteSize(self.sent_bytes as u64));
         write!(
             f,
-            "Current: {}, rows:{}, batches{}. Peak: {}, rows:{}, batches{}",
-            current_bytes, self.rows, self.batches, peak_bytes, self.peak_rows, self.peak_batches
+            "Current: {}, rows:{}, batches:{} | Peak: {}, rows:{}, batches:{} | Sent: {}, rows:{} batches:{}",
+            current_bytes, self.rows, self.batches, 
+            peak_bytes, self.peak_rows, self.peak_batches,
+            sent_bytes, self.sent_rows, self.sent_batches
         )
     }
 }

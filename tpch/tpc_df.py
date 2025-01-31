@@ -52,7 +52,7 @@ def main(
     ]
 
     local_config = SessionConfig()
-    # local_config.set("","")
+    local_config.set("datafusion.execution.target_partitions", f"{concurrency}")
 
     local_ctx = SessionContext(local_config)
 
@@ -70,9 +70,8 @@ def main(
         "data_path": data_path,
         "queries": {},
     }
-    if validate:
-        results["local_queries"] = {}
-        results["validated"] = {}
+    results["local_queries"] = {}
+    results["validated"] = {}
 
     duckdb.sql("load tpch")
 
@@ -86,14 +85,15 @@ def main(
         print("executing ", sql)
 
         start_time = time.time()
-        df = local_ctx.sql(sql)
+        df = local_ctx.sql("explain analyze " + sql)
         end_time = time.time()
         part1 = end_time - start_time
         print("=== Physical Plan ===")
-        print(df.execution_plan().display_indent(True))
+        print(df.execution_plan().display_indent())
 
         start_time = time.time()
-        answer_batches = df.collect()
+        # df.collect()
+        df.explain(False, True)
         end_time = time.time()
         results["local_queries"][qnum] = end_time - start_time
 
