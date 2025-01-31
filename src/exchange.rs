@@ -235,7 +235,7 @@ impl FlightHandler for Exchange<RecordBatch> {
                 yield Ok(batch);
 
             }
-            if let Err(e) = stats_sender.send(Stats{
+            /*if let Err(e) = stats_sender.send(Stats{
                 stage_num,
                 partition_num,
                 in_out: "out".to_string(),
@@ -244,7 +244,7 @@ impl FlightHandler for Exchange<RecordBatch> {
             }).await {
                 yield Err(FlightError::from_external_error(Box::new(
                     internal_datafusion_err!("error sending stats: {e}"))));
-            }
+            }*/
             println!("{}: sent {} total rows", name_c, total_rows);
 
 
@@ -361,7 +361,7 @@ impl FlightHandler for Exchange<RecordBatch> {
             }
 
 
-            if let Err(e) = stats_sender.send(
+            /*if let Err(e) = stats_sender.send(
                 Stats {
                     stage_num,
                     partition_num,
@@ -370,7 +370,7 @@ impl FlightHandler for Exchange<RecordBatch> {
                     remote_addr,
                 }).await {
                 yield Err(Status::internal(format!("{name_c} Error sending stats {e}")));
-            }
+            }*/
 
 
         };

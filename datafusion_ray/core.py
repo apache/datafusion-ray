@@ -382,6 +382,7 @@ class RayStage:
                 shadow_partition,
                 bucket,
                 fraction,
+                sequential=True,
             )
         except Exception as e:
             print(
