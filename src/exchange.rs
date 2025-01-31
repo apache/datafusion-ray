@@ -125,6 +125,7 @@ impl ExchangeStats {
 
 pub struct Exchange<T> {
     senders: Arc<Mutex<HashMap<PartitionKey, Sender<T>>>>,
+    size_peekers: Arc<Mutex<HashMap<PartitionKey, Sender<T>>>>,
     receivers: Arc<Mutex<HashMap<PartitionKey, Receiver<T>>>>,
     created: Arc<Mutex<HashSet<PartitionKey>>>,
     dones: Arc<Mutex<HashMap<PartitionKey, Decimal>>>,
@@ -140,6 +141,7 @@ impl<T> Exchange<T> {
     pub fn new(stats_sender: Sender<Stats>, channel_size: usize) -> Self {
         Self {
             senders: Arc::new(Mutex::new(HashMap::new())),
+            size_peekers: Arc::new(Mutex::new(HashMap::new())),
             receivers: Arc::new(Mutex::new(HashMap::new())),
             created: Arc::new(Mutex::new(HashSet::new())),
             dones: Arc::new(Mutex::new(HashMap::new())),
@@ -154,6 +156,7 @@ impl<T> Exchange<T> {
         if !created.contains(&key) {
             let (sender, receiver) = channel(self.channel_size); // TODO: what size?
 
+            self.size_peekers.lock().insert(key, sender.clone());
             self.senders.lock().insert(key, sender);
             self.receivers.lock().insert(key, receiver);
             self.dones.lock().insert(key, Decimal::zero());
@@ -164,6 +167,18 @@ impl<T> Exchange<T> {
     async fn shutdown(&self) {
         println!("shutdown stats sending channel");
         self.stats_sender.lock().await.take();
+    }
+
+    pub fn channel_size(&self, stage_num: usize, partition_num: usize) -> Option<(usize, usize)> {
+        let key = PartitionKey {
+            stage_num,
+            partition_num,
+        };
+
+        self.senders
+            .lock()
+            .get(&key)
+            .map(|sender| (sender.capacity(), sender.max_capacity()))
     }
 
     pub fn put(&self, stage_num: usize, partition_num: usize) -> DFResult<Sender<T>> {
@@ -293,6 +308,7 @@ impl FlightHandler for Exchange<RecordBatch> {
 
         let dones = self.dones.clone();
         let senders = self.senders.clone();
+        let size_peekers = self.size_peekers.clone();
         let stats_sender = self
             .stats_sender
             .lock()
@@ -348,6 +364,7 @@ impl FlightHandler for Exchange<RecordBatch> {
                     // remove the sender so all senders can be dropped, which will close the
                     // channel
                     senders.lock().remove(&key);
+                    size_peekers.lock().remove(&key);
                 }
                 Some(false) => {
                     // still more partitions to report in
@@ -382,6 +399,7 @@ impl FlightHandler for Exchange<RecordBatch> {
 pub struct PyExchange {
     name: String,
     listener: Option<TcpListener>,
+    exchange: Option<Arc<Exchange<RecordBatch>>>,
     addr: Option<String>,
     all_done_tx: Arc<Mutex<Sender<()>>>,
     all_done_rx: Option<Receiver<()>>,
@@ -393,6 +411,7 @@ impl PyExchange {
     #[new]
     pub fn new(name: String, channel_size: usize) -> PyResult<Self> {
         let listener = None;
+        let exchange = None;
         let addr = None;
 
         let (all_done_tx, all_done_rx) = channel(1);
@@ -401,6 +420,7 @@ impl PyExchange {
         Ok(Self {
             name,
             listener,
+            exchange,
             addr,
             all_done_tx,
             all_done_rx: Some(all_done_rx),
@@ -440,7 +460,21 @@ impl PyExchange {
         pyo3_async_runtimes::tokio::future_into_py(py, fut)
     }
 
-    fn serve<'a>(&mut self, py: Python<'a>) -> PyResult<Bound<'a, PyAny>> {
+    pub fn channel_size(
+        &self,
+        stage_num: usize,
+        partition_num: usize,
+    ) -> PyResult<Option<(usize, usize)>> {
+        self.exchange
+            .as_ref()
+            .ok_or(internal_datafusion_err!("Exchange not created"))
+            .to_py_err()?
+            .channel_size(stage_num, partition_num)
+            .map(Ok)
+            .transpose()
+    }
+
+    pub fn serve<'a>(&mut self, py: Python<'a>) -> PyResult<Bound<'a, PyAny>> {
         // TODO: what channel size?
         let (stats_sender, stats_receiver) = channel(10000);
         let exchange_stats = ExchangeStats::new(stats_receiver);
@@ -468,6 +502,7 @@ impl PyExchange {
         let service = FlightServ {
             handler: exchange.clone(),
         };
+        self.exchange = Some(exchange.clone());
 
         let svc = FlightServiceServer::new(service);
 

@@ -276,6 +276,9 @@ class RayStageCoordinator:
     def get_exchanger_addr(self, stage_num: int, partition: int):
         return self.exchange_addrs[(stage_num, partition)]
 
+    def get_exchanger(self, idx: int):
+        return self.xs[idx]
+
     def all_done(self):
         print("calling exchangers all done")
         refs = [exchange.all_done.remote() for exchange in self.xs]
@@ -413,6 +416,9 @@ class RayExchanger:
 
     def start_up(self):
         self.exchange.start_up()
+
+    def channel_size(self, stage_id: int, partition_id: int):
+        return self.exchange.channel_size(stage_id, partition_id)
 
     def addr(self):
         return self.exchange.addr()
