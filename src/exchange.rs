@@ -15,8 +15,10 @@
 // specific language governing permissions and limitations
 // under the License.
 
+use core::fmt;
 use std::collections::{HashMap, HashSet};
 use std::error::Error;
+use std::fmt::{Display, Formatter};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -28,6 +30,7 @@ use arrow_flight::encode::FlightDataEncoderBuilder;
 use arrow_flight::error::FlightError;
 use arrow_flight::utils::flight_data_to_arrow_batch;
 use async_stream::stream;
+use bytesize::ByteSize;
 use datafusion::common::internal_datafusion_err;
 use datafusion_python::utils::wait_for_future;
 use futures::future::{try_join, TryFutureExt};
@@ -130,6 +133,9 @@ pub(crate) struct ChannelData {
     pub bytes: i64,
     pub batches: i64,
     pub rows: i64,
+    pub peak_bytes: i64,
+    pub peak_batches: i64,
+    pub peak_rows: i64,
 }
 
 impl ChannelData {
@@ -137,12 +143,27 @@ impl ChannelData {
         self.batches += 1;
         self.rows += batch.num_rows() as i64;
         self.bytes += batch.get_array_memory_size() as i64;
+
+        self.peak_batches = self.peak_batches.max(self.batches);
+        self.peak_rows = self.peak_batches.max(self.rows);
+        self.peak_bytes = self.peak_batches.max(self.bytes);
     }
 
     pub fn dec(&mut self, batch: &RecordBatch) {
         self.batches -= 1;
         self.rows -= batch.num_rows() as i64;
         self.bytes -= batch.get_array_memory_size() as i64;
+    }
+}
+impl Display for ChannelData {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        let current_bytes = format!("{}", ByteSize(self.bytes as u64));
+        let peak_bytes = format!("{}", ByteSize(self.peak_bytes as u64));
+        write!(
+            f,
+            "Current: {}, rows:{}, batches{}. Peak: {}, rows:{}, batches{}",
+            current_bytes, self.rows, self.batches, peak_bytes, self.peak_rows, self.peak_batches
+        )
     }
 }
 
@@ -491,18 +512,15 @@ impl PyExchange {
         pyo3_async_runtimes::tokio::future_into_py(py, fut)
     }
 
-    pub fn channel_data(
-        &self,
-        stage_num: usize,
-        partition_num: usize,
-    ) -> PyResult<Option<(i64, i64, i64)>> {
+    pub fn channel_data(&self, stage_num: usize, partition_num: usize) -> PyResult<Option<String>> {
         self.exchange
             .as_ref()
+            .map(|e| {
+                e.channel_data(stage_num, partition_num)
+                    .map(|cd| format!("{}", cd))
+            })
             .ok_or(internal_datafusion_err!("Exchange not created"))
-            .to_py_err()?
-            .channel_data(stage_num, partition_num)
-            .map(|cd| Ok((cd.bytes, cd.batches, cd.rows)))
-            .transpose()
+            .to_py_err()
     }
 
     pub fn serve<'a>(&mut self, py: Python<'a>) -> PyResult<Bound<'a, PyAny>> {
