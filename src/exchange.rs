@@ -127,22 +127,22 @@ impl ExchangeStats {
 /// a struct holding the current status of a channel
 #[derive(Default, Clone, Copy)]
 pub(crate) struct ChannelData {
-    pub bytes: usize,
-    pub batches: usize,
-    pub rows: usize,
+    pub bytes: i64,
+    pub batches: i64,
+    pub rows: i64,
 }
 
 impl ChannelData {
     pub fn inc(&mut self, batch: &RecordBatch) {
         self.batches += 1;
-        self.rows += batch.num_rows();
-        self.bytes += batch.get_array_memory_size();
+        self.rows += batch.num_rows() as i64;
+        self.bytes += batch.get_array_memory_size() as i64;
     }
 
     pub fn dec(&mut self, batch: &RecordBatch) {
         self.batches -= 1;
-        self.rows -= batch.num_rows();
-        self.bytes -= batch.get_array_memory_size();
+        self.rows -= batch.num_rows() as i64;
+        self.bytes -= batch.get_array_memory_size() as i64;
     }
 }
 
@@ -359,7 +359,7 @@ impl FlightHandler for Exchange<RecordBatch> {
                 let res = match maybe_batch {
                     Ok(batch) => {
 
-                        exchange_data.lock().get_mut(&key).map(|data| data.dec(&batch));
+                        exchange_data.lock().get_mut(&key).map(|data| data.inc(&batch));
                         total_rows += batch.num_rows();
                         sender
                             .send(batch)
@@ -495,7 +495,7 @@ impl PyExchange {
         &self,
         stage_num: usize,
         partition_num: usize,
-    ) -> PyResult<Option<(usize, usize, usize)>> {
+    ) -> PyResult<Option<(i64, i64, i64)>> {
         self.exchange
             .as_ref()
             .ok_or(internal_datafusion_err!("Exchange not created"))
