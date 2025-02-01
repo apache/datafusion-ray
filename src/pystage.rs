@@ -12,6 +12,7 @@ use arrow_flight::{FlightClient, FlightDescriptor};
 use async_stream::stream;
 use datafusion::common::tree_node::{Transformed, TreeNode};
 use datafusion::common::{internal_datafusion_err, internal_err};
+use datafusion::physical_plan::display::DisplayableExecutionPlan;
 use datafusion::physical_plan::{collect, displayable};
 use datafusion_python::physical_plan::PyExecutionPlan;
 use futures::future::{join_all, try_join_all};
@@ -191,6 +192,12 @@ impl PyStage {
 
             wait_for_future(py, join_all(futs));
         }
+
+        println!(
+            "{} Finished\n{}",
+            self.name,
+            DisplayableExecutionPlan::with_full_metrics(self.plan.as_ref()).indent(true)
+        );
 
         Ok(())
     }

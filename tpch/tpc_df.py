@@ -107,8 +107,6 @@ def main(
     # write results to stdout
     print(results)
 
-    time.sleep(3)
-
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
