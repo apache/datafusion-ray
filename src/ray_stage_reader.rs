@@ -17,9 +17,10 @@ use futures::StreamExt;
 use prost::Message;
 use rust_decimal::prelude::*;
 
-use crate::protobuf::StreamMeta;
+use crate::protobuf::FlightTicketData;
 use crate::pystage::ExchangeAddrs;
-use crate::util::make_client;
+use crate::stage_service::ServiceClients;
+use crate::util::{make_client, CombinedRecordBatchStream};
 
 #[derive(Debug)]
 pub struct RayStageReaderExec {
@@ -118,59 +119,48 @@ impl ExecutionPlan for RayStageReaderExec {
     ) -> Result<SendableRecordBatchStream> {
         let name = format!("RayStageReaderExec[{}-{}]:", self.stage_id, partition);
         println!("{name} execute");
-        let addr_map = &context
+        let client_map = &context
             .session_config()
-            .get_extension::<ExchangeAddrs>()
+            .get_extension::<ServiceClients>()
             .ok_or(internal_datafusion_err!(
                 "{name} Flight Client not in context"
             ))?
             .clone()
             .0;
 
-        let meta = StreamMeta {
-            stage_id: self.stage_id as u64,
+        let ftd = FlightTicketData {
             partition: partition as u64,
-            fraction: Decimal::zero().to_string(), // not used in this context
         };
 
         let ticket = Ticket {
-            ticket: meta.encode_to_vec().into(),
+            ticket: ftd.encode_to_vec().into(),
         };
 
-        let stage_id = self.stage_id;
-        let addr_map = addr_map.clone();
-        let out_stream = async_stream::stream! {
-            println!("{name} connecting to exchange");
+        let stream = async_stream::stream! {
+            let clients = client_map
+                .get(&self.stage_id)
+                .ok_or(internal_datafusion_err!(
+                    "No flight clients found for {}",
+                    self.stage_id
+                ))?;
 
-            let mut client = addr_map
-                .get(&(stage_id, partition))
-                .map(|addr|make_client(addr))
-                .expect("no addr found")
-                .await
-                .expect("Couldn't make flight client");
+            let mut streams = vec![];
+            for client in clients {
+                let flight_stream = client.do_get(ticket.clone()).await?;
 
-
-            let flight_rbr_stream = client.do_get(ticket).await;
-            println!("{name} exchange do_get got response");
-
-            let mut total_rows = 0;
-            if let Ok(mut flight_rbr_stream) = flight_rbr_stream {
-
-                while let Some(batch) = flight_rbr_stream.next().await {
-                    total_rows += batch.as_ref().map(|b| b.num_rows()).unwrap_or(0);
-                    yield batch
-                        .map_err(|e| internal_datafusion_err!("{name} Error reading batch: {}", e));
-                }
-            } else {
-                yield Err(internal_datafusion_err!("{name} Error getting stream"));
+                let rbr_stream = RecordBatchStreamAdapter::new(self.schema.clone(), flight_stream);
+                streams.push(Box::new(rbr_stream));
             }
-            println!("{name} read {} total rows", total_rows);
 
+            let combined = CombinedRecordBatchStream::new(self.schema(),streams);
+
+
+            while let Some(maybe_batch) = combined.next().await {
+                yield maybe_batch;
+            }
 
         };
 
-        let adapter = RecordBatchStreamAdapter::new(self.schema.clone(), out_stream);
-
-        Ok(Box::pin(adapter))
+        Ok(Box::pin(stream))
     }
 }

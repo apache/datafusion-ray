@@ -1,6 +1,8 @@
 use std::future::Future;
 use std::io::Cursor;
+use std::pin::Pin;
 use std::sync::Arc;
+use std::task::{Context, Poll};
 use std::time::Duration;
 
 use arrow::array::RecordBatch;
@@ -15,23 +17,23 @@ use arrow::util::pretty;
 use arrow_flight::{FlightClient, FlightData, Ticket};
 use async_stream::stream;
 use datafusion::common::internal_datafusion_err;
+use datafusion::common::tree_node::{Transformed, TreeNode};
 use datafusion::error::DataFusionError;
-use datafusion::execution::SendableRecordBatchStream;
+use datafusion::execution::{RecordBatchStream, SendableRecordBatchStream};
 use datafusion::physical_plan::stream::RecordBatchStreamAdapter;
 use datafusion::physical_plan::ExecutionPlan;
 use datafusion::prelude::SessionContext;
 use datafusion_proto::physical_plan::AsExecutionPlan;
-use datafusion_python::utils::wait_for_future;
 use futures::{Stream, StreamExt};
 use pyo3::prelude::*;
 use pyo3::types::{PyBytes, PyList};
-use rust_decimal::prelude::*;
-use tokio::time::timeout;
 use tonic::transport::Channel;
 
 use crate::codec::RayCodec;
-use crate::protobuf::StreamMeta;
+use crate::protobuf::FlightTicketData;
+use crate::ray_stage_reader::RayStageReaderExec;
 use prost::Message;
+use tokio::macros::support::thread_rng_n;
 
 pub(crate) trait ResultExt<T> {
     fn to_py_err(self) -> PyResult<T>;
@@ -123,31 +125,11 @@ pub fn flight_data_to_schema(flight_data: &FlightData) -> anyhow::Result<SchemaR
     Ok(schema)
 }
 
-pub fn extract_stream_meta(flight_data: &FlightData) -> anyhow::Result<(usize, usize, Decimal)> {
-    let descriptor = flight_data
-        .flight_descriptor
-        .as_ref()
-        .ok_or(internal_datafusion_err!("No flight descriptor"))?;
-
-    let cmd = descriptor.cmd.clone(); // TODO: Can this be avoided?
-
-    let stream_meta = StreamMeta::decode(cmd)?;
-    Ok((
-        stream_meta.stage_id as usize,
-        stream_meta.partition as usize,
-        Decimal::from_str(&stream_meta.fraction)?,
-    ))
-}
-
-pub fn extract_ticket(ticket: Ticket) -> anyhow::Result<(usize, usize, Decimal)> {
+pub fn extract_ticket(ticket: Ticket) -> anyhow::Result<usize> {
     let data = ticket.ticket;
 
-    let stream_meta = StreamMeta::decode(data)?;
-    Ok((
-        stream_meta.stage_id as usize,
-        stream_meta.partition as usize,
-        Decimal::from_str(&stream_meta.fraction)?,
-    ))
+    let tic = FlightTicketData::decode(data)?;
+    Ok(tic.partition as usize)
 }
 
 /// produce a new SendableRecordBatchStream that will respect the rows
@@ -221,6 +203,18 @@ pub async fn make_client(exchange_addr: &str) -> Result<FlightClient, DataFusion
     Ok(flight_client)
 }
 
+pub fn input_stage_ids(plan: &Arc<dyn ExecutionPlan>) -> Result<Vec<usize>, DataFusionError> {
+    let mut result = vec![];
+    plan.clone()
+        .transform_down(|node: Arc<dyn ExecutionPlan>| {
+            if let Some(reader) = node.as_any().downcast_ref::<RayStageReaderExec>() {
+                result.push(reader.stage_id);
+            }
+            Ok(Transformed::no(node))
+        })?;
+    Ok(result)
+}
+
 pub async fn report_on_lag<F, T>(name: &str, fut: F) -> T
 where
     F: Future<Output = T>,
@@ -260,6 +254,70 @@ where
     };
 
     Box::pin(out_stream)
+}
+
+/// Copied from datafusion_physical_plan::union as its useful and not public
+pub struct CombinedRecordBatchStream {
+    /// Schema wrapped by Arc
+    schema: SchemaRef,
+    /// Stream entries
+    entries: Vec<SendableRecordBatchStream>,
+}
+
+impl CombinedRecordBatchStream {
+    /// Create an CombinedRecordBatchStream
+    pub fn new(schema: SchemaRef, entries: Vec<SendableRecordBatchStream>) -> Self {
+        Self { schema, entries }
+    }
+}
+
+impl RecordBatchStream for CombinedRecordBatchStream {
+    fn schema(&self) -> SchemaRef {
+        Arc::clone(&self.schema)
+    }
+}
+
+impl Stream for CombinedRecordBatchStream {
+    type Item = Result<RecordBatch, DataFusionError>;
+
+    fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+        use Poll::*;
+
+        let start = thread_rng_n(self.entries.len() as u32) as usize;
+        let mut idx = start;
+
+        for _ in 0..self.entries.len() {
+            let stream = self.entries.get_mut(idx).unwrap();
+
+            match Pin::new(stream).poll_next(cx) {
+                Ready(Some(val)) => return Ready(Some(val)),
+                Ready(None) => {
+                    // Remove the entry
+                    self.entries.swap_remove(idx);
+
+                    // Check if this was the last entry, if so the cursor needs
+                    // to wrap
+                    if idx == self.entries.len() {
+                        idx = 0;
+                    } else if idx < start && start <= self.entries.len() {
+                        // The stream being swapped into the current index has
+                        // already been polled, so skip it.
+                        idx = idx.wrapping_add(1) % self.entries.len();
+                    }
+                }
+                Pending => {
+                    idx = idx.wrapping_add(1) % self.entries.len();
+                }
+            }
+        }
+
+        // If the map is empty, then the stream is complete.
+        if self.entries.is_empty() {
+            Ready(None)
+        } else {
+            Pending
+        }
+    }
 }
 
 #[cfg(test)]

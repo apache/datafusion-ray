@@ -26,18 +26,11 @@ use arrow_flight::{
     SchemaResult, Ticket,
 };
 
-pub type DoPutStream = BoxStream<'static, Result<PutResult, Status>>;
 pub type DoGetStream = BoxStream<'static, Result<FlightData, Status>>;
-pub type DoActionStream = BoxStream<'static, Result<arrow_flight::Result, Status>>;
 
 #[tonic::async_trait]
 pub trait FlightHandler: Send + Sync {
     async fn get_stream(&self, request: Request<Ticket>) -> Result<Response<DoGetStream>, Status>;
-
-    async fn put_stream(
-        &self,
-        request: Request<Streaming<FlightData>>,
-    ) -> Result<Response<DoPutStream>, Status>;
 }
 
 pub struct FlightServ {
@@ -63,64 +56,64 @@ impl FlightService for FlightServ {
 
     async fn do_put(
         &self,
-        request: Request<Streaming<FlightData>>,
+        _request: Request<Streaming<FlightData>>,
     ) -> Result<Response<Self::DoPutStream>, Status> {
-        self.handler.put_stream(request).await
+        Err(Status::unimplemented("Unimplemented: do put"))
     }
 
     async fn handshake(
         &self,
         _request: Request<Streaming<HandshakeRequest>>,
     ) -> Result<Response<Self::HandshakeStream>, Status> {
-        Err(Status::unimplemented("Implement handshake"))
+        Err(Status::unimplemented("Unimplemented: handshake"))
     }
 
     async fn list_flights(
         &self,
         _request: Request<Criteria>,
     ) -> Result<Response<Self::ListFlightsStream>, Status> {
-        Err(Status::unimplemented("Implement list_flights"))
+        Err(Status::unimplemented("Unimplemented: list_flights"))
     }
 
     async fn get_flight_info(
         &self,
         _request: Request<FlightDescriptor>,
     ) -> Result<Response<FlightInfo>, Status> {
-        Err(Status::unimplemented("Implement get_flight_info"))
+        Err(Status::unimplemented("Unimplemented: get_flight_info"))
     }
 
     async fn poll_flight_info(
         &self,
         _request: Request<FlightDescriptor>,
     ) -> Result<Response<PollInfo>, Status> {
-        Err(Status::unimplemented("Implement poll_flight_info"))
+        Err(Status::unimplemented("Unimplemented: poll_flight_info"))
     }
 
     async fn get_schema(
         &self,
         _request: Request<FlightDescriptor>,
     ) -> Result<Response<SchemaResult>, Status> {
-        Err(Status::unimplemented("Implement get_schema"))
+        Err(Status::unimplemented("Unimplemented: get_schema"))
     }
 
     async fn do_action(
         &self,
-        request: Request<Action>,
+        _request: Request<Action>,
     ) -> Result<Response<Self::DoActionStream>, Status> {
-        Err(Status::unimplemented("Implement do action"))
+        Err(Status::unimplemented("Unimplemented: do action"))
     }
 
     async fn list_actions(
         &self,
         _request: Request<Empty>,
     ) -> Result<Response<Self::ListActionsStream>, Status> {
-        Err(Status::unimplemented("Implement list_actions"))
+        Err(Status::unimplemented("Unimplemented: list_actions"))
     }
 
     async fn do_exchange(
         &self,
         _request: Request<Streaming<FlightData>>,
     ) -> Result<Response<Self::DoExchangeStream>, Status> {
-        Err(Status::unimplemented("Implement do_exchange"))
+        Err(Status::unimplemented("Unimplemented: do_exchange"))
     }
 }

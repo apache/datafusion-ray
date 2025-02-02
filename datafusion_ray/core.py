@@ -356,11 +356,8 @@ class RayStage:
         self,
         stage_id: str,
         plan_bytes: bytes,
-        exchanger_addrs: dict[tuple[int, int], str],
-        required_output_partitions: list[int],
-        fraction: float,
+        stage_addrs: dict[tuple[int, int], list[str]],
         shadow_partition=None,
-        bucket: str | None = None,
     ):
 
         from datafusion_ray._datafusion_ray_internal import PyStage
@@ -374,37 +371,27 @@ class RayStage:
 
         try:
             self.stage_id = stage_id
-            self.pystage = PyStage(
+            self.stage_service = StageService(
                 stage_id,
                 plan_bytes,
-                exchanger_addrs,
-                required_output_partitions,
+                stage_addrs,
                 shadow_partition,
-                bucket,
-                fraction,
-                sequential=True,
             )
         except Exception as e:
             print(
-                f"RayStage[{self.stage_id}{shadow}] Unhandled Exception in init: {e}!"
+                f"StageService[{self.stage_id}{shadow}] Unhandled Exception in init: {e}!"
             )
             raise
 
-    def execute(self):
-        shadow = (
-            f", shadowing:{self.shadow_partition}"
-            if self.shadow_partition is not None
-            else ""
-        )
-        print(f"RayStage[{self.stage_id}{shadow}] commencing execution")
-        try:
-            self.pystage.execute()
-        except Exception as e:
-            print(
-                f"RayStage[{self.stage_id}{shadow}] Unhandled Exception in execute: {e}!"
-            )
-            raise e
-        return self.stage_id
+    def start_up(self):
+        self.stage_service.start_up()
+
+    def addr(self):
+        return self.stage_service.addr()
+
+    async def serve(self):
+        await self.stage_service.serve()
+        print("StageService done serving")
 
 
 @ray.remote(num_cpus=0)

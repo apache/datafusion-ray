@@ -25,7 +25,6 @@ pub use proto::generated::protobuf;
 pub mod codec;
 pub mod context;
 pub mod dataframe;
-pub mod exchange;
 pub mod flight;
 pub mod isolator;
 pub mod max_rows;
@@ -33,6 +32,7 @@ pub mod physical;
 pub mod pystage;
 pub mod ray_stage;
 pub mod ray_stage_reader;
+pub mod stage_service;
 pub mod util;
 
 /// A Python module implemented in Rust.
