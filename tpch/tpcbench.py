@@ -36,6 +36,7 @@ def main(
     isolate_partitions: bool,
     listing_tables: bool,
     validate: bool,
+    prefetch_buffer_size: int,
 ):
 
     # Register the tables
@@ -51,12 +52,12 @@ def main(
     ]
     # Connect to a cluster
     # use ray job submit
-    ray.init()
+    ray.init(runtime_env={"env_vars": {"RAY_worker_niceness": "0"}})
 
     ctx = RayContext(
         batch_size=batch_size,
         isolate_partitions=isolate_partitions,
-        bucket="rob-tandy-tmp",
+        prefetch_buffer_size=prefetch_buffer_size,
     )
 
     ctx.set("datafusion.execution.target_partitions", f"{concurrency}")
@@ -67,7 +68,6 @@ def main(
     local_config = SessionConfig()
 
     local_ctx = SessionContext(local_config)
-    local_ctx.register_object_store("s3://", AmazonS3(bucket_name="rob-tandy-tmp"))
 
     for table in table_names:
         path = os.path.join(data_path, f"{table}.parquet")
@@ -164,6 +164,14 @@ if __name__ == "__main__":
         default=8192,
         help="Desired batch size output per stage",
     )
+    parser.add_argument(
+        "--prefetch-buffer-size",
+        required=False,
+        default=0,
+        type=int,
+        help="How many batches each stage should eagerly buffer",
+    )
+
     args = parser.parse_args()
 
     main(
@@ -174,4 +182,5 @@ if __name__ == "__main__":
         args.isolate,
         args.listing_tables,
         args.validate,
+        args.prefetch_buffer_size,
     )

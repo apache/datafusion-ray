@@ -3,7 +3,8 @@ use std::sync::Arc;
 use crate::{
     isolator::PartitionIsolatorExec,
     max_rows::MaxRowsExec,
-    protobuf::{MaxRowsExecNode, RayStageReaderExecNode},
+    pre_fetch::PrefetchExec,
+    protobuf::{MaxRowsExecNode, PrefetchExecNode, RayStageReaderExecNode},
 };
 
 use arrow::datatypes::Schema;
@@ -11,9 +12,8 @@ use datafusion::{
     common::{internal_datafusion_err, internal_err},
     error::Result,
     execution::FunctionRegistry,
-    physical_plan::{displayable, ExecutionPlan},
+    physical_plan::ExecutionPlan,
 };
-use datafusion_proto::physical_plan::AsExecutionPlan;
 use datafusion_proto::physical_plan::{
     from_proto::parse_protobuf_partitioning, to_proto::serialize_partitioning,
     DefaultPhysicalExtensionCodec, PhysicalExtensionCodec,
@@ -75,6 +75,18 @@ impl PhysicalExtensionCodec for RayCodec {
                     node.max_rows as usize,
                 )))
             }
+        } else if let Ok(node) = PrefetchExecNode::decode(buf) {
+            if inputs.len() != 1 {
+                Err(internal_datafusion_err!(
+                    "MaxRowsExec requires one input, got {}",
+                    inputs.len()
+                ))
+            } else {
+                Ok(Arc::new(PrefetchExec::new(
+                    inputs[0].clone(),
+                    node.buf_size as usize,
+                )))
+            }
         } else {
             internal_err!("Should not reach this point")
         }
@@ -113,6 +125,14 @@ impl PhysicalExtensionCodec for RayCodec {
                 .map_err(|e| internal_datafusion_err!("can't encode max rows pb: {e}"))?;
 
             Ok(())
+        } else if let Some(pre) = node.as_any().downcast_ref::<PrefetchExec>() {
+            let pb = PrefetchExecNode {
+                buf_size: pre.buf_size as u64,
+            };
+            pb.encode(buf)
+                .map_err(|e| internal_datafusion_err!("can't encode prefetch pb: {e}"))?;
+
+            Ok(())
         } else {
             internal_err!("Not supported")
         }
@@ -124,7 +144,11 @@ mod test {
     use super::*;
     use crate::ray_stage_reader::RayStageReaderExec;
     use arrow::datatypes::DataType;
-    use datafusion::{physical_plan::Partitioning, prelude::SessionContext};
+    use datafusion::{
+        physical_plan::{display::DisplayableExecutionPlan, displayable, Partitioning},
+        prelude::SessionContext,
+    };
+    use datafusion_proto::physical_plan::AsExecutionPlan;
 
     use std::sync::Arc;
 
@@ -169,9 +193,12 @@ mod test {
             .expect("from proto");
 
         let input = displayable(exec.as_ref()).indent(true).to_string();
-        let round_trip = displayable(result_exec_plan.as_ref())
-            .indent(true)
-            .to_string();
+        let round_trip = {
+            let plan: &dyn ExecutionPlan = result_exec_plan.as_ref();
+            DisplayableExecutionPlan::new(plan)
+        }
+        .indent(true)
+        .to_string();
         assert_eq!(input, round_trip);
     }
 }

@@ -21,16 +21,13 @@ import pyarrow as pa
 import asyncio
 import ray
 import uuid
-import os
 import time
-import random
 
 from datafusion_ray._datafusion_ray_internal import (
     RayContext as RayContextInternal,
     RayDataFrame as RayDataFrameInternal,
     prettify,
 )
-import datafusion
 
 
 class RayDataFrame:
@@ -40,7 +37,7 @@ class RayDataFrame:
         query_id: str,
         batch_size=8192,
         isolate_parititions=False,
-        bucket: str | None = None,
+        prefetch_buffer_size=0,
     ):
         self.df = ray_internal_df
         self.query_id = query_id
@@ -48,12 +45,14 @@ class RayDataFrame:
         self._batches = None
         self.batch_size = batch_size
         self.isolate_partitions = isolate_parititions
-        self.bucket = bucket
+        self.prefetch_buffer_size = prefetch_buffer_size
 
     def stages(self):
         # create our coordinator now, which we need to create stages
         if not self._stages:
-            self._stages = self.df.stages(self.batch_size, self.isolate_partitions)
+            self._stages = self.df.stages(
+                self.batch_size, self.isolate_partitions, self.prefetch_buffer_size
+            )
 
             self.coord = RayStageCoordinator.options(
                 name="RayQueryCoordinator:" + self.query_id,
@@ -140,16 +139,12 @@ class RayContext:
         self,
         batch_size: int = 8192,
         isolate_partitions: bool = False,
-        bucket: str | None = None,
+        prefetch_buffer_size: int = 0,
     ) -> None:
-        self.ctx = RayContextInternal(bucket)
+        self.ctx = RayContextInternal()
         self.batch_size = batch_size
         self.isolate_partitions = isolate_partitions
-        self.bucket = bucket
-
-        if bucket:
-            print("registering s3")
-            self.ctx.register_s3(self.bucket)
+        self.prefetch_buffer_size = prefetch_buffer_size
 
     def register_parquet(self, name: str, path: str):
         self.ctx.register_parquet(name, path)
@@ -166,7 +161,7 @@ class RayContext:
             query_id,
             self.batch_size,
             self.isolate_partitions,
-            self.bucket,
+            self.prefetch_buffer_size,
         )
 
     def set(self, option: str, value: str) -> None:

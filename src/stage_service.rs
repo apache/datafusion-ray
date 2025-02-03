@@ -15,56 +15,39 @@
 // specific language governing permissions and limitations
 // under the License.
 
-use core::fmt;
-use std::cell::RefCell;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::error::Error;
-use std::fmt::{Display, Formatter};
 use std::sync::Arc;
-use std::time::Duration;
 
-use anyhow::Result;
-
-use arrow::array::RecordBatch;
-use arrow::compute::partition;
-use arrow::error::ArrowError;
 use arrow_flight::encode::FlightDataEncoderBuilder;
 use arrow_flight::error::FlightError;
-use arrow_flight::utils::flight_data_to_arrow_batch;
 use arrow_flight::FlightClient;
-use async_stream::stream;
-use bytesize::ByteSize;
-use datafusion::common::{internal_datafusion_err, internal_err};
+use datafusion::common::internal_datafusion_err;
 use datafusion::execution::SessionStateBuilder;
 use datafusion::physical_plan::ExecutionPlan;
 use datafusion::prelude::{SessionConfig, SessionContext};
 use datafusion_python::utils::wait_for_future;
-use futures::future::{try_join, TryFutureExt};
-use futures::{TryStream, TryStreamExt};
+use futures::TryStreamExt;
 use local_ip_address::local_ip;
-use rust_decimal::prelude::*;
 use tokio::net::TcpListener;
-use tokio_stream::StreamExt;
 
 use tonic::transport::Server;
-use tonic::{async_trait, Request, Response, Status, Streaming};
+use tonic::{async_trait, Request, Response, Status};
 
 use datafusion::error::Result as DFResult;
 
-use arrow_flight::{flight_service_server::FlightServiceServer, FlightData, PutResult, Ticket};
+use arrow_flight::{flight_service_server::FlightServiceServer, Ticket};
 
 use pyo3::prelude::*;
 
 use parking_lot::Mutex;
-use tokio::sync::Mutex as TokioMutex;
 
 use tokio::sync::mpsc::{channel, Receiver, Sender};
 
 use crate::flight::{FlightHandler, FlightServ};
 use crate::isolator::ShadowPartitionNumber;
 use crate::util::{
-    bytes_to_physical_plan, extract_ticket, flight_data_to_schema, input_stage_ids, make_client,
-    report_on_lag, ResultExt,
+    bytes_to_physical_plan, extract_ticket, input_stage_ids, make_client, ResultExt,
 };
 
 /// a map of stage_id to a list FlightClients that can serve
@@ -90,7 +73,7 @@ impl StageHandler {
         plan_bytes: &[u8],
         shadow_partition_number: Option<usize>,
     ) -> DFResult<Self> {
-        let plan = bytes_to_physical_plan(&SessionContext::new(), &plan_bytes)?;
+        let plan = bytes_to_physical_plan(&SessionContext::new(), plan_bytes)?;
 
         let ctx = Mutex::new(None);
 
@@ -275,9 +258,7 @@ impl StageService {
 
         let signal = async move {
             // TODO: handle Result
-            //println!("Exchange[{}] awaiting the done signal", name);
             let result = all_done_rx.recv().await;
-            //println!("Exchange[{}] got done signal {:?}", name, result);
         };
 
         let service = FlightServ {

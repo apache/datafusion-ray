@@ -1,25 +1,21 @@
 use std::{fmt::Formatter, sync::Arc};
 
-use arrow::record_batch::RecordBatchReader;
 use arrow_flight::{FlightClient, Ticket};
 use datafusion::common::{internal_datafusion_err, internal_err};
 use datafusion::error::Result;
-use datafusion::execution::RecordBatchStream;
 use datafusion::physical_expr::EquivalenceProperties;
 use datafusion::physical_plan::stream::RecordBatchStreamAdapter;
 use datafusion::physical_plan::{
-    displayable, DisplayAs, DisplayFormatType, ExecutionMode, ExecutionPlan, Partitioning,
-    PlanProperties,
+    DisplayAs, DisplayFormatType, ExecutionMode, ExecutionPlan, Partitioning, PlanProperties,
 };
 use datafusion::{arrow::datatypes::SchemaRef, execution::SendableRecordBatchStream};
 use futures::stream::TryStreamExt;
 use futures::StreamExt;
 use prost::Message;
-use rust_decimal::prelude::*;
 
 use crate::protobuf::FlightTicketData;
 use crate::stage_service::ServiceClients;
-use crate::util::{make_client, CombinedRecordBatchStream};
+use crate::util::CombinedRecordBatchStream;
 
 #[derive(Debug)]
 pub struct RayStageReaderExec {
@@ -89,7 +85,7 @@ impl ExecutionPlan for RayStageReaderExec {
 
     fn with_new_children(
         self: std::sync::Arc<Self>,
-        children: Vec<std::sync::Arc<dyn ExecutionPlan>>,
+        _children: Vec<std::sync::Arc<dyn ExecutionPlan>>,
     ) -> datafusion::error::Result<std::sync::Arc<dyn ExecutionPlan>> {
         // TODO: handle more general case
         unimplemented!()

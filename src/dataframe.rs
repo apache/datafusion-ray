@@ -17,57 +17,45 @@
 
 use arrow::array::RecordBatch;
 use arrow::pyarrow::ToPyArrow;
-use arrow_flight::FlightClient;
 use datafusion::common::internal_datafusion_err;
 use datafusion::common::internal_err;
 use datafusion::common::tree_node::Transformed;
 use datafusion::common::tree_node::TreeNode;
 use datafusion::common::tree_node::TreeNodeRecursion;
 use datafusion::execution::SendableRecordBatchStream;
-use datafusion::execution::SessionStateBuilder;
-use datafusion::logical_expr::LogicalPlan;
 use datafusion::physical_plan::coalesce_batches::CoalesceBatchesExec;
-use datafusion::physical_plan::coalesce_partitions::CoalescePartitionsExec;
-use datafusion::physical_plan::displayable;
 use datafusion::physical_plan::joins::NestedLoopJoinExec;
 use datafusion::physical_plan::repartition::RepartitionExec;
 use datafusion::physical_plan::sorts::sort::SortExec;
 use datafusion::physical_plan::{ExecutionPlan, ExecutionPlanProperties};
 use datafusion::prelude::DataFrame;
-use datafusion::prelude::SessionConfig;
-use datafusion::prelude::SessionContext;
 use datafusion_python::physical_plan::PyExecutionPlan;
 use datafusion_python::sql::logical::PyLogicalPlan;
 use datafusion_python::utils::wait_for_future;
 use futures::stream::StreamExt;
 use pyo3::prelude::*;
 use std::borrow::Cow;
-use std::collections::HashMap;
 use std::sync::Arc;
-use tonic::transport::Channel;
 
 use crate::isolator::PartitionIsolatorExec;
 use crate::max_rows::MaxRowsExec;
+use crate::pre_fetch::PrefetchExec;
 use crate::ray_stage::RayStageExec;
 use crate::ray_stage_reader::RayStageReaderExec;
 use crate::util::collect_from_stage;
-use crate::util::make_client;
 use crate::util::physical_plan_to_bytes;
 use crate::util::ResultExt;
 
 #[pyclass]
 pub struct RayDataFrame {
     df: DataFrame,
-    #[pyo3(get)]
-    bucket: Option<String>,
     final_plan: Option<Arc<dyn ExecutionPlan>>,
 }
 
 impl RayDataFrame {
-    pub fn new(df: DataFrame, bucket: Option<String>) -> Self {
+    pub fn new(df: DataFrame) -> Self {
         Self {
             df,
-            bucket,
             final_plan: None,
         }
     }
@@ -80,6 +68,7 @@ impl RayDataFrame {
         py: Python,
         batch_size: usize,
         isolate_partitions: bool,
+        prefetch_buffer_size: usize,
     ) -> PyResult<Vec<PyDataFrameStage>> {
         let mut stages = vec![];
         let max_rows = batch_size;
@@ -153,6 +142,11 @@ impl RayDataFrame {
                     max_rows,
                 )) as Arc<dyn ExecutionPlan>;
 
+                if prefetch_buffer_size > 0 {
+                    replacement = Arc::new(PrefetchExec::new(replacement, prefetch_buffer_size))
+                        as Arc<dyn ExecutionPlan>;
+                }
+
                 Ok(Transformed::yes(replacement))
             } else if plan.as_any().downcast_ref::<SortExec>().is_some() {
                 let mut replacement = plan.clone();
@@ -163,6 +157,10 @@ impl RayDataFrame {
                     max_rows,
                 )) as Arc<dyn ExecutionPlan>;
 
+                if prefetch_buffer_size > 0 {
+                    replacement = Arc::new(PrefetchExec::new(replacement, prefetch_buffer_size))
+                        as Arc<dyn ExecutionPlan>;
+                }
                 Ok(Transformed::yes(replacement))
             } else if plan.as_any().downcast_ref::<NestedLoopJoinExec>().is_some() {
                 let mut replacement = plan.clone();
@@ -173,6 +171,10 @@ impl RayDataFrame {
                     max_rows,
                 )) as Arc<dyn ExecutionPlan>;
 
+                if prefetch_buffer_size > 0 {
+                    replacement = Arc::new(PrefetchExec::new(replacement, prefetch_buffer_size))
+                        as Arc<dyn ExecutionPlan>;
+                }
                 Ok(Transformed::yes(replacement))
             } else {
                 Ok(Transformed::no(plan))

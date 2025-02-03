@@ -22,10 +22,9 @@ use datafusion::common::tree_node::{Transformed, TreeNode};
 use datafusion::error::DataFusionError;
 use datafusion::execution::{RecordBatchStream, SendableRecordBatchStream, SessionStateBuilder};
 use datafusion::physical_plan::stream::RecordBatchStreamAdapter;
-use datafusion::physical_plan::{displayable, ExecutionPlan};
+use datafusion::physical_plan::ExecutionPlan;
 use datafusion::prelude::{SessionConfig, SessionContext};
 use datafusion_proto::physical_plan::AsExecutionPlan;
-use datafusion_python::utils::wait_for_future;
 use futures::{Stream, StreamExt};
 use parking_lot::Mutex;
 use pyo3::prelude::*;
@@ -33,7 +32,6 @@ use pyo3::types::{PyBytes, PyList};
 use tonic::transport::Channel;
 
 use crate::codec::RayCodec;
-use crate::dataframe::PyRecordBatchStream;
 use crate::protobuf::FlightTicketData;
 use crate::ray_stage_reader::RayStageReaderExec;
 use crate::stage_service::ServiceClients;
@@ -272,7 +270,7 @@ pub async fn collect_from_stage(
     let client = make_client(stage_addr).await?;
 
     client_map.insert(stage_id, Mutex::new(vec![client]));
-    let mut config = SessionConfig::new().with_extension(Arc::new(ServiceClients(client_map)));
+    let config = SessionConfig::new().with_extension(Arc::new(ServiceClients(client_map)));
 
     let state = SessionStateBuilder::new()
         .with_default_features()

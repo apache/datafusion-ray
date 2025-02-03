@@ -29,6 +29,7 @@ pub mod flight;
 pub mod isolator;
 pub mod max_rows;
 pub mod physical;
+pub mod pre_fetch;
 pub mod ray_stage;
 pub mod ray_stage_reader;
 pub mod stage_service;

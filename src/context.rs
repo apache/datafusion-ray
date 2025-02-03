@@ -15,38 +15,28 @@
 // specific language governing permissions and limitations
 // under the License.
 
-use arrow::datatypes::SchemaRef;
-use arrow::util::pretty::pretty_format_batches;
-use datafusion::common::internal_datafusion_err;
 use datafusion::datasource::file_format::parquet::ParquetFormat;
-use datafusion::datasource::listing::{
-    ListingOptions, ListingTable, ListingTableConfig, ListingTableUrl,
-};
-use datafusion::physical_plan::{collect, displayable};
-use datafusion::{execution::SessionStateBuilder, physical_plan::ExecutionPlan, prelude::*};
-use datafusion_python::context::convert_table_partition_cols;
-use datafusion_python::dataframe::PyDataFrame;
-use datafusion_python::expr::sort_expr::PySortExpr;
-use datafusion_python::{errors::*, utils::wait_for_future};
+use datafusion::datasource::listing::ListingOptions;
+use datafusion::{execution::SessionStateBuilder, prelude::*};
+use datafusion_python::utils::wait_for_future;
 use object_store::aws::AmazonS3Builder;
 use pyo3::prelude::*;
 use std::sync::Arc;
 
-use crate::dataframe::{PyRecordBatchStream, RayDataFrame};
+use crate::dataframe::RayDataFrame;
 use crate::physical::RayStageOptimizerRule;
-use crate::util::{bytes_to_physical_plan, physical_plan_to_bytes, ResultExt};
+use crate::util::ResultExt;
 use url::Url;
 
 #[pyclass]
 pub struct RayContext {
     ctx: SessionContext,
-    bucket: Option<String>,
 }
 
 #[pymethods]
 impl RayContext {
     #[new]
-    pub fn new(bucket: Option<String>) -> PyResult<Self> {
+    pub fn new() -> PyResult<Self> {
         let rule = RayStageOptimizerRule::new();
 
         let config = SessionConfig::default().with_information_schema(true);
@@ -59,7 +49,7 @@ impl RayContext {
 
         let ctx = SessionContext::new_with_state(state);
 
-        Ok(Self { ctx, bucket })
+        Ok(Self { ctx })
     }
 
     pub fn register_s3(&self, bucket_name: String) -> PyResult<()> {
@@ -76,8 +66,7 @@ impl RayContext {
     }
 
     pub fn register_parquet(&self, py: Python, name: String, path: String) -> PyResult<()> {
-        let mut options = ParquetReadOptions::default();
-        options.file_extension = ".parquet";
+        let options = ParquetReadOptions::default();
 
         wait_for_future(py, self.ctx.register_parquet(&name, &path, options.clone()))?;
         Ok(())
@@ -105,7 +94,7 @@ impl RayContext {
     pub fn sql(&self, py: Python, query: String) -> PyResult<RayDataFrame> {
         let df = wait_for_future(py, self.ctx.sql(&query))?;
 
-        Ok(RayDataFrame::new(df, self.bucket.clone()))
+        Ok(RayDataFrame::new(df))
     }
 
     pub fn set(&self, option: String, value: String) -> PyResult<()> {

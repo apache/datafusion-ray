@@ -1,10 +1,8 @@
 use std::{fmt::Formatter, sync::Arc};
 
-use arrow::record_batch::RecordBatchReader;
 use datafusion::error::Result;
 use datafusion::physical_plan::{DisplayAs, DisplayFormatType, ExecutionPlan, PlanProperties};
 use datafusion::{arrow::datatypes::SchemaRef, execution::SendableRecordBatchStream};
-use pyo3::prelude::*;
 
 #[derive(Debug)]
 pub struct RayStageExec {
@@ -65,7 +63,7 @@ impl ExecutionPlan for RayStageExec {
         // TODO: handle more general case
         assert_eq!(children.len(), 1);
         let child = children[0].clone();
-        Ok(Arc::new(RayStageExec::new(child, self.stage_id.clone())))
+        Ok(Arc::new(RayStageExec::new(child, self.stage_id)))
     }
 
     /// We will have to defer this functionality to python as Ray does not yet have Rust bindings.
