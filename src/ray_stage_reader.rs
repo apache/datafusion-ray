@@ -2,7 +2,7 @@ use std::{fmt::Formatter, sync::Arc};
 
 use arrow::record_batch::RecordBatchReader;
 use arrow_flight::{FlightClient, Ticket};
-use datafusion::common::internal_datafusion_err;
+use datafusion::common::{internal_datafusion_err, internal_err};
 use datafusion::error::Result;
 use datafusion::execution::RecordBatchStream;
 use datafusion::physical_expr::EquivalenceProperties;
@@ -18,7 +18,6 @@ use prost::Message;
 use rust_decimal::prelude::*;
 
 use crate::protobuf::FlightTicketData;
-use crate::pystage::ExchangeAddrs;
 use crate::stage_service::ServiceClients;
 use crate::util::{make_client, CombinedRecordBatchStream};
 
@@ -27,15 +26,10 @@ pub struct RayStageReaderExec {
     properties: PlanProperties,
     schema: SchemaRef,
     pub stage_id: usize,
-    pub coordinator_id: String,
 }
 
 impl RayStageReaderExec {
-    pub fn try_new_from_input(
-        input: Arc<dyn ExecutionPlan>,
-        stage_id: usize,
-        coordinator_id: String,
-    ) -> Result<Self> {
+    pub fn try_new_from_input(input: Arc<dyn ExecutionPlan>, stage_id: usize) -> Result<Self> {
         let properties = input.properties().clone();
         /*println!(
             "RayStageReaderExec::try_new_from_input.  input:\n{}\nPartitioning:{}",
@@ -45,20 +39,10 @@ impl RayStageReaderExec {
             properties.partitioning
         );*/
 
-        Self::try_new(
-            properties.partitioning.clone(),
-            input.schema(),
-            stage_id,
-            coordinator_id,
-        )
+        Self::try_new(properties.partitioning.clone(), input.schema(), stage_id)
     }
 
-    pub fn try_new(
-        partitioning: Partitioning,
-        schema: SchemaRef,
-        stage_id: usize,
-        coordinator_id: String,
-    ) -> Result<Self> {
+    pub fn try_new(partitioning: Partitioning, schema: SchemaRef, stage_id: usize) -> Result<Self> {
         let properties = PlanProperties::new(
             EquivalenceProperties::new(schema.clone()),
             Partitioning::UnknownPartitioning(partitioning.partition_count()),
@@ -69,7 +53,6 @@ impl RayStageReaderExec {
             properties,
             schema,
             stage_id,
-            coordinator_id,
         })
     }
 }
@@ -128,6 +111,22 @@ impl ExecutionPlan for RayStageReaderExec {
             .clone()
             .0;
 
+        println!("{name} client_map keys {:?}", client_map.keys());
+
+        let clients = client_map
+            .get(&self.stage_id)
+            .ok_or(internal_datafusion_err!(
+                "No flight clients found for {}",
+                self.stage_id
+            ))?
+            .lock()
+            .iter()
+            .map(|c| {
+                let inner_clone = c.inner().clone();
+                FlightClient::new_from_inner(inner_clone)
+            })
+            .collect::<Vec<_>>();
+
         let ftd = FlightTicketData {
             partition: partition as u64,
         };
@@ -136,31 +135,40 @@ impl ExecutionPlan for RayStageReaderExec {
             ticket: ftd.encode_to_vec().into(),
         };
 
+        let schema = self.schema.clone();
+
         let stream = async_stream::stream! {
-            let clients = client_map
-                .get(&self.stage_id)
-                .ok_or(internal_datafusion_err!(
-                    "No flight clients found for {}",
-                    self.stage_id
-                ))?;
+            let mut error = false;
 
             let mut streams = vec![];
-            for client in clients {
-                let flight_stream = client.do_get(ticket.clone()).await?;
+            for mut client in clients {
+                match client.do_get(ticket.clone()).await {
+                    Ok(flight_stream) => {
+                        let rbr_stream = RecordBatchStreamAdapter::new(schema.clone(),
+                            flight_stream
+                                .map_err(|e| internal_datafusion_err!("Error consuming flight stream: {}", e)));
 
-                let rbr_stream = RecordBatchStreamAdapter::new(self.schema.clone(), flight_stream);
-                streams.push(Box::new(rbr_stream));
+                        streams.push(Box::pin(rbr_stream) as SendableRecordBatchStream);
+                    },
+                    Err(e) => {
+                        error = true;
+                        yield internal_err!("Error getting flight stream: {}", e);
+                    }
+                }
             }
+            if !error {
+                let mut combined = CombinedRecordBatchStream::new(schema.clone(),streams);
 
-            let combined = CombinedRecordBatchStream::new(self.schema(),streams);
-
-
-            while let Some(maybe_batch) = combined.next().await {
-                yield maybe_batch;
+                while let Some(maybe_batch) = combined.next().await {
+                    yield maybe_batch;
+                }
             }
 
         };
 
-        Ok(Box::pin(stream))
+        Ok(Box::pin(RecordBatchStreamAdapter::new(
+            self.schema.clone(),
+            stream,
+        )))
     }
 }

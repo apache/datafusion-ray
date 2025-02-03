@@ -37,8 +37,6 @@ use crate::physical::RayStageOptimizerRule;
 use crate::util::{bytes_to_physical_plan, physical_plan_to_bytes, ResultExt};
 use url::Url;
 
-pub struct CoordinatorId(pub String);
-
 #[pyclass]
 pub struct RayContext {
     ctx: SessionContext,
@@ -104,10 +102,10 @@ impl RayContext {
         .to_py_err()
     }
 
-    pub fn sql(&self, py: Python, query: String, coordinator_id: String) -> PyResult<RayDataFrame> {
+    pub fn sql(&self, py: Python, query: String) -> PyResult<RayDataFrame> {
         let df = wait_for_future(py, self.ctx.sql(&query))?;
 
-        Ok(RayDataFrame::new(df, coordinator_id, self.bucket.clone()))
+        Ok(RayDataFrame::new(df, self.bucket.clone()))
     }
 
     pub fn set(&self, option: String, value: String) -> PyResult<()> {
@@ -126,13 +124,5 @@ impl RayContext {
         let config = guard.config();
         let options = config.options();
         options.execution.target_partitions
-    }
-
-    pub fn set_coordinator_id(&self, id: String) -> PyResult<()> {
-        let state = self.ctx.state_ref();
-        let mut guard = state.write();
-        let config = guard.config_mut();
-        config.set_extension(Arc::new(CoordinatorId(id)));
-        Ok(())
     }
 }

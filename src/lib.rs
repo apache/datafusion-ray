@@ -29,7 +29,6 @@ pub mod flight;
 pub mod isolator;
 pub mod max_rows;
 pub mod physical;
-pub mod pystage;
 pub mod ray_stage;
 pub mod ray_stage_reader;
 pub mod stage_service;
@@ -42,10 +41,7 @@ fn _datafusion_ray_internal(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<context::RayContext>()?;
     m.add_class::<dataframe::RayDataFrame>()?;
     m.add_class::<dataframe::PyDataFrameStage>()?;
-    m.add_class::<pystage::PyStage>()?;
-    m.add_class::<exchange::PyExchange>()?;
-    m.add_function(wrap_pyfunction!(util::batch_to_ipc, m)?)?;
-    m.add_function(wrap_pyfunction!(util::ipc_to_batch, m)?)?;
+    m.add_class::<stage_service::StageService>()?;
     m.add_function(wrap_pyfunction!(util::prettify, m)?)?;
     Ok(())
 }

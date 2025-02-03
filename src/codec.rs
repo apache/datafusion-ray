@@ -62,7 +62,6 @@ impl PhysicalExtensionCodec for RayCodec {
                 part,
                 Arc::new(schema),
                 node.stage_id as usize,
-                node.coordinator_id,
             )?))
         } else if let Ok(node) = MaxRowsExecNode::decode(buf) {
             if inputs.len() != 1 {
@@ -93,7 +92,6 @@ impl PhysicalExtensionCodec for RayCodec {
                 schema: Some(schema),
                 partitioning: Some(partitioning),
                 stage_id: reader.stage_id as u64,
-                coordinator_id: reader.coordinator_id.clone(),
             };
 
             pb.encode(buf)
@@ -138,9 +136,7 @@ mod test {
         ]));
         let ctx = SessionContext::new();
         let part = Partitioning::UnknownPartitioning(2);
-        let exec = Arc::new(
-            RayStageReaderExec::try_new(part, schema, 1, "coordinator_id".to_owned()).unwrap(),
-        );
+        let exec = Arc::new(RayStageReaderExec::try_new(part, schema, 1).unwrap());
         let codec = RayCodec {};
         let mut buf = vec![];
         codec.try_encode(exec.clone(), &mut buf).unwrap();
@@ -156,9 +152,7 @@ mod test {
         let ctx = SessionContext::new();
         let part = Partitioning::UnknownPartitioning(2);
         let exec = Arc::new(MaxRowsExec::new(
-            Arc::new(
-                RayStageReaderExec::try_new(part, schema, 1, "coordinator_id".to_owned()).unwrap(),
-            ),
+            Arc::new(RayStageReaderExec::try_new(part, schema, 1).unwrap()),
             10,
         ));
         let codec = RayCodec {};

@@ -10,9 +10,6 @@ pub struct RayStageReaderExecNode {
     /// stage to read from
     #[prost(uint64, tag = "3")]
     pub stage_id: u64,
-    /// identifier of the RayQueryCoordinator Actor we need to contact
-    #[prost(string, tag = "4")]
-    pub coordinator_id: ::prost::alloc::string::String,
 }
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -25,6 +22,7 @@ pub struct MaxRowsExecNode {
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct FlightTicketData {
+    /// stage id of the stream
     /// parittion id of the stream
     #[prost(uint64, tag = "2")]
     pub partition: u64,

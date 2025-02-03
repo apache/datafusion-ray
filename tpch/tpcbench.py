@@ -36,7 +36,6 @@ def main(
     isolate_partitions: bool,
     listing_tables: bool,
     validate: bool,
-    exchangers: int,
 ):
 
     # Register the tables
@@ -56,7 +55,6 @@ def main(
 
     ctx = RayContext(
         batch_size=batch_size,
-        num_exchangers=exchangers,
         isolate_partitions=isolate_partitions,
         bucket="rob-tandy-tmp",
     )
@@ -110,7 +108,7 @@ def main(
         part1 = end_time - start_time
         for stage in df.stages():
             print(
-                f"Stage {stage.stage_id} output partitions:{stage.num_output_partitions()} shadow partitions: {stage.num_shadow_partitions()} consume all: {stage.consume_all_partitions()}"
+                f"Stage {stage.stage_id} output partitions:{stage.num_output_partitions()} shadow partitions: {stage.num_shadow_partitions()}"
             )
             print(stage.execution_plan().display_indent())
 
@@ -176,5 +174,4 @@ if __name__ == "__main__":
         args.isolate,
         args.listing_tables,
         args.validate,
-        args.exchangers,
     )

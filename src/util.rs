@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::future::Future;
 use std::io::Cursor;
 use std::pin::Pin;
@@ -19,19 +20,23 @@ use async_stream::stream;
 use datafusion::common::internal_datafusion_err;
 use datafusion::common::tree_node::{Transformed, TreeNode};
 use datafusion::error::DataFusionError;
-use datafusion::execution::{RecordBatchStream, SendableRecordBatchStream};
+use datafusion::execution::{RecordBatchStream, SendableRecordBatchStream, SessionStateBuilder};
 use datafusion::physical_plan::stream::RecordBatchStreamAdapter;
-use datafusion::physical_plan::ExecutionPlan;
-use datafusion::prelude::SessionContext;
+use datafusion::physical_plan::{displayable, ExecutionPlan};
+use datafusion::prelude::{SessionConfig, SessionContext};
 use datafusion_proto::physical_plan::AsExecutionPlan;
+use datafusion_python::utils::wait_for_future;
 use futures::{Stream, StreamExt};
+use parking_lot::Mutex;
 use pyo3::prelude::*;
 use pyo3::types::{PyBytes, PyList};
 use tonic::transport::Channel;
 
 use crate::codec::RayCodec;
+use crate::dataframe::PyRecordBatchStream;
 use crate::protobuf::FlightTicketData;
 use crate::ray_stage_reader::RayStageReaderExec;
+use crate::stage_service::ServiceClients;
 use prost::Message;
 use tokio::macros::support::thread_rng_n;
 
@@ -254,6 +259,28 @@ where
     };
 
     Box::pin(out_stream)
+}
+
+pub async fn collect_from_stage(
+    stage_id: usize,
+    partition: usize,
+    stage_addr: &str,
+    plan: Arc<dyn ExecutionPlan>,
+) -> Result<SendableRecordBatchStream, DataFusionError> {
+    let mut client_map = HashMap::new();
+
+    let client = make_client(stage_addr).await?;
+
+    client_map.insert(stage_id, Mutex::new(vec![client]));
+    let mut config = SessionConfig::new().with_extension(Arc::new(ServiceClients(client_map)));
+
+    let state = SessionStateBuilder::new()
+        .with_default_features()
+        .with_config(config)
+        .build();
+    let ctx = SessionContext::new_with_state(state);
+
+    plan.execute(partition, ctx.task_ctx())
 }
 
 /// Copied from datafusion_physical_plan::union as its useful and not public

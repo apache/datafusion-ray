@@ -16,8 +16,6 @@ message RayStageReaderExecNode {
   datafusion.Partitioning partitioning = 2;
   // stage to read from
   uint64 stage_id = 3;
-  // identifier of the RayQueryCoordinator Actor we need to contact
-  string coordinator_id = 4;
 }
 
 message MaxRowsExecNode {
@@ -27,6 +25,7 @@ message MaxRowsExecNode {
 // TODO: why, if FlightTicketData has  the uint64 field first can it also be decoded also
 // MaxRowsExecNode?  There is something I don't understand here
 message FlightTicketData {
+  // stage id of the stream
   // parittion id of the stream
   uint64 partition = 2;
 }

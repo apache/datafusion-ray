@@ -28,13 +28,12 @@ import duckdb
 from datafusion.object_store import AmazonS3
 
 
-def prep(
+def make_ctx(
     data_path: str,
     concurrency: int,
     batch_size: int,
     isolate_partitions: bool,
     listing_tables: bool,
-    exchangers: int,
 ):
 
     # Register the tables
@@ -54,7 +53,6 @@ def prep(
 
     ctx = RayContext(
         batch_size=batch_size,
-        num_exchangers=exchangers,
         isolate_partitions=isolate_partitions,
         bucket="rob-tandy-tmp",
     )
@@ -75,10 +73,60 @@ def prep(
     return ctx
 
 
-def query(qnum) -> str:
+def main(
+    data_path: str,
+    concurrency: int,
+    batch_size: int,
+    query: str,
+    isolate: bool,
+    validate: bool,
+    listing_tables,
+) -> None:
+    ctx = make_ctx(data_path, concurrency, batch_size, isolate, listing_tables)
+    df = ctx.sql(query)
+    for stage in df.stages():
+        print(
+            f"Stage {stage.stage_id} output partitions:{stage.num_output_partitions()} shadow partitions: {stage.num_shadow_partitions()}"
+        )
+        print(stage.execution_plan().display_indent())
+
+    df.show()
+
+
+def tpch_query(qnum: int) -> str:
     duckdb.sql("load tpch")
 
     sql: str = duckdb.sql(
         f"select * from tpch_queries() where query_nr=?", params=(qnum,)
     ).df()["query"][0]
     return sql
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--data", type=str, help="data path")
+    parser.add_argument("--query", type=str, help="query")
+    parser.add_argument(
+        "--qnum", type=int, default=0, help="query number for TPCH benchmark"
+    )
+    parser.add_argument("--concurrency", type=int, help="concurrency")
+    parser.add_argument("--batch-size", type=int, help="batch size")
+    parser.add_argument("--isolate", action="store_true")
+    parser.add_argument("--validate", action="store_true")
+    parser.add_argument("--listing-tables", action="store_true")
+    args = parser.parse_args()
+
+    if args.qnum > 0:
+        query = tpch_query(int(args.qnum))
+    else:
+        query = args.query
+
+    main(
+        args.data,
+        int(args.concurrency),
+        int(args.batch_size),
+        query,
+        args.isolate,
+        args.validate,
+        args.listing_tables,
+    )

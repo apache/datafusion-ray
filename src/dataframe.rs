@@ -48,30 +48,25 @@ use tonic::transport::Channel;
 
 use crate::isolator::PartitionIsolatorExec;
 use crate::max_rows::MaxRowsExec;
-use crate::pystage::ExchangeAddrs;
 use crate::ray_stage::RayStageExec;
 use crate::ray_stage_reader::RayStageReaderExec;
+use crate::util::collect_from_stage;
 use crate::util::make_client;
 use crate::util::physical_plan_to_bytes;
 use crate::util::ResultExt;
 
-pub struct CoordinatorId(pub String);
-
 #[pyclass]
 pub struct RayDataFrame {
     df: DataFrame,
-    #[pyo3(get)]
-    coordinator_id: String,
     #[pyo3(get)]
     bucket: Option<String>,
     final_plan: Option<Arc<dyn ExecutionPlan>>,
 }
 
 impl RayDataFrame {
-    pub fn new(df: DataFrame, coordinator_id: String, bucket: Option<String>) -> Self {
+    pub fn new(df: DataFrame, bucket: Option<String>) -> Self {
         Self {
             df,
-            coordinator_id,
             bucket,
             final_plan: None,
         }
@@ -111,7 +106,6 @@ impl RayDataFrame {
                 let replacement = Arc::new(RayStageReaderExec::try_new_from_input(
                     input.clone(),
                     stage_exec.stage_id,
-                    self.coordinator_id.clone(),
                 )?) as Arc<dyn ExecutionPlan>;
 
                 Ok(Transformed {
@@ -124,7 +118,6 @@ impl RayDataFrame {
             }
         };
 
-        let mut consume_all_partitions = false;
         // Step 1: we walk up the tree from the leaves to find the stages
         let up = |plan: Arc<dyn ExecutionPlan>| {
             //println!("examining plan up: {}", displayable(plan.as_ref()).one_line());
@@ -137,8 +130,7 @@ impl RayDataFrame {
 
                 let fixed_plan = input.clone().transform_down(down)?.data;
 
-                let stage =
-                    PyDataFrameStage::new(stage_exec.stage_id, fixed_plan, consume_all_partitions);
+                let stage = PyDataFrameStage::new(stage_exec.stage_id, fixed_plan);
 
                 stages.push(stage);
                 Ok(Transformed::no(plan))
@@ -161,8 +153,6 @@ impl RayDataFrame {
                     max_rows,
                 )) as Arc<dyn ExecutionPlan>;
 
-                consume_all_partitions = true;
-
                 Ok(Transformed::yes(replacement))
             } else if plan.as_any().downcast_ref::<SortExec>().is_some() {
                 let mut replacement = plan.clone();
@@ -173,8 +163,6 @@ impl RayDataFrame {
                     max_rows,
                 )) as Arc<dyn ExecutionPlan>;
 
-                consume_all_partitions = false;
-
                 Ok(Transformed::yes(replacement))
             } else if plan.as_any().downcast_ref::<NestedLoopJoinExec>().is_some() {
                 let mut replacement = plan.clone();
@@ -184,8 +172,6 @@ impl RayDataFrame {
                         as Arc<dyn ExecutionPlan>,
                     max_rows,
                 )) as Arc<dyn ExecutionPlan>;
-
-                consume_all_partitions = true;
 
                 Ok(Transformed::yes(replacement))
             } else {
@@ -213,8 +199,6 @@ impl RayDataFrame {
                     as Arc<dyn ExecutionPlan>,
                 max_rows,
             )) as Arc<dyn ExecutionPlan>,
-            true, // this doesn't really matter here as there is only one
-                  // partition on the final stage
         );
 
         // done fixing last stage
@@ -222,7 +206,6 @@ impl RayDataFrame {
         let reader_plan = Arc::new(RayStageReaderExec::try_new_from_input(
             last_stage.plan.clone(),
             last_stage.stage_id,
-            self.coordinator_id.clone(),
         )?) as Arc<dyn ExecutionPlan>;
 
         stages.push(last_stage);
@@ -245,32 +228,23 @@ impl RayDataFrame {
         Ok(PyLogicalPlan::new(self.df.clone().into_optimized_plan()?))
     }
 
-    pub fn execute(
-        &self,
-        exchange_addrs: HashMap<(usize, usize), String>,
+    fn read_final_stage(
+        &mut self,
+        py: Python,
+        stage_id: usize,
+        stage_addr: &str,
     ) -> PyResult<PyRecordBatchStream> {
-        let config = SessionConfig::new().with_extension(Arc::new(ExchangeAddrs(exchange_addrs)));
-
-        let state = SessionStateBuilder::new()
-            .with_default_features()
-            .with_config(config)
-            .build();
-        let ctx = SessionContext::new_with_state(state);
-
-        println!(
-            "consuming query results using plan:\n{}",
-            self.final_plan
-                .as_ref()
-                .map(|plan| displayable(plan.as_ref()).indent(true).to_string())
-                .unwrap_or("NotFound".to_string())
-        );
-
-        self.final_plan
-            .clone()
-            .ok_or_else(|| internal_datafusion_err!("No final plan found"))
-            .and_then(|plan| plan.execute(0, ctx.task_ctx()))
-            .map(PyRecordBatchStream::new)
-            .to_py_err()
+        wait_for_future(
+            py,
+            collect_from_stage(
+                stage_id,
+                0,
+                stage_addr,
+                self.final_plan.take().unwrap().clone(),
+            ),
+        )
+        .map(PyRecordBatchStream::new)
+        .to_py_err()
     }
 }
 
@@ -278,15 +252,10 @@ impl RayDataFrame {
 pub struct PyDataFrameStage {
     stage_id: usize,
     plan: Arc<dyn ExecutionPlan>,
-    consume_all_partitions: bool,
 }
 impl PyDataFrameStage {
-    fn new(stage_id: usize, plan: Arc<dyn ExecutionPlan>, consume_all_partitions: bool) -> Self {
-        Self {
-            stage_id,
-            plan,
-            consume_all_partitions,
-        }
+    fn new(stage_id: usize, plan: Arc<dyn ExecutionPlan>) -> Self {
+        Self { stage_id, plan }
     }
 }
 
@@ -317,10 +286,6 @@ impl PyDataFrameStage {
                 Ok(Transformed::no(node))
             });
         result
-    }
-
-    pub fn consume_all_partitions(&self) -> bool {
-        self.consume_all_partitions
     }
 
     #[getter]
