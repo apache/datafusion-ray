@@ -25,6 +25,7 @@ use prost::Message;
 use crate::ray_stage_reader::RayStageReaderExec;
 
 #[derive(Debug)]
+/// Physical Extension Codec for for DataFusion Ray plans
 pub struct RayCodec {}
 
 impl PhysicalExtensionCodec for RayCodec {

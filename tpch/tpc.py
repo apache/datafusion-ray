@@ -54,7 +54,6 @@ def make_ctx(
     ctx = RayContext(
         batch_size=batch_size,
         isolate_partitions=isolate_partitions,
-        bucket="rob-tandy-tmp",
     )
 
     ctx.set("datafusion.execution.target_partitions", f"{concurrency}")
@@ -94,12 +93,8 @@ def main(
 
 
 def tpch_query(qnum: int) -> str:
-    duckdb.sql("load tpch")
-
-    sql: str = duckdb.sql(
-        f"select * from tpch_queries() where query_nr=?", params=(qnum,)
-    ).df()["query"][0]
-    return sql
+    query_path = os.path.join(os.path.dirname(__file__), "..", "testdata", "queries")
+    return open(os.path.join(query_path, f"q{qnum}.sql")).read()
 
 
 if __name__ == "__main__":

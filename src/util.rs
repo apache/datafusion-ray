@@ -57,10 +57,11 @@ where
     }
 }
 
-// we need these two functions to go back and forth between IPC representations
-// from rust to rust to avoid using the C++ implementation from pyarrow as it
-// will generate unaligned data causing us errors
-
+/// we need these two functions to go back and forth between IPC representations
+/// from rust to rust to avoid using the C++ implementation from pyarrow as it
+/// will generate unaligned data causing us errors
+///
+/// not used in current arrow flight implementation, but leaving these here
 #[pyfunction]
 pub fn batch_to_ipc(py: Python, batch: PyArrowType<RecordBatch>) -> PyResult<Py<PyBytes>> {
     let batch = batch.0;

@@ -55,6 +55,8 @@ use crate::util::{
 /// will consume the partition from all clients and merge the results.
 pub(crate) struct ServiceClients(pub HashMap<usize, Mutex<Vec<FlightClient>>>);
 
+/// StageHandler is a [`FlightHandler`] that serves streams of partitions from a hosted Physical Plan
+/// It only responds to the DoGet Arrow Flight method.
 struct StageHandler {
     /// our stage id that we are hosting
     stage_id: usize,

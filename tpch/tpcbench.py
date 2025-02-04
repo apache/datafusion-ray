@@ -25,7 +25,11 @@ import os
 import time
 
 import duckdb
-from datafusion.object_store import AmazonS3
+
+
+def tpch_query(qnum: int) -> str:
+    query_path = os.path.join(os.path.dirname(__file__), "..", "testdata", "queries")
+    return open(os.path.join(query_path, f"q{qnum}.sql")).read()
 
 
 def main(
@@ -93,10 +97,10 @@ def main(
 
     queries = range(1, 23) if qnum == -1 else [qnum]
     for qnum in queries:
-        print("Running query ", qnum)
-        sql: str = duckdb.sql(
-            f"select * from tpch_queries() where query_nr=?", params=(qnum,)
-        ).df()["query"][0]
+        sql = tpch_query(qnum)
+
+        statements = sql.split(";")
+        sql = statements[0]
 
         print("executing ", sql)
 
@@ -134,12 +138,14 @@ def main(
     current_time_millis = int(datetime.now().timestamp() * 1000)
     results_path = f"datafusion-ray-tpch-{current_time_millis}.json"
     print(f"Writing results to {results_path}")
-    # with open(results_path, "w") as f:
-    #    f.write(results)
+    with open(results_path, "w") as f:
+        f.write(results)
 
     # write results to stdout
     print(results)
 
+    # give ray a moment to clean up
+    print("sleeping for 3 seconds for ray to clean up")
     time.sleep(3)
 
 
@@ -155,9 +161,6 @@ if __name__ == "__main__":
     parser.add_argument("--qnum", type=int, default=-1, help="TPCH query number, 1-22")
     parser.add_argument("--listing-tables", action="store_true")
     parser.add_argument("--validate", action="store_true")
-    parser.add_argument(
-        "--exchangers", type=int, default=1, help="Number of Exchange Actors"
-    )
     parser.add_argument(
         "--batch-size",
         required=False,

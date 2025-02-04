@@ -46,9 +46,23 @@ use crate::util::collect_from_stage;
 use crate::util::physical_plan_to_bytes;
 use crate::util::ResultExt;
 
+/// Internal rust class beyind the RayDataFrame python object
+///
+/// It is a container for a plan for a query, as we would expect.
+///
+/// This class plays two important roles.  First, it defines the stages of the plan
+/// by walking the plan provided to us in the constructor inside our dataframe.
+/// That plan contains RayStageExec nodes, where are merely markers, that incidate to us where
+/// to split the plan into descrete stages that can be hosted by a StageService.
+///
+/// The second role of this object is to be able to fetch record batches from the final_
+/// stage in the plan and return them to python.
 #[pyclass]
 pub struct RayDataFrame {
+    /// holds the logical plan of the query we will execute
     df: DataFrame,
+    /// the physical plan we will use to consume the final stage.
+    /// created when stages is run
     final_plan: Option<Arc<dyn ExecutionPlan>>,
 }
 
@@ -250,9 +264,12 @@ impl RayDataFrame {
     }
 }
 
+/// A Python class to hold a PHysical plan of a single stage
 #[pyclass]
 pub struct PyDataFrameStage {
+    /// our stage id
     stage_id: usize,
+    /// the physical plan of our stage
     plan: Arc<dyn ExecutionPlan>,
 }
 impl PyDataFrameStage {
@@ -267,6 +284,8 @@ impl PyDataFrameStage {
     fn stage_id(&self) -> usize {
         self.stage_id
     }
+
+    /// returns the number of output partitions of this stage
     pub fn num_output_partitions(&self) -> usize {
         self.plan.output_partitioning().partition_count()
     }
@@ -290,6 +309,7 @@ impl PyDataFrameStage {
         result
     }
 
+    /// returns the stage ids of that we need to read from in order to execute
     #[getter]
     pub fn input_stage_ids(&self) -> PyResult<Vec<usize>> {
         let mut result = vec![];

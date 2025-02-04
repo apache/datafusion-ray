@@ -17,6 +17,11 @@ use crate::protobuf::FlightTicketData;
 use crate::stage_service::ServiceClients;
 use crate::util::CombinedRecordBatchStream;
 
+/// An [`ExecutionPlan`] that will produce a stream of batches fetched from another stage
+/// which is hosted by a [`crate::stage_service::StageService`] separated from a network boundary
+///
+/// Note that discovery of the service is handled by populating an instance of [`crate::stage_service::ServiceClients`]
+/// and storing it as an extension in the [`datafusion::execution::TaskContext`] configuration.
 #[derive(Debug)]
 pub struct RayStageReaderExec {
     properties: PlanProperties,

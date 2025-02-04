@@ -7,6 +7,11 @@ use datafusion::{arrow::datatypes::SchemaRef, execution::SendableRecordBatchStre
 use futures::stream::{Stream, StreamExt};
 use tokio::sync::mpsc::channel;
 
+/// An execution plan that will try to consume and buffer RecordBatches from its input.
+/// It will hold those buffers in a bounded channel and serve them from the channel requested
+/// through execute().   
+///
+/// The buffering begins when execute() is called.
 #[derive(Debug)]
 pub struct PrefetchExec {
     /// Input plan

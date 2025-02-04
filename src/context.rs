@@ -28,8 +28,10 @@ use crate::physical::RayStageOptimizerRule;
 use crate::util::ResultExt;
 use url::Url;
 
+/// Internal Session Context object for the python class RayContext
 #[pyclass]
 pub struct RayContext {
+    /// our datafusion context
     ctx: SessionContext,
 }
 
