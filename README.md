@@ -48,19 +48,62 @@ of [Apache Arrow], [Apache DataFusion], and [Ray].
 
 [DataFusion Python]: https://github.com/apache/datafusion-python
 
-## Example
+## Building
 
-- In the `tpch` directory, use `make_data.py` to create a TPCH dataset at the specifed scale factor, then
+To build DataFusion Ray, you will need rust installed, as well as [https://github.com/PyO3/maturin](maturin).
+
+Install maturin in your current python environment (a virtual environment is recommended), with
 
 ```bash
-RAY_COLOR_PREFIX=1 RAY_DEDUP_LOGS=0 python tpcbench.py --data=file:///path/to/your/tpch/directory/ --concurrency=4 --batch-size=4096 --validate
+pip install maturin
 ```
+
+Then build the project with the following command:
+
+```bash
+maturin develop # --release for a release build
+```
+
+- In the `examples` directory, run
+
+## Example
+
+- In the `examples` directory, run
+
+```bash
+RAY_COLOR_PREFIX=1 RAY_DEDUP_LOGS=0 python tips.py --data-dir=$(pwd)/../testdata/tips/
+```
+
+- In the `tpch` directory, use `make_data.py` to create a TPCH dataset at a provided scale factor, then
+
+```bash
+RAY_COLOR_PREFIX=1 RAY_DEDUP_LOGS=0 python tpc.py --data=file:///path/to/your/tpch/directory/ --concurrency=2 --batch-size=8182 --qnum 2
+```
+
+To execute the TPCH query #2. To execute an arbitrary query against the TPCH dataset, provide it with `--query` instead of `--qnum`. This is useful for validating plans that DataFusion Ray will create.
+
+For example, to execute the following query:
+
+```bash
+RAY_COLOR_PREFIX=1 RAY_DEDUP_LOGS=0 python tpc.py --data=file:///path/to/your/tpch/directory/ --concurrency=2 --batch-size=8182 --query `select c.c_name, sum(o.o_totalprice) as total from orders o inner join customer c on o.o_custkey = c.c_custkey group by c_name limit 1`
+```
+
+To further parallelize execution, and host each partition of each stage as a Ray Actor, add `--isolate`. Note that this can drastically increase the number of Actors. A future version of DataFusion Ray will provide a`--split-factor` which will let you configure how the Stages are split.
+
+To validate the output against non-ray single node datafusion, add `--validate` which will ensure that both systems produce the same output.
+
+To run the entire TPCH benchmark use
+
+```bash
+RAY_COLOR_PREFIX=1 RAY_DEDUP_LOGS=0 python tpcbench.py --data=file:///path/to/your/tpch/directory/ --concurrency=2 --batch-size=8182 [--isolate] [--validate]
+```
+
+This will output a json file in the current directory with query timings.
 
 ## Status
 
-- DataFusion Ray can execute all TPCH queries.
+- DataFusion Ray can execute all TPCH queries. Tested up to SF100.
 
 ## Known Issues
 
-- Using `--isolate` (in `tpcbench.py`) to execute individual partitions in their own Ray Actors currently can produce incorrect results.
-- The DataFusion config setting, `datafusion.execution.parquet.pushdown_filters`, can produce incorrect results. We think this could be related to an issue with round trip physical path serialization.
+- The DataFusion config setting, `datafusion.execution.parquet.pushdown_filters`, can produce incorrect results. We think this could be related to an issue with round trip physical path serialization. At the moment, do not enable this setting, as it prevents physical plans from serializing correctly.

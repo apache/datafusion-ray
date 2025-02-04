@@ -15,41 +15,31 @@
 // specific language governing permissions and limitations
 // under the License.
 
-use arrow::datatypes::SchemaRef;
-use arrow::util::pretty::pretty_format_batches;
-use datafusion::common::internal_datafusion_err;
 use datafusion::datasource::file_format::parquet::ParquetFormat;
-use datafusion::datasource::listing::{
-    ListingOptions, ListingTable, ListingTableConfig, ListingTableUrl,
-};
-use datafusion::physical_plan::{collect, displayable};
-use datafusion::{execution::SessionStateBuilder, physical_plan::ExecutionPlan, prelude::*};
-use datafusion_python::context::convert_table_partition_cols;
-use datafusion_python::dataframe::PyDataFrame;
-use datafusion_python::expr::sort_expr::PySortExpr;
-use datafusion_python::{errors::*, utils::wait_for_future};
+use datafusion::datasource::listing::ListingOptions;
+use datafusion::{execution::SessionStateBuilder, prelude::*};
+use datafusion_python::utils::wait_for_future;
 use object_store::aws::AmazonS3Builder;
 use pyo3::prelude::*;
 use std::sync::Arc;
 
-use crate::dataframe::{PyRecordBatchStream, RayDataFrame};
-use crate::physical::RayShuffleOptimizerRule;
-use crate::util::{bytes_to_physical_plan, physical_plan_to_bytes, ResultExt};
+use crate::dataframe::RayDataFrame;
+use crate::physical::RayStageOptimizerRule;
+use crate::util::ResultExt;
 use url::Url;
 
-pub struct CoordinatorId(pub String);
-
+/// Internal Session Context object for the python class RayContext
 #[pyclass]
 pub struct RayContext {
+    /// our datafusion context
     ctx: SessionContext,
-    bucket: Option<String>,
 }
 
 #[pymethods]
 impl RayContext {
     #[new]
-    pub fn new(bucket: Option<String>) -> PyResult<Self> {
-        let rule = RayShuffleOptimizerRule::new();
+    pub fn new() -> PyResult<Self> {
+        let rule = RayStageOptimizerRule::new();
 
         let config = SessionConfig::default().with_information_schema(true);
 
@@ -61,7 +51,7 @@ impl RayContext {
 
         let ctx = SessionContext::new_with_state(state);
 
-        Ok(Self { ctx, bucket })
+        Ok(Self { ctx })
     }
 
     pub fn register_s3(&self, bucket_name: String) -> PyResult<()> {
@@ -78,8 +68,7 @@ impl RayContext {
     }
 
     pub fn register_parquet(&self, py: Python, name: String, path: String) -> PyResult<()> {
-        let mut options = ParquetReadOptions::default();
-        options.file_extension = ".parquet";
+        let options = ParquetReadOptions::default();
 
         wait_for_future(py, self.ctx.register_parquet(&name, &path, options.clone()))?;
         Ok(())
@@ -104,14 +93,10 @@ impl RayContext {
         .to_py_err()
     }
 
-    pub fn sql(&self, py: Python, query: String, coordinator_id: String) -> PyResult<RayDataFrame> {
-        let physical_plan = wait_for_future(py, self.sql_to_physical_plan(query))?;
+    pub fn sql(&self, py: Python, query: String) -> PyResult<RayDataFrame> {
+        let df = wait_for_future(py, self.ctx.sql(&query))?;
 
-        Ok(RayDataFrame::new(
-            physical_plan,
-            coordinator_id,
-            self.bucket.clone(),
-        ))
+        Ok(RayDataFrame::new(df))
     }
 
     pub fn set(&self, option: String, value: String) -> PyResult<()> {
@@ -130,22 +115,5 @@ impl RayContext {
         let config = guard.config();
         let options = config.options();
         options.execution.target_partitions
-    }
-
-    pub fn set_coordinator_id(&self, id: String) -> PyResult<()> {
-        let state = self.ctx.state_ref();
-        let mut guard = state.write();
-        let config = guard.config_mut();
-        config.set_extension(Arc::new(CoordinatorId(id)));
-        Ok(())
-    }
-}
-impl RayContext {
-    async fn sql_to_physical_plan(&self, sql: String) -> Result<Arc<dyn ExecutionPlan>> {
-        let logical_plan = self.ctx.sql(&sql).await?.into_optimized_plan()?;
-
-        let plan = self.ctx.state().create_physical_plan(&logical_plan).await?;
-
-        Ok(plan)
     }
 }

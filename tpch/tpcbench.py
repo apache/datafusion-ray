@@ -25,7 +25,11 @@ import os
 import time
 
 import duckdb
-from datafusion.object_store import AmazonS3
+
+
+def tpch_query(qnum: int) -> str:
+    query_path = os.path.join(os.path.dirname(__file__), "..", "testdata", "queries")
+    return open(os.path.join(query_path, f"q{qnum}.sql")).read()
 
 
 def main(
@@ -36,7 +40,7 @@ def main(
     isolate_partitions: bool,
     listing_tables: bool,
     validate: bool,
-    exchangers: int,
+    prefetch_buffer_size: int,
 ):
 
     # Register the tables
@@ -52,13 +56,12 @@ def main(
     ]
     # Connect to a cluster
     # use ray job submit
-    ray.init()
+    ray.init(runtime_env={"env_vars": {"RAY_worker_niceness": "0"}})
 
     ctx = RayContext(
         batch_size=batch_size,
-        num_exchangers=exchangers,
         isolate_partitions=isolate_partitions,
-        bucket="rob-tandy-tmp",
+        prefetch_buffer_size=prefetch_buffer_size,
     )
 
     ctx.set("datafusion.execution.target_partitions", f"{concurrency}")
@@ -67,13 +70,8 @@ def main(
     ctx.set("datafusion.execution.coalesce_batches", "false")
 
     local_config = SessionConfig()
-    local_config.set("datafusion.execution.target_partitions", f"{concurrency}")
-    # local_config.set("datafusion.execution.parquet.pushdown_filters", "true")
-    local_config.set("datafusion.optimizer.enable_round_robin_repartition", "false")
-    local_config.set("datafusion.execution.coalesce_batches", "false")
 
     local_ctx = SessionContext(local_config)
-    local_ctx.register_object_store("s3://", AmazonS3(bucket_name="rob-tandy-tmp"))
 
     for table in table_names:
         path = os.path.join(data_path, f"{table}.parquet")
@@ -93,24 +91,29 @@ def main(
     }
     if validate:
         results["local_queries"] = {}
+        results["validated"] = {}
 
     duckdb.sql("load tpch")
 
     queries = range(1, 23) if qnum == -1 else [qnum]
     for qnum in queries:
-        print("Running query ", qnum)
-        sql: str = duckdb.sql(
-            f"select * from tpch_queries() where query_nr=?", params=(qnum,)
-        ).df()["query"][0]
+        sql = tpch_query(qnum)
+
+        statements = sql.split(";")
+        sql = statements[0]
 
         print("executing ", sql)
 
-        df = ctx.sql(sql)
         start_time = time.time()
+        df = ctx.sql(sql)
         end_time = time.time()
+        print("Logical plan \n", df.logical_plan().display_indent())
+        print("Optimized Logical plan \n", df.optimized_logical_plan().display_indent())
         part1 = end_time - start_time
         for stage in df.stages():
-            print("Stage ", stage.stage_id)
+            print(
+                f"Stage {stage.stage_id} output partitions:{stage.num_output_partitions()} shadow partitions: {stage.num_shadow_partitions()}"
+            )
             print(stage.execution_plan().display_indent())
 
         start_time = time.time()
@@ -128,21 +131,21 @@ def main(
 
             expected = prettify(answer_batches)
 
-            if not calculated == expected:
-                print(f"Possible wrong answer for TPCH query {qnum}")
-                print(expected)
-                # raise Exception("Wrong answer")
+            results["validated"][qnum] = calculated == expected
+        print(f"done with query {qnum}")
 
     results = json.dumps(results, indent=4)
     current_time_millis = int(datetime.now().timestamp() * 1000)
     results_path = f"datafusion-ray-tpch-{current_time_millis}.json"
     print(f"Writing results to {results_path}")
-    # with open(results_path, "w") as f:
-    #    f.write(results)
+    with open(results_path, "w") as f:
+        f.write(results)
 
     # write results to stdout
     print(results)
 
+    # give ray a moment to clean up
+    print("sleeping for 3 seconds for ray to clean up")
     time.sleep(3)
 
 
@@ -159,14 +162,19 @@ if __name__ == "__main__":
     parser.add_argument("--listing-tables", action="store_true")
     parser.add_argument("--validate", action="store_true")
     parser.add_argument(
-        "--exchangers", type=int, default=1, help="Number of Exchange Actors"
-    )
-    parser.add_argument(
         "--batch-size",
         required=False,
         default=8192,
         help="Desired batch size output per stage",
     )
+    parser.add_argument(
+        "--prefetch-buffer-size",
+        required=False,
+        default=0,
+        type=int,
+        help="How many batches each stage should eagerly buffer",
+    )
+
     args = parser.parse_args()
 
     main(
@@ -177,5 +185,5 @@ if __name__ == "__main__":
         args.isolate,
         args.listing_tables,
         args.validate,
-        args.exchangers,
+        args.prefetch_buffer_size,
     )

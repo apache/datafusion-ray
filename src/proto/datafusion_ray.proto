@@ -16,24 +16,21 @@ message RayStageReaderExecNode {
   datafusion.Partitioning partitioning = 2;
   // stage to read from
   uint64 stage_id = 3;
-  // identifier of the RayQueryCoordinator Actor we need to contact
-  string coordinator_id = 4;
 }
 
 message MaxRowsExecNode {
   uint64 max_rows = 1;
 }
 
-// TODO: why, if StreamMeta has  the uint64 field first can it also be decoded also
+message PrefetchExecNode {
+  uint64 buf_size = 1;
+}
+
+// TODO: why, if FlightTicketData has  the uint64 field first can it also be decoded also
 // MaxRowsExecNode?  There is something I don't understand here
-// Same with RayStageReaderExecNode, for now, I will ensure they have different
-// typed first fields
-message StreamMeta {
-  // what fraction of the work do we represent, serialized as a string
-  string fraction = 1;
+message FlightTicketData {
   // stage id of the stream
-  uint64 stage_id  = 2;
   // parittion id of the stream
-  uint64 partition = 3;
+  uint64 partition = 2;
 }
 

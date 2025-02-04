@@ -3,7 +3,8 @@ use std::sync::Arc;
 use crate::{
     isolator::PartitionIsolatorExec,
     max_rows::MaxRowsExec,
-    protobuf::{MaxRowsExecNode, RayStageReaderExecNode},
+    pre_fetch::PrefetchExec,
+    protobuf::{MaxRowsExecNode, PrefetchExecNode, RayStageReaderExecNode},
 };
 
 use arrow::datatypes::Schema;
@@ -11,9 +12,8 @@ use datafusion::{
     common::{internal_datafusion_err, internal_err},
     error::Result,
     execution::FunctionRegistry,
-    physical_plan::{displayable, ExecutionPlan},
+    physical_plan::ExecutionPlan,
 };
-use datafusion_proto::physical_plan::AsExecutionPlan;
 use datafusion_proto::physical_plan::{
     from_proto::parse_protobuf_partitioning, to_proto::serialize_partitioning,
     DefaultPhysicalExtensionCodec, PhysicalExtensionCodec,
@@ -25,6 +25,7 @@ use prost::Message;
 use crate::ray_stage_reader::RayStageReaderExec;
 
 #[derive(Debug)]
+/// Physical Extension Codec for for DataFusion Ray plans
 pub struct RayCodec {}
 
 impl PhysicalExtensionCodec for RayCodec {
@@ -62,7 +63,6 @@ impl PhysicalExtensionCodec for RayCodec {
                 part,
                 Arc::new(schema),
                 node.stage_id as usize,
-                node.coordinator_id,
             )?))
         } else if let Ok(node) = MaxRowsExecNode::decode(buf) {
             if inputs.len() != 1 {
@@ -74,6 +74,18 @@ impl PhysicalExtensionCodec for RayCodec {
                 Ok(Arc::new(MaxRowsExec::new(
                     inputs[0].clone(),
                     node.max_rows as usize,
+                )))
+            }
+        } else if let Ok(node) = PrefetchExecNode::decode(buf) {
+            if inputs.len() != 1 {
+                Err(internal_datafusion_err!(
+                    "MaxRowsExec requires one input, got {}",
+                    inputs.len()
+                ))
+            } else {
+                Ok(Arc::new(PrefetchExec::new(
+                    inputs[0].clone(),
+                    node.buf_size as usize,
                 )))
             }
         } else {
@@ -93,7 +105,6 @@ impl PhysicalExtensionCodec for RayCodec {
                 schema: Some(schema),
                 partitioning: Some(partitioning),
                 stage_id: reader.stage_id as u64,
-                coordinator_id: reader.coordinator_id.clone(),
             };
 
             pb.encode(buf)
@@ -115,6 +126,14 @@ impl PhysicalExtensionCodec for RayCodec {
                 .map_err(|e| internal_datafusion_err!("can't encode max rows pb: {e}"))?;
 
             Ok(())
+        } else if let Some(pre) = node.as_any().downcast_ref::<PrefetchExec>() {
+            let pb = PrefetchExecNode {
+                buf_size: pre.buf_size as u64,
+            };
+            pb.encode(buf)
+                .map_err(|e| internal_datafusion_err!("can't encode prefetch pb: {e}"))?;
+
+            Ok(())
         } else {
             internal_err!("Not supported")
         }
@@ -126,7 +145,11 @@ mod test {
     use super::*;
     use crate::ray_stage_reader::RayStageReaderExec;
     use arrow::datatypes::DataType;
-    use datafusion::{physical_plan::Partitioning, prelude::SessionContext};
+    use datafusion::{
+        physical_plan::{display::DisplayableExecutionPlan, displayable, Partitioning},
+        prelude::SessionContext,
+    };
+    use datafusion_proto::physical_plan::AsExecutionPlan;
 
     use std::sync::Arc;
 
@@ -138,9 +161,7 @@ mod test {
         ]));
         let ctx = SessionContext::new();
         let part = Partitioning::UnknownPartitioning(2);
-        let exec = Arc::new(
-            RayStageReaderExec::try_new(part, schema, 1, "coordinator_id".to_owned()).unwrap(),
-        );
+        let exec = Arc::new(RayStageReaderExec::try_new(part, schema, 1).unwrap());
         let codec = RayCodec {};
         let mut buf = vec![];
         codec.try_encode(exec.clone(), &mut buf).unwrap();
@@ -156,9 +177,7 @@ mod test {
         let ctx = SessionContext::new();
         let part = Partitioning::UnknownPartitioning(2);
         let exec = Arc::new(MaxRowsExec::new(
-            Arc::new(
-                RayStageReaderExec::try_new(part, schema, 1, "coordinator_id".to_owned()).unwrap(),
-            ),
+            Arc::new(RayStageReaderExec::try_new(part, schema, 1).unwrap()),
             10,
         ));
         let codec = RayCodec {};
@@ -175,9 +194,12 @@ mod test {
             .expect("from proto");
 
         let input = displayable(exec.as_ref()).indent(true).to_string();
-        let round_trip = displayable(result_exec_plan.as_ref())
-            .indent(true)
-            .to_string();
+        let round_trip = {
+            let plan: &dyn ExecutionPlan = result_exec_plan.as_ref();
+            DisplayableExecutionPlan::new(plan)
+        }
+        .indent(true)
+        .to_string();
         assert_eq!(input, round_trip);
     }
 }

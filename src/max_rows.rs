@@ -1,14 +1,18 @@
 use std::{fmt::Formatter, sync::Arc};
 
 use datafusion::{
-    common::internal_datafusion_err,
     error::Result,
     execution::SendableRecordBatchStream,
-    physical_plan::{DisplayAs, DisplayFormatType, ExecutionPlan, Partitioning, PlanProperties},
+    physical_plan::{DisplayAs, DisplayFormatType, ExecutionPlan, PlanProperties},
 };
 
 use crate::util::max_rows_stream;
 
+/// An Execution plan that will not yield batches with greater than max_rows.
+///
+/// If its input produces a batch with greater than max_rows it will zero-copy
+/// split the batch and continue to do this until the remaining batch has
+/// <= max_rows rows.    It will yield each of these batches as separate Items
 #[derive(Debug)]
 pub struct MaxRowsExec {
     pub input: Arc<dyn ExecutionPlan>,

@@ -9,7 +9,6 @@ use datafusion::{
 
 pub struct ShadowPartitionNumber(pub usize);
 
-#[derive(Debug)]
 /// This is a simple execution plan that isolates a partition from the input plan
 /// It will advertise that it has a single partition and when
 /// asked to execute, it will execute a particular partition from the child
@@ -17,6 +16,7 @@ pub struct ShadowPartitionNumber(pub usize);
 ///
 /// This allows us to execute Repartition Exec's on different processes
 /// by showing each one only a single child partition
+#[derive(Debug)]
 pub struct PartitionIsolatorExec {
     pub input: Arc<dyn ExecutionPlan>,
     properties: PlanProperties,

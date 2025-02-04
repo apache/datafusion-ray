@@ -25,6 +25,9 @@ DataFusion provides a high-performance query engine that is already partition-aw
 in parallel in separate threads. DataFusion Ray provides a distributed query planner that translates a DataFusion physical
 plan into a distributed plan.
 
+Note that this document is dated from an early implementation of DataFusion Ray. The details around shuffle differ in the current ArrowFlight Streaming based implementation.
+However the general discussion around how to break a physical plan into discrete stages remains useful, and we retain this document here.
+
 Let's walk through an example to see how that works. We'll use [SQLBench-H](https://github.com/sql-benchmarks/sqlbench-h)
 query 3 for the example. This is an aggregate query with a three-way join.
 
@@ -34,27 +37,27 @@ _SQLBench-H Query 3_
 -- SQLBench-H query 3 derived from TPC-H query 3 under the terms of the TPC Fair Use Policy.
 -- TPC-H queries are Copyright 1993-2022 Transaction Processing Performance Council.
 select
-	l_orderkey,
-	sum(l_extendedprice * (1 - l_discount)) as revenue,
-	o_orderdate,
-	o_shippriority
+ l_orderkey,
+ sum(l_extendedprice * (1 - l_discount)) as revenue,
+ o_orderdate,
+ o_shippriority
 from
-	customer,
-	orders,
-	lineitem
+ customer,
+ orders,
+ lineitem
 where
-	c_mktsegment = 'HOUSEHOLD'
-	and c_custkey = o_custkey
-	and l_orderkey = o_orderkey
-	and o_orderdate < date '1995-03-21'
-	and l_shipdate > date '1995-03-21'
+ c_mktsegment = 'HOUSEHOLD'
+ and c_custkey = o_custkey
+ and l_orderkey = o_orderkey
+ and o_orderdate < date '1995-03-21'
+ and l_shipdate > date '1995-03-21'
 group by
-	l_orderkey,
-	o_orderdate,
-	o_shippriority
+ l_orderkey,
+ o_orderdate,
+ o_shippriority
 order by
-	revenue desc,
-	o_orderdate limit 10;
+ revenue desc,
+ o_orderdate limit 10;
 ```
 
 ## DataFusion's Logical Plan

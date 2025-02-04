@@ -18,28 +18,39 @@
 use datafusion::common::tree_node::{Transformed, TreeNode};
 use datafusion::error::Result;
 use datafusion::physical_optimizer::PhysicalOptimizerRule;
+use datafusion::physical_plan::joins::NestedLoopJoinExec;
 use datafusion::physical_plan::repartition::RepartitionExec;
+use datafusion::physical_plan::sorts::sort::SortExec;
 use datafusion::physical_plan::{displayable, ExecutionPlan};
 use std::sync::Arc;
 
 use crate::ray_stage::RayStageExec;
 
+/// This optimizer rule walks up the physical plan tree
+/// and inserts RayStageExec nodes where appropriate to denote where we will split
+/// the plan into stages.
+///
+/// The RayStageExec nodes are merely markers to inform where to break the plan up.
+///
+/// Later, the plan will be examined again to actually split it up.
+/// These RayStageExecs serve as markers where we know to break it up on a network
+/// boundary and we can insert readers and writers as appropriate.
 #[derive(Debug)]
-pub struct RayShuffleOptimizerRule {}
+pub struct RayStageOptimizerRule {}
 
-impl Default for RayShuffleOptimizerRule {
+impl Default for RayStageOptimizerRule {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl RayShuffleOptimizerRule {
+impl RayStageOptimizerRule {
     pub fn new() -> Self {
         Self {}
     }
 }
 
-impl PhysicalOptimizerRule for RayShuffleOptimizerRule {
+impl PhysicalOptimizerRule for RayStageOptimizerRule {
     fn optimize(
         &self,
         plan: Arc<dyn ExecutionPlan>,
@@ -53,9 +64,10 @@ impl PhysicalOptimizerRule for RayShuffleOptimizerRule {
         let mut stage_counter = 0;
 
         let up = |plan: Arc<dyn ExecutionPlan>| {
-            //println!("examining plan: {}", displayable(plan.as_ref()).one_line());
-
-            if plan.as_any().downcast_ref::<RepartitionExec>().is_some() {
+            if plan.as_any().downcast_ref::<RepartitionExec>().is_some()
+                || plan.as_any().downcast_ref::<SortExec>().is_some()
+                || plan.as_any().downcast_ref::<NestedLoopJoinExec>().is_some()
+            {
                 let stage = Arc::new(RayStageExec::new(plan, stage_counter));
                 stage_counter += 1;
                 Ok(Transformed::yes(stage as Arc<dyn ExecutionPlan>))
@@ -67,15 +79,15 @@ impl PhysicalOptimizerRule for RayShuffleOptimizerRule {
         let plan = plan.transform_up(up)?.data;
         let final_plan = Arc::new(RayStageExec::new(plan, stage_counter));
 
-        //println!(
-        //    "optimized physical plan:\n{}",
-        //    displayable(final_plan.as_ref()).indent(false)
-        //);
+        println!(
+            "optimized physical plan:\n{}",
+            displayable(final_plan.as_ref()).indent(true)
+        );
         Ok(final_plan)
     }
 
     fn name(&self) -> &str {
-        "RayShuffleOptimizerRule"
+        "RayStageOptimizerRule"
     }
 
     fn schema_check(&self) -> bool {

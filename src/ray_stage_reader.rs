@@ -1,10 +1,8 @@
 use std::{fmt::Formatter, sync::Arc};
 
-use arrow::record_batch::RecordBatchReader;
 use arrow_flight::{FlightClient, Ticket};
-use datafusion::common::internal_datafusion_err;
+use datafusion::common::{internal_datafusion_err, internal_err};
 use datafusion::error::Result;
-use datafusion::execution::RecordBatchStream;
 use datafusion::physical_expr::EquivalenceProperties;
 use datafusion::physical_plan::stream::RecordBatchStreamAdapter;
 use datafusion::physical_plan::{
@@ -14,45 +12,41 @@ use datafusion::{arrow::datatypes::SchemaRef, execution::SendableRecordBatchStre
 use futures::stream::TryStreamExt;
 use futures::StreamExt;
 use prost::Message;
-use rust_decimal::prelude::*;
 
-use crate::protobuf::StreamMeta;
-use crate::pystage::ExchangeAddrs;
-use crate::util::make_client;
+use crate::protobuf::FlightTicketData;
+use crate::stage_service::ServiceClients;
+use crate::util::CombinedRecordBatchStream;
 
+/// An [`ExecutionPlan`] that will produce a stream of batches fetched from another stage
+/// which is hosted by a [`crate::stage_service::StageService`] separated from a network boundary
+///
+/// Note that discovery of the service is handled by populating an instance of [`crate::stage_service::ServiceClients`]
+/// and storing it as an extension in the [`datafusion::execution::TaskContext`] configuration.
 #[derive(Debug)]
 pub struct RayStageReaderExec {
     properties: PlanProperties,
     schema: SchemaRef,
     pub stage_id: usize,
-    pub coordinator_id: String,
 }
 
 impl RayStageReaderExec {
-    pub fn try_new_from_input(
-        input: Arc<dyn ExecutionPlan>,
-        stage_id: usize,
-        coordinator_id: String,
-    ) -> Result<Self> {
+    pub fn try_new_from_input(input: Arc<dyn ExecutionPlan>, stage_id: usize) -> Result<Self> {
         let properties = input.properties().clone();
+        /*println!(
+            "RayStageReaderExec::try_new_from_input.  input:\n{}\nPartitioning:{}",
+            displayable(input.as_ref())
+                .set_show_schema(true)
+                .indent(true),
+            properties.partitioning
+        );*/
 
-        Self::try_new(
-            properties.partitioning.clone(),
-            input.schema(),
-            stage_id,
-            coordinator_id,
-        )
+        Self::try_new(properties.partitioning.clone(), input.schema(), stage_id)
     }
 
-    pub fn try_new(
-        partitioning: Partitioning,
-        schema: SchemaRef,
-        stage_id: usize,
-        coordinator_id: String,
-    ) -> Result<Self> {
+    pub fn try_new(partitioning: Partitioning, schema: SchemaRef, stage_id: usize) -> Result<Self> {
         let properties = PlanProperties::new(
             EquivalenceProperties::new(schema.clone()),
-            partitioning,
+            Partitioning::UnknownPartitioning(partitioning.partition_count()),
             ExecutionMode::Unbounded,
         );
 
@@ -60,7 +54,6 @@ impl RayStageReaderExec {
             properties,
             schema,
             stage_id,
-            coordinator_id,
         })
     }
 }
@@ -97,7 +90,7 @@ impl ExecutionPlan for RayStageReaderExec {
 
     fn with_new_children(
         self: std::sync::Arc<Self>,
-        children: Vec<std::sync::Arc<dyn ExecutionPlan>>,
+        _children: Vec<std::sync::Arc<dyn ExecutionPlan>>,
     ) -> datafusion::error::Result<std::sync::Arc<dyn ExecutionPlan>> {
         // TODO: handle more general case
         unimplemented!()
@@ -110,59 +103,73 @@ impl ExecutionPlan for RayStageReaderExec {
     ) -> Result<SendableRecordBatchStream> {
         let name = format!("RayStageReaderExec[{}-{}]:", self.stage_id, partition);
         println!("{name} execute");
-        let addr_map = &context
+        let client_map = &context
             .session_config()
-            .get_extension::<ExchangeAddrs>()
+            .get_extension::<ServiceClients>()
             .ok_or(internal_datafusion_err!(
                 "{name} Flight Client not in context"
             ))?
             .clone()
             .0;
 
-        let meta = StreamMeta {
-            stage_id: self.stage_id as u64,
+        println!("{name} client_map keys {:?}", client_map.keys());
+
+        let clients = client_map
+            .get(&self.stage_id)
+            .ok_or(internal_datafusion_err!(
+                "No flight clients found for {}",
+                self.stage_id
+            ))?
+            .lock()
+            .iter()
+            .map(|c| {
+                let inner_clone = c.inner().clone();
+                FlightClient::new_from_inner(inner_clone)
+            })
+            .collect::<Vec<_>>();
+
+        let ftd = FlightTicketData {
             partition: partition as u64,
-            fraction: Decimal::zero().to_string(), // not used in this context
         };
 
         let ticket = Ticket {
-            ticket: meta.encode_to_vec().into(),
+            ticket: ftd.encode_to_vec().into(),
         };
 
-        let stage_id = self.stage_id;
-        let addr_map = addr_map.clone();
-        let out_stream = async_stream::stream! {
-            println!("{name} connecting to exchange");
+        let schema = self.schema.clone();
 
-            let mut client = addr_map
-                .get(&(stage_id, partition))
-                .map(|addr|make_client(addr))
-                .expect("no addr found")
-                .await
-                .expect("Couldn't make flight client");
+        let stream = async_stream::stream! {
+            let mut error = false;
 
+            let mut streams = vec![];
+            for mut client in clients {
+                match client.do_get(ticket.clone()).await {
+                    Ok(flight_stream) => {
+                        let rbr_stream = RecordBatchStreamAdapter::new(schema.clone(),
+                            flight_stream
+                                .map_err(|e| internal_datafusion_err!("Error consuming flight stream: {}", e)));
 
-            let flight_rbr_stream = client.do_get(ticket).await;
-            println!("{name} exchange do_get got response");
-
-            let mut total_rows = 0;
-            if let Ok(mut flight_rbr_stream) = flight_rbr_stream {
-
-                while let Some(batch) = flight_rbr_stream.next().await {
-                    total_rows += batch.as_ref().map(|b| b.num_rows()).unwrap_or(0);
-                    yield batch
-                        .map_err(|e| internal_datafusion_err!("{name} Error reading batch: {}", e));
+                        streams.push(Box::pin(rbr_stream) as SendableRecordBatchStream);
+                    },
+                    Err(e) => {
+                        error = true;
+                        yield internal_err!("Error getting flight stream: {}", e);
+                    }
                 }
-            } else {
-                yield Err(internal_datafusion_err!("{name} Error getting stream"));
             }
-            println!("{name} read {} total rows", total_rows);
+            if !error {
+                let mut combined = CombinedRecordBatchStream::new(schema.clone(),streams);
 
+                while let Some(maybe_batch) = combined.next().await {
+                    yield maybe_batch;
+                }
+            }
 
         };
 
-        let adapter = RecordBatchStreamAdapter::new(self.schema.clone(), out_stream);
-
-        Ok(Box::pin(adapter))
+        Ok(Box::pin(RecordBatchStreamAdapter::new(
+            self.schema.clone(),
+            stream,
+        )))
     }
 }
