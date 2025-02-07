@@ -18,7 +18,7 @@
 import argparse
 import ray
 from datafusion import SessionContext, SessionConfig
-from datafusion_ray import RayContext, prettify
+from datafusion_ray import RayContext, prettify, runtime_env
 from datetime import datetime
 import json
 import os
@@ -49,7 +49,7 @@ def make_ctx(
     ]
     # Connect to a cluster
     # use ray job submit
-    ray.init()
+    ray.init(runtime_env=runtime_env)
 
     ctx = RayContext(
         batch_size=batch_size,

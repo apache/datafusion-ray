@@ -18,7 +18,7 @@
 import argparse
 import ray
 from datafusion import SessionContext, SessionConfig
-from datafusion_ray import RayContext, prettify
+from datafusion_ray import RayContext, prettify, runtime_env
 from datetime import datetime
 import json
 import os
@@ -56,7 +56,7 @@ def main(
     ]
     # Connect to a cluster
     # use ray job submit
-    ray.init(runtime_env={"env_vars": {"RAY_worker_niceness": "0"}})
+    ray.init(runtime_env=runtime_env)
 
     ctx = RayContext(
         batch_size=batch_size,
@@ -161,6 +161,9 @@ if __name__ == "__main__":
     parser.add_argument("--qnum", type=int, default=-1, help="TPCH query number, 1-22")
     parser.add_argument("--listing-tables", action="store_true")
     parser.add_argument("--validate", action="store_true")
+    parser.add_argument(
+        "--log-level", default="INFO", help="ERROR,WARN,INFO,DEBUG,TRACE"
+    )
     parser.add_argument(
         "--batch-size",
         required=False,

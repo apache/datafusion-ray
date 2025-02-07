@@ -29,6 +29,7 @@ use datafusion::prelude::{SessionConfig, SessionContext};
 use datafusion_python::utils::wait_for_future;
 use futures::TryStreamExt;
 use local_ip_address::local_ip;
+use log::{debug, error, info, trace};
 use tokio::net::TcpListener;
 
 use tonic::transport::Server;
@@ -138,9 +139,11 @@ impl FlightHandler for StageHandler {
         let partition = extract_ticket(ticket)
             .map_err(|e| Status::internal(format!("Unexpected error extracting ticket {e}")))?;
 
-        println!(
+        trace!(
             "StageService[Stage:{}], request for partition {} from {}",
-            self.stage_id, partition, remote_addr
+            self.stage_id,
+            partition,
+            remote_addr
         );
 
         let task_ctx = self
@@ -273,7 +276,7 @@ impl StageService {
 
         let name = self.name.clone();
         let serv = async move {
-            println!("StageService Serving");
+            trace!("StageService Serving");
             Server::builder()
                 .add_service(svc)
                 .serve_with_incoming_shutdown(
@@ -281,16 +284,15 @@ impl StageService {
                     signal,
                 )
                 .await
-                .inspect_err(|e| println!("StageService [{}] ERROR serving {e}", name))
+                .inspect_err(|e| error!("StageService [{}] ERROR serving {e}", name))
                 .map_err(|e| PyErr::new::<pyo3::exceptions::PyException, _>(format!("{e}")))?;
-            println!("StageService [{}] DONE serving", name);
+            info!("StageService [{}] DONE serving", name);
             Ok::<(), Box<dyn Error + Send + Sync>>(())
         };
 
         let name = self.name.clone();
         let fut = async move {
             serv.await.to_py_err()?;
-            println!("StageService [{}] both futures done. all joined", name);
             Ok(())
         };
 

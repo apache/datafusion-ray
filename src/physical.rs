@@ -22,6 +22,7 @@ use datafusion::physical_plan::joins::NestedLoopJoinExec;
 use datafusion::physical_plan::repartition::RepartitionExec;
 use datafusion::physical_plan::sorts::sort::SortExec;
 use datafusion::physical_plan::{displayable, ExecutionPlan};
+use log::debug;
 use std::sync::Arc;
 
 use crate::ray_stage::RayStageExec;
@@ -56,7 +57,7 @@ impl PhysicalOptimizerRule for RayStageOptimizerRule {
         plan: Arc<dyn ExecutionPlan>,
         _config: &datafusion::config::ConfigOptions,
     ) -> Result<Arc<dyn ExecutionPlan>> {
-        println!(
+        debug!(
             "optimizing physical plan:\n{}",
             displayable(plan.as_ref()).indent(false)
         );
@@ -79,7 +80,7 @@ impl PhysicalOptimizerRule for RayStageOptimizerRule {
         let plan = plan.transform_up(up)?.data;
         let final_plan = Arc::new(RayStageExec::new(plan, stage_counter));
 
-        println!(
+        debug!(
             "optimized physical plan:\n{}",
             displayable(final_plan.as_ref()).indent(true)
         );
