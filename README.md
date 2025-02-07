@@ -100,6 +100,12 @@ RAY_COLOR_PREFIX=1 RAY_DEDUP_LOGS=0 python tpcbench.py --data=file:///path/to/yo
 
 This will output a json file in the current directory with query timings.
 
+## Logging
+
+DataFusion Ray's logging output is determined by the `DATAFUSION_RAY_LOG_LEVEL` environment variable. The default log level is `WARN`. To change the log level, set the environment variable to one of the following values: `ERROR`, `WARN`, `INFO`, `DEBUG`, or `TRACE`.
+
+DataFusion Ray outputs logs from both python and rust, and in order to handle this consistently, the python logger for `datafusion_ray` is routed to rust for logging. The `RUST_LOG` environment variable can be used to control other rust log output other than `datafusion_ray`.
+
 ## Status
 
 - DataFusion Ray can execute all TPCH queries. Tested up to SF100.
@@ -107,3 +113,5 @@ This will output a json file in the current directory with query timings.
 ## Known Issues
 
 - The DataFusion config setting, `datafusion.execution.parquet.pushdown_filters`, can produce incorrect results. We think this could be related to an issue with round trip physical path serialization. At the moment, do not enable this setting, as it prevents physical plans from serializing correctly.
+
+  This should be resolved when we update to a DataFusion version which include <https://github.com/apache/datafusion/pull/14465#event-16194180382>

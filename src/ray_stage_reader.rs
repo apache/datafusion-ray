@@ -11,6 +11,7 @@ use datafusion::physical_plan::{
 use datafusion::{arrow::datatypes::SchemaRef, execution::SendableRecordBatchStream};
 use futures::stream::TryStreamExt;
 use futures::StreamExt;
+use log::{debug, info, trace};
 use prost::Message;
 
 use crate::protobuf::FlightTicketData;
@@ -32,13 +33,6 @@ pub struct RayStageReaderExec {
 impl RayStageReaderExec {
     pub fn try_new_from_input(input: Arc<dyn ExecutionPlan>, stage_id: usize) -> Result<Self> {
         let properties = input.properties().clone();
-        /*println!(
-            "RayStageReaderExec::try_new_from_input.  input:\n{}\nPartitioning:{}",
-            displayable(input.as_ref())
-                .set_show_schema(true)
-                .indent(true),
-            properties.partitioning
-        );*/
 
         Self::try_new(properties.partitioning.clone(), input.schema(), stage_id)
     }
@@ -102,7 +96,7 @@ impl ExecutionPlan for RayStageReaderExec {
         context: std::sync::Arc<datafusion::execution::TaskContext>,
     ) -> Result<SendableRecordBatchStream> {
         let name = format!("RayStageReaderExec[{}-{}]:", self.stage_id, partition);
-        println!("{name} execute");
+        trace!("{name} execute");
         let client_map = &context
             .session_config()
             .get_extension::<ServiceClients>()
@@ -112,7 +106,7 @@ impl ExecutionPlan for RayStageReaderExec {
             .clone()
             .0;
 
-        println!("{name} client_map keys {:?}", client_map.keys());
+        trace!("{name} client_map keys {:?}", client_map.keys());
 
         let clients = client_map
             .get(&self.stage_id)

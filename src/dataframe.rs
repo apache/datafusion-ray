@@ -24,6 +24,7 @@ use datafusion::common::tree_node::TreeNode;
 use datafusion::common::tree_node::TreeNodeRecursion;
 use datafusion::execution::SendableRecordBatchStream;
 use datafusion::physical_plan::coalesce_batches::CoalesceBatchesExec;
+use datafusion::physical_plan::displayable;
 use datafusion::physical_plan::joins::NestedLoopJoinExec;
 use datafusion::physical_plan::repartition::RepartitionExec;
 use datafusion::physical_plan::sorts::sort::SortExec;
@@ -33,6 +34,7 @@ use datafusion_python::physical_plan::PyExecutionPlan;
 use datafusion_python::sql::logical::PyLogicalPlan;
 use datafusion_python::utils::wait_for_future;
 use futures::stream::StreamExt;
+use log::{debug, trace};
 use pyo3::prelude::*;
 use std::borrow::Cow;
 use std::sync::Arc;
@@ -96,10 +98,10 @@ impl RayDataFrame {
         // RayStageReaderExecs as we will need to consume their output instead of
         // execute that part of the tree ourselves
         let down = |plan: Arc<dyn ExecutionPlan>| {
-            /*println!(
+            trace!(
                 "examining plan down: {}",
                 displayable(plan.as_ref()).indent(true)
-            );*/
+            );
 
             if let Some(stage_exec) = plan.as_any().downcast_ref::<RayStageExec>() {
                 let input = plan.children();
@@ -123,8 +125,10 @@ impl RayDataFrame {
 
         // Step 1: we walk up the tree from the leaves to find the stages
         let up = |plan: Arc<dyn ExecutionPlan>| {
-            //println!("examining plan up: {}", displayable(plan.as_ref()).one_line());
-            //
+            trace!(
+                "examining plan up: {}",
+                displayable(plan.as_ref()).one_line()
+            );
 
             if let Some(stage_exec) = plan.as_any().downcast_ref::<RayStageExec>() {
                 let input = plan.children();

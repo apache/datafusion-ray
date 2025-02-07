@@ -17,6 +17,8 @@
 
 
 from collections import defaultdict
+from logging import error, debug, info
+import os
 import pyarrow as pa
 import asyncio
 import ray
@@ -28,6 +30,26 @@ from datafusion_ray._datafusion_ray_internal import (
     RayDataFrame as RayDataFrameInternal,
     prettify,
 )
+
+
+def setup_logging():
+    import logging
+
+    logging.addLevelName(5, "TRACE")
+
+    log_level = os.environ.get("DATAFUSION_RAY_LOG_LEVEL", "WARN").upper()
+
+    # this logger gets captured and routed to rust.   See src/lib.rs
+    logging.getLogger("datafusion_ray").setLevel(log_level)
+
+
+setup_logging()
+
+_log_level = os.environ.get("DATAFUSION_RAY_LOG_LEVEL", "ERROR")
+runtime_env = {
+    "worker_process_setup_hook": setup_logging,
+    "env_vars": {"DATAFUSION_RAY_LOG_LEVEL": _log_level, "RAY_worker_niceness": "0"},
+}
 
 
 class RayDataFrame:
@@ -76,21 +98,19 @@ class RayDataFrame:
             t1 = time.time()
             self.stages()
             t2 = time.time()
-            print(f"creating stages took {t2 -t1}s")
+            debug(f"creating stages took {t2 -t1}s")
 
             last_stage = max([stage.stage_id for stage in self._stages])
-            print("last stage is", last_stage)
+            debug("last stage is", last_stage)
 
             self.create_ray_stages()
             t3 = time.time()
-            print(f"creating ray stage actors took {t3 -t2}s")
+            debug(f"creating ray stage actors took {t3 -t2}s")
             self.run_stages()
 
             addrs = ray.get(self.coord.get_stage_addrs.remote())
-            print("addrs", addrs)
 
             reader = self.df.read_final_stage(last_stage, addrs[last_stage][0])
-            print("called df execute, got reader")
             self._batches = list(reader)
             self.coord.all_done.remote()
         return self._batches
@@ -110,7 +130,7 @@ class RayDataFrame:
         for stage in self.stages():
             num_shadows = stage.num_shadow_partitions()
             if self.isolate_partitions and num_shadows:
-                print(f"stage {stage.stage_id} has {num_shadows} shadows")
+                debug(f"stage {stage.stage_id} has {num_shadows} shadows")
                 for shadow in range(num_shadows):
                     refs.append(
                         self.coord.new_stage.remote(
@@ -181,10 +201,10 @@ class RayStageCoordinator:
         self.stages_ready = False
 
     async def all_done(self):
-        print("calling stage all done")
+        debug("calling stage all done")
         refs = [stage.all_done.remote() for stage in self.stages.values()]
         ray.wait(refs, num_returns=len(refs))
-        print("done stage all done")
+        debug("done stage all done")
 
     async def new_stage(
         self,
@@ -195,7 +215,7 @@ class RayStageCoordinator:
         stage_key = (stage_id, shadow_partition)
         try:
 
-            print(f"creating new stage {stage_key} from bytes {len(plan_bytes)}")
+            debug(f"creating new stage {stage_key} from bytes {len(plan_bytes)}")
             stage = RayStage.options(
                 name=f"Stage: {stage_key}, query_id:{self.query_id}",
             ).remote(
@@ -207,15 +227,16 @@ class RayStageCoordinator:
             self.stages_started.append(stage.start_up.remote())
 
         except Exception as e:
-            print(
+            error(
                 f"RayQueryCoordinator[{self.query_id}] Unhandled Exception in new stage! {e}"
             )
             raise e
 
     async def wait_for_stages_ready(self):
+        # TODO: signal our doneness instead of loop
         while not self.stages_ready:
             await asyncio.sleep(0.1)
-            print("waiting for stages to be ready")
+            debug("waiting for stages to be ready")
 
     async def ensure_stages_ready(self):
         if not self.stages_ready:
@@ -231,10 +252,10 @@ class RayStageCoordinator:
     async def sort_out_addresses(self):
         for stage_key, stage in self.stages.items():
             stage_id, shadow_partition = stage_key
-            print(f" getting stage addr for {stage_id},{shadow_partition}")
+            debug(f" getting stage addr for {stage_id},{shadow_partition}")
             self.stage_addrs[stage_id].append(await stage.addr.remote())
 
-        print(f"stage_addrs: {self.stage_addrs}")
+        debug(f"stage_addrs: {self.stage_addrs}")
         # now update all the stages with the addresses of peers such
         # that they can contact their child stages
         refs = []
@@ -245,14 +266,14 @@ class RayStageCoordinator:
 
     async def serve(self):
         await self.ensure_stages_ready()
-        print("running stages")
+        info("running stages")
         try:
             for stage_key, stage in self.stages.items():
-                print(f"starting serving of stage {stage_key}")
+                info(f"starting serving of stage {stage_key}")
                 stage.serve.remote()
 
         except Exception as e:
-            print(
+            error(
                 f"RayQueryCoordinator[{self.query_id}] Unhandled Exception in run stages! {e}"
             )
             raise e
@@ -284,7 +305,7 @@ class RayStage:
                 shadow_partition,
             )
         except Exception as e:
-            print(
+            error(
                 f"StageService[{self.stage_id}{shadow}] Unhandled Exception in init: {e}!"
             )
             raise
@@ -303,4 +324,4 @@ class RayStage:
 
     async def serve(self):
         await self.stage_service.serve()
-        print("StageService done serving")
+        info("StageService done serving")
