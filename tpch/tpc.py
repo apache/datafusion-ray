@@ -32,7 +32,7 @@ def make_ctx(
     data_path: str,
     concurrency: int,
     batch_size: int,
-    isolate_partitions: bool,
+    partitions_per_worker: int | None,
     listing_tables: bool,
 ):
 
@@ -51,10 +51,7 @@ def make_ctx(
     # use ray job submit
     ray.init(runtime_env=runtime_env)
 
-    ctx = RayContext(
-        batch_size=batch_size,
-        isolate_partitions=isolate_partitions,
-    )
+    ctx = RayContext(batch_size=batch_size, partitions_per_worker=partitions_per_worker)
 
     ctx.set("datafusion.execution.target_partitions", f"{concurrency}")
     # ctx.set("datafusion.execution.parquet.pushdown_filters", "true")
@@ -77,15 +74,17 @@ def main(
     concurrency: int,
     batch_size: int,
     query: str,
-    isolate: bool,
+    partitions_per_worker: int | None,
     validate: bool,
     listing_tables,
 ) -> None:
-    ctx = make_ctx(data_path, concurrency, batch_size, isolate, listing_tables)
+    ctx = make_ctx(
+        data_path, concurrency, batch_size, partitions_per_worker, listing_tables
+    )
     df = ctx.sql(query)
     for stage in df.stages():
         print(
-            f"Stage {stage.stage_id} output partitions:{stage.num_output_partitions()} shadow partitions: {stage.num_shadow_partitions()}"
+            f"Stage {stage.stage_id} output partitions:{stage.num_output_partitions()} partition_groups: {stage.partition_groups}"
         )
         print(stage.execution_plan().display_indent())
 
@@ -106,7 +105,11 @@ if __name__ == "__main__":
     )
     parser.add_argument("--concurrency", type=int, help="concurrency")
     parser.add_argument("--batch-size", type=int, help="batch size")
-    parser.add_argument("--isolate", action="store_true")
+    parser.add_argument(
+        "--partitions-per-worker",
+        type=int,
+        help="Max partitions per Stage Service Worker",
+    )
     parser.add_argument("--validate", action="store_true")
     parser.add_argument("--listing-tables", action="store_true")
     args = parser.parse_args()
@@ -121,7 +124,7 @@ if __name__ == "__main__":
         int(args.concurrency),
         int(args.batch_size),
         query,
-        args.isolate,
+        args.partitions_per_worker,
         args.validate,
         args.listing_tables,
     )

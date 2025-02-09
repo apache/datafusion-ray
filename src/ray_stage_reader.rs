@@ -123,6 +123,7 @@ impl ExecutionPlan for RayStageReaderExec {
             .collect::<Vec<_>>();
 
         let ftd = FlightTicketData {
+            dummy: false,
             partition: partition as u64,
         };
 

@@ -20,7 +20,7 @@ use datafusion::{arrow::datatypes::SchemaRef, execution::SendableRecordBatchStre
 ///
 /// Will produce the following physical_plan from the optimizer
 ///
-/// ```
+/// `
 /// RayStageExec[3] (output_partitioning=UnknownPartitioning(1))
 ///  ProjectionExec: expr=[c_name@0 as c_name, sum(o.o_totalprice)@1 as total]
 ///    GlobalLimitExec: skip=0, fetch=1
@@ -37,11 +37,11 @@ use datafusion::{arrow::datatypes::SchemaRef, execution::SendableRecordBatchStre
 ///                    RayStageExec[1] (output_partitioning=Hash([Column { name: "o_custkey", index: 0 }], 2))
 ///                      RepartitionExec: partitioning=Hash([o_custkey@0], 2), input_partitions=2
 ///                        ParquetExec: file_groups={2 groups: [[.../orders.parquet:0..19037604], [.../orders.parquet:19037604..38075207]]}, projection=[o_custkey, o_totalprice]
-/// ```
+/// `
 /// This physical plan will be split into 4 stages, as indicated by the RayStageExec nodes.  Those
 /// stages will look like this:
 ///
-/// ```
+/// `
 /// Stage 0 output partitions:2 shadow partitions: 1
 /// MaxRowsExec[max_rows=8192]
 ///   CoalesceBatchesExec: target_batch_size=8192
@@ -75,7 +75,7 @@ use datafusion::{arrow::datatypes::SchemaRef, execution::SendableRecordBatchStre
 ///         CoalescePartitionsExec
 ///           AggregateExec: mode=FinalPartitioned, gby=[c_name@0 as c_name], aggr=[sum(o.o_totalprice)]
 ///             RayStageReaderExec[2] (output_partitioning=UnknownPartitioning(2))
-/// ```
+/// `
 ///
 /// See [`crate::isolator::PartitionIsolatorExec`] for more information on how the shadow partitions work
 #[derive(Debug)]

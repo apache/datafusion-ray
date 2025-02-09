@@ -6,8 +6,9 @@ use datafusion::{
     execution::SendableRecordBatchStream,
     physical_plan::{DisplayAs, DisplayFormatType, ExecutionPlan, Partitioning, PlanProperties},
 };
+use log::trace;
 
-pub struct ShadowPartitionNumber(pub usize);
+pub struct PartitionGroup(pub Vec<usize>);
 
 /// This is a simple execution plan that isolates a partition from the input plan
 /// It will advertise that it has a single partition and when
@@ -20,23 +21,32 @@ pub struct ShadowPartitionNumber(pub usize);
 pub struct PartitionIsolatorExec {
     pub input: Arc<dyn ExecutionPlan>,
     properties: PlanProperties,
+    pub partition_count: usize,
 }
 
 impl PartitionIsolatorExec {
-    pub fn new(input: Arc<dyn ExecutionPlan>) -> Self {
-        // We advertise that we only have one partition
+    pub fn new(input: Arc<dyn ExecutionPlan>, partition_count: usize) -> Self {
+        // We advertise that we only have partition_count partitions
         let properties = input
             .properties()
             .clone()
-            .with_partitioning(Partitioning::UnknownPartitioning(1));
+            .with_partitioning(Partitioning::UnknownPartitioning(partition_count));
 
-        Self { input, properties }
+        Self {
+            input,
+            properties,
+            partition_count,
+        }
     }
 }
 
 impl DisplayAs for PartitionIsolatorExec {
     fn fmt_as(&self, _t: DisplayFormatType, f: &mut Formatter) -> std::fmt::Result {
-        write!(f, "PartitionIsolatorExec")
+        write!(
+            f,
+            "PartitionIsolatorExec [providing {} partitions]",
+            self.partition_count
+        )
     }
 }
 
@@ -63,7 +73,10 @@ impl ExecutionPlan for PartitionIsolatorExec {
     ) -> Result<std::sync::Arc<dyn ExecutionPlan>> {
         // TODO: generalize this
         assert_eq!(children.len(), 1);
-        Ok(Arc::new(Self::new(children[0].clone())))
+        Ok(Arc::new(Self::new(
+            children[0].clone(),
+            self.partition_count,
+        )))
     }
 
     fn execute(
@@ -71,22 +84,21 @@ impl ExecutionPlan for PartitionIsolatorExec {
         partition: usize,
         context: std::sync::Arc<datafusion::execution::TaskContext>,
     ) -> Result<SendableRecordBatchStream> {
-        if partition != 0 {
-            return Err(internal_datafusion_err!(
-                "Partition Isolator Expects partiton zero only for execute"
-            ));
-        }
-
         let config = context.session_config();
-        let shadow =
-            config
-                .get_extension::<ShadowPartitionNumber>()
-                .ok_or(internal_datafusion_err!(
-                    "ShadowPartitionNumber not set in session config"
-                ))?;
+        let partition_group = &config
+            .get_extension::<PartitionGroup>()
+            .ok_or(internal_datafusion_err!(
+                "PartitionGroup not set in session config"
+            ))?
+            .0;
 
-        let actual_partition_number: usize = shadow.0;
+        let actual_partition_number = partition_group.get(partition).ok_or(internal_datafusion_err!(
+            "Partition Isolator could not determine actual partition from  partition_group:{:?}, partition:{}",
+            partition_group, partition
+        ))?;
 
-        self.input.execute(actual_partition_number, context)
+        trace!("PartitionIsolatorExec executing partition {} our partition group {:?} actual partition number {}", partition, partition_group, actual_partition_number);
+
+        self.input.execute(*actual_partition_number, context)
     }
 }

@@ -20,8 +20,18 @@ pub struct MaxRowsExecNode {
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct PrefetchExecNode {
-    #[prost(uint64, tag = "1")]
+    #[prost(uint32, tag = "1")]
+    pub dummy: u32,
+    #[prost(uint64, tag = "2")]
     pub buf_size: u64,
+}
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct PartitionIsolatorExecNode {
+    #[prost(float, tag = "1")]
+    pub dummy: f32,
+    #[prost(uint64, tag = "2")]
+    pub partition_count: u64,
 }
 /// TODO: why, if FlightTicketData has  the uint64 field first can it also be decoded also
 /// MaxRowsExecNode?  There is something I don't understand here
@@ -30,6 +40,8 @@ pub struct PrefetchExecNode {
 pub struct FlightTicketData {
     /// stage id of the stream
     /// parittion id of the stream
+    #[prost(bool, tag = "1")]
+    pub dummy: bool,
     #[prost(uint64, tag = "2")]
     pub partition: u64,
 }
