@@ -128,11 +128,12 @@ impl RayDataFrame {
         let mut partition_groups = vec![];
         let up = |plan: Arc<dyn ExecutionPlan>| {
             trace!(
-                "examining plan up: {}",
+                "Examining plan up: {}",
                 displayable(plan.as_ref()).one_line()
             );
 
             if let Some(stage_exec) = plan.as_any().downcast_ref::<RayStageExec>() {
+                trace!("ray stage exec");
                 let input = plan.children();
                 assert!(input.len() == 1, "RayStageExec must have exactly one child");
                 let input = input[0];
@@ -149,6 +150,7 @@ impl RayDataFrame {
                 stages.push(stage);
                 Ok(Transformed::no(plan))
             } else if plan.as_any().downcast_ref::<RepartitionExec>().is_some() {
+                trace!("repartition exec");
                 let (calculated_partition_groups, replacement) = build_replacement(
                     plan,
                     prefetch_buffer_size,
@@ -160,6 +162,7 @@ impl RayDataFrame {
 
                 Ok(Transformed::yes(replacement))
             } else if plan.as_any().downcast_ref::<SortExec>().is_some() {
+                trace!("sort exec");
                 let (calculated_partition_groups, replacement) = build_replacement(
                     plan,
                     prefetch_buffer_size,
@@ -171,17 +174,27 @@ impl RayDataFrame {
 
                 Ok(Transformed::yes(replacement))
             } else if plan.as_any().downcast_ref::<NestedLoopJoinExec>().is_some() {
-                let (calculated_partition_groups, replacement) = build_replacement(
-                    plan,
-                    prefetch_buffer_size,
-                    partitions_per_worker,
-                    batch_size,
-                    batch_size,
-                )?;
-                partition_groups = calculated_partition_groups;
+                trace!("nested loop join exec");
+                // NestedLoopJoinExec must be on a stage by itself as it materializes the entire left
+                // side of the join and is not suitable to be executed in a partitioned manner.
+                let mut replacement = plan.clone();
+                let partition_count = plan.output_partitioning().partition_count();
+                trace!("nested join output partitioning {}", partition_count);
 
+                replacement = Arc::new(MaxRowsExec::new(
+                    Arc::new(CoalesceBatchesExec::new(replacement, batch_size))
+                        as Arc<dyn ExecutionPlan>,
+                    batch_size,
+                )) as Arc<dyn ExecutionPlan>;
+
+                if prefetch_buffer_size > 0 {
+                    replacement = Arc::new(PrefetchExec::new(replacement, prefetch_buffer_size))
+                        as Arc<dyn ExecutionPlan>;
+                }
+                partition_groups = vec![(0..partition_count).collect()];
                 Ok(Transformed::yes(replacement))
             } else {
+                trace!("not special case");
                 Ok(Transformed::no(plan))
             }
         };
