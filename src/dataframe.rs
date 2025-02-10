@@ -171,18 +171,15 @@ impl RayDataFrame {
 
                 Ok(Transformed::yes(replacement))
             } else if plan.as_any().downcast_ref::<NestedLoopJoinExec>().is_some() {
-                let mut replacement = plan.clone();
-
-                replacement = Arc::new(MaxRowsExec::new(
-                    Arc::new(CoalesceBatchesExec::new(replacement, batch_size))
-                        as Arc<dyn ExecutionPlan>,
+                let (calculated_partition_groups, replacement) = build_replacement(
+                    plan,
+                    prefetch_buffer_size,
+                    partitions_per_worker,
                     batch_size,
-                )) as Arc<dyn ExecutionPlan>;
+                    batch_size,
+                )?;
+                partition_groups = calculated_partition_groups;
 
-                if prefetch_buffer_size > 0 {
-                    replacement = Arc::new(PrefetchExec::new(replacement, prefetch_buffer_size))
-                        as Arc<dyn ExecutionPlan>;
-                }
                 Ok(Transformed::yes(replacement))
             } else {
                 Ok(Transformed::no(plan))
@@ -272,6 +269,11 @@ fn build_replacement(
 
     let child = children[0];
     let partition_count = child.output_partitioning().partition_count();
+    trace!(
+        "build_replacement for {}, partition_count: {}",
+        displayable(plan.as_ref()).one_line(),
+        partition_count
+    );
 
     let partition_groups = match partitions_per_worker {
         Some(p) => (0..partition_count)

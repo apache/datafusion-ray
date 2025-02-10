@@ -255,6 +255,7 @@ class RayStageCoordinator:
 
     async def ensure_stages_ready(self):
         # ray.wait(self.stages_started, num_returns=len(self.stages_started))
+        log.debug(f"going to wait for {self.stages_started}")
         await wait_for(self.stages_started, "stages to be started")
         await self.sort_out_addresses()
         log.info("all stages ready")
