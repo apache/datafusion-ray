@@ -86,6 +86,12 @@ def main(
     results = {
         "engine": "datafusion-python",
         "benchmark": "tpch",
+        "settings": {
+            "concurrency": concurrency,
+            "batch_size": batch_size,
+            "prefetch_buffer_size": prefetch_buffer_size,
+            "partitions_per_worker": partitions_per_worker,
+        },
         "data_path": data_path,
         "queries": {},
     }
