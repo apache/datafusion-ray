@@ -49,7 +49,8 @@ use tokio::sync::mpsc::{channel, Receiver, Sender};
 use crate::flight::{FlightHandler, FlightServ};
 use crate::isolator::PartitionGroup;
 use crate::util::{
-    bytes_to_physical_plan, extract_ticket, input_stage_ids, make_client, ResultExt,
+    bytes_to_physical_plan, display_plan_with_partition_counts, extract_ticket, fix_plan,
+    input_stage_ids, make_client, ResultExt,
 };
 
 /// a map of stage_id, partition to a list FlightClients that can serve
@@ -77,10 +78,11 @@ impl StageHandler {
         partition_group: Vec<usize>,
     ) -> DFResult<Self> {
         let plan = bytes_to_physical_plan(&SessionContext::new(), plan_bytes)?;
-        trace!(
-            "StageHandler::new [Stage:{}], plan: {}",
+        let plan = fix_plan(plan)?;
+        debug!(
+            "StageHandler::new [Stage:{}], plan:\n{}",
             stage_id,
-            displayable(plan.as_ref()).indent(true)
+            display_plan_with_partition_counts(&plan)
         );
 
         let ctx = Mutex::new(None);
