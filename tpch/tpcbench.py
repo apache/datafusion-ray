@@ -83,8 +83,12 @@ def main(
             ctx.register_parquet(table, path)
             local_ctx.register_parquet(table, path)
 
+    current_time_millis = int(datetime.now().timestamp() * 1000)
+    results_path = f"datafusion-ray-tpch-{current_time_millis}.json"
+    print(f"Writing results to {results_path}")
+
     results = {
-        "engine": "datafusion-python",
+        "engine": "datafusion-ray",
         "benchmark": "tpch",
         "settings": {
             "concurrency": concurrency,
@@ -118,9 +122,9 @@ def main(
         part1 = end_time - start_time
         for stage in df.stages():
             print(
-                f"Stage {stage.stage_id} output partitions:{stage.num_output_partitions()} partition_groups: {stage.partition_groups}"
+                f"Stage {stage.stage_id} output partitions:{stage.num_output_partitions} partition_groups: {stage.partition_groups} full_partitions: {stage.full_partitions}"
             )
-            print(stage.execution_plan().display_indent())
+            print(stage.display_execution_plan())
 
         start_time = time.time()
         batches = df.collect()
@@ -140,15 +144,13 @@ def main(
             results["validated"][qnum] = calculated == expected
         print(f"done with query {qnum}")
 
-    results = json.dumps(results, indent=4)
-    current_time_millis = int(datetime.now().timestamp() * 1000)
-    results_path = f"datafusion-ray-tpch-{current_time_millis}.json"
-    print(f"Writing results to {results_path}")
-    with open(results_path, "w") as f:
-        f.write(results)
+        # write the results as we go, so you can peek at them
+        results_dump = json.dumps(results, indent=4)
+        with open(results_path, "w+") as f:
+            f.write(results_dump)
 
-    # write results to stdout
-    print(results)
+        # write results to stdout
+        print(results_dump)
 
     # give ray a moment to clean up
     print("sleeping for 3 seconds for ray to clean up")

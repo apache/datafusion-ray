@@ -76,11 +76,15 @@ def call_sync(coro):
 
 
 async def wait_for(coros, name=""):
+    return_values = []
     done, _ = await asyncio.wait(coros)
     for d in done:
         e = d.exception()
         if e is not None:
             log.error(f"Exception waiting {name}: {e}")
+        else:
+            return_values.append(d.result())
+    return return_values
 
 
 class RayDataFrame:
@@ -141,7 +145,7 @@ class RayDataFrame:
 
             addrs = ray.get(self.coord.get_stage_addrs.remote())
 
-            reader = self.df.read_final_stage(last_stage, addrs[last_stage][0])
+            reader = self.df.read_final_stage(last_stage, addrs[last_stage][0][0])
             self._batches = list(reader)
             self.coord.all_done.remote()
         return self._batches
@@ -162,7 +166,11 @@ class RayDataFrame:
             for partition_group in stage.partition_groups:
                 refs.append(
                     self.coord.new_stage.remote(
-                        stage.stage_id, stage.plan_bytes(), partition_group
+                        stage.stage_id,
+                        stage.plan_bytes(),
+                        partition_group,
+                        stage.num_output_partitions,
+                        stage.full_partitions,
                     )
                 )
 
@@ -216,7 +224,8 @@ class RayStageCoordinator:
     ) -> None:
         self.query_id = query_id
         self.stages = {}
-        self.stage_addrs = defaultdict(list)
+        self.stage_addrs = defaultdict(lambda: defaultdict(list))
+        self.output_partitions = {}
         self.stages_started = []
         self.stages_ready = asyncio.Event()
 
@@ -232,9 +241,19 @@ class RayStageCoordinator:
         stage_id: int,
         plan_bytes: bytes,
         partition_group: list[int],
+        num_output_partitions: int,
+        full_partitions: bool,
     ):
-        stage_key = (stage_id, f"{partition_group}")
+
         try:
+            if stage_id in self.output_partitions:
+                assert self.output_partitions[stage_id] == num_output_partitions
+            else:
+                self.output_partitions[stage_id] = num_output_partitions
+
+            # we need a tuple so its hashable
+            partition_set = tuple(partition_group)
+            stage_key = (stage_id, partition_set, full_partitions)
 
             log.debug(f"creating new stage {stage_key} from bytes {len(plan_bytes)}")
             stage = RayStage.options(
@@ -268,12 +287,41 @@ class RayStageCoordinator:
         return self.stage_addrs
 
     async def sort_out_addresses(self):
-        for stage_key, stage in self.stages.items():
-            stage_id, partition_group = stage_key
-            log.debug(f" getting stage addr for {stage_id},{partition_group}")
-            self.stage_addrs[stage_id].append(await stage.addr.remote())
+        """Iterate through our stages and gather all of their listening addresses.
+        Then, provide the addresses to of peer stages to each stage.
+        """
 
-        log.debug(f"stage_addrs: {self.stage_addrs}")
+        # first go get all addresses from the stages we launched, concurrently
+        # pipeline this by firing up all tasks before awaiting any results
+        addrs_by_stage = defaultdict(list)
+        addrs_by_stage_partition = defaultdict(dict)
+        for stage_key, stage in self.stages.items():
+            stage_id, partition_set, full_partitions = stage_key
+            a_future = stage.addr.remote()
+            addrs_by_stage[stage_id].append(a_future)
+            for partition in partition_set:
+                addrs_by_stage_partition[stage_id][partition] = a_future
+
+        for stage_key, stage in self.stages.items():
+            stage_id, partition_set, full_partitions = stage_key
+            if full_partitions:
+                for partition in range(self.output_partitions[stage_id]):
+                    self.stage_addrs[stage_id][partition] = await wait_for(
+                        [addrs_by_stage_partition[stage_id][partition]]
+                    )
+            else:
+                for partition in range(self.output_partitions[stage_id]):
+                    self.stage_addrs[stage_id][partition] = await wait_for(
+                        addrs_by_stage[stage_id]
+                    )
+
+        if log.level <= logging.DEBUG:
+            out = ""
+            for stage_id, partition_addrs in self.stage_addrs.items():
+                out += f"Stage {stage_id}: \n"
+                for partition, addrs in partition_addrs.items():
+                    out += f"  partition {partition}: {addrs}\n"
+            log.debug(f"stage_addrs:\n{out}")
         # now update all the stages with the addresses of peers such
         # that they can contact their child stages
         refs = []

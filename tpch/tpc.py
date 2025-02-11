@@ -84,7 +84,7 @@ def main(
     df = ctx.sql(query)
     for stage in df.stages():
         print(
-            f"Stage {stage.stage_id} output partitions:{stage.num_output_partitions()} partition_groups: {stage.partition_groups}"
+            f"Stage {stage.stage_id} output partitions:{stage.num_output_partitions} partition_groups: {stage.partition_groups}"
         )
         print(stage.execution_plan().display_indent())
 

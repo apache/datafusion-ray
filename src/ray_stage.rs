@@ -95,7 +95,18 @@ impl RayStageExec {
             input,
             properties,
             stage_id,
-            // unique names
+        }
+    }
+
+    fn new_with_properties(
+        input: Arc<dyn ExecutionPlan>,
+        stage_id: usize,
+        properties: PlanProperties,
+    ) -> Self {
+        Self {
+            input,
+            properties,
+            stage_id,
         }
     }
 }
@@ -137,7 +148,15 @@ impl ExecutionPlan for RayStageExec {
         // TODO: handle more general case
         assert_eq!(children.len(), 1);
         let child = children[0].clone();
-        Ok(Arc::new(RayStageExec::new(child, self.stage_id)))
+
+        // as the plan tree is rearranged we want to remember the original partitioning that we
+        // had, even if we get new inputs.   This is because RayStageReaderExecs, when created by
+        // the RayDataFrame will need to know the original partitioning
+        Ok(Arc::new(RayStageExec::new_with_properties(
+            child,
+            self.stage_id,
+            self.properties.clone(),
+        )))
     }
 
     /// We will have to defer this functionality to python as Ray does not yet have Rust bindings.

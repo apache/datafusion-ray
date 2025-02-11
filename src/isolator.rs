@@ -4,9 +4,12 @@ use datafusion::{
     common::internal_datafusion_err,
     error::Result,
     execution::SendableRecordBatchStream,
-    physical_plan::{DisplayAs, DisplayFormatType, ExecutionPlan, Partitioning, PlanProperties},
+    physical_plan::{
+        DisplayAs, DisplayFormatType, EmptyRecordBatchStream, ExecutionPlan, Partitioning,
+        PlanProperties,
+    },
 };
-use log::trace;
+use log::{error, trace};
 
 pub struct PartitionGroup(pub Vec<usize>);
 
@@ -44,7 +47,7 @@ impl DisplayAs for PartitionIsolatorExec {
     fn fmt_as(&self, _t: DisplayFormatType, f: &mut Formatter) -> std::fmt::Result {
         write!(
             f,
-            "PartitionIsolatorExec [providing {} partitions]",
+            "PartitionIsolatorExec [providing upto {} partitions]",
             self.partition_count
         )
     }
@@ -92,13 +95,22 @@ impl ExecutionPlan for PartitionIsolatorExec {
             ))?
             .0;
 
-        let actual_partition_number = partition_group.get(partition).ok_or(internal_datafusion_err!(
-            "Partition Isolator could not determine actual partition from  partition_group:{:?}, partition:{}",
-            partition_group, partition
-        ))?;
+        if partition > self.partition_count {
+            error!(
+                "PartitionIsolatorExec asked to execute partition {} but only has {} partitions",
+                partition, self.partition_count
+            );
+            return Err(internal_datafusion_err!(
+                "Invalid partition {} for PartitionIsolatorExec",
+                partition
+            ));
+        }
 
-        trace!("PartitionIsolatorExec executing partition {} our partition group {:?} actual partition number {}", partition, partition_group, actual_partition_number);
-
-        self.input.execute(*actual_partition_number, context)
+        let output_stream = match partition_group.get(partition) {
+            Some(actual_partition_number) => self.input.execute(*actual_partition_number, context),
+            None => Ok(Box::pin(EmptyRecordBatchStream::new(self.input.schema()))
+                as SendableRecordBatchStream),
+        };
+        output_stream
     }
 }

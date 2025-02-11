@@ -15,6 +15,7 @@
 // specific language governing permissions and limitations
 // under the License.
 
+use std::collections::hash_map::Entry;
 use std::collections::HashMap;
 use std::error::Error;
 use std::sync::Arc;
@@ -51,10 +52,10 @@ use crate::util::{
     bytes_to_physical_plan, extract_ticket, input_stage_ids, make_client, ResultExt,
 };
 
-/// a map of stage_id to a list FlightClients that can serve
+/// a map of stage_id, partition to a list FlightClients that can serve
 /// this (stage_id, and partition).   It is assumed that to consume a partition, the consumer
 /// will consume the partition from all clients and merge the results.
-pub(crate) struct ServiceClients(pub HashMap<usize, Mutex<Vec<FlightClient>>>);
+pub(crate) struct ServiceClients(pub HashMap<(usize, usize), Mutex<Vec<FlightClient>>>);
 
 /// StageHandler is a [`FlightHandler`] that serves streams of partitions from a hosted Physical Plan
 /// It only responds to the DoGet Arrow Flight method.
@@ -92,21 +93,46 @@ impl StageHandler {
         })
     }
 
-    async fn configure_ctx(&self, stage_addrs: HashMap<usize, Vec<String>>) -> DFResult<()> {
+    async fn configure_ctx(
+        &self,
+        stage_addrs: HashMap<usize, HashMap<usize, Vec<String>>>,
+    ) -> DFResult<()> {
         let stage_ids_i_need = input_stage_ids(&self.plan)?;
 
+        // map of stage_id, partition -> Vec<FlightClient>
         let mut client_map = HashMap::new();
 
+        // a map of address -> FlightClient which we use while building the client map above
+        // so that we don't create duplicate clients for the same address.
+        let mut clients = HashMap::new();
+
+        fn clone_flight_client(c: &FlightClient) -> FlightClient {
+            let inner_clone = c.inner().clone();
+            FlightClient::new_from_inner(inner_clone)
+        }
+
         for stage_id in stage_ids_i_need {
-            let addrs = stage_addrs.get(&stage_id).ok_or(internal_datafusion_err!(
+            let partition_addrs = stage_addrs.get(&stage_id).ok_or(internal_datafusion_err!(
                 "Cannot find stage addr {stage_id} in {:?}",
                 stage_addrs
             ))?;
-            let mut clients = vec![];
-            for addr in addrs {
-                clients.push(make_client(addr).await?);
+
+            for (partition, addrs) in partition_addrs {
+                let mut flight_clients = vec![];
+                for addr in addrs {
+                    let client = match clients.entry(addr) {
+                        Entry::Occupied(o) => clone_flight_client(o.get()),
+                        Entry::Vacant(v) => {
+                            let client = make_client(addr).await?;
+                            let clone = clone_flight_client(&client);
+                            v.insert(client);
+                            clone
+                        }
+                    };
+                    flight_clients.push(client);
+                }
+                client_map.insert((stage_id, *partition), Mutex::new(flight_clients));
             }
-            client_map.insert(stage_id, Mutex::new(clients));
         }
 
         let mut config = SessionConfig::new().with_extension(Arc::new(ServiceClients(client_map)));
@@ -252,7 +278,7 @@ impl StageService {
     pub fn set_stage_addrs<'a>(
         &mut self,
         py: Python<'a>,
-        stage_addrs: HashMap<usize, Vec<String>>,
+        stage_addrs: HashMap<usize, HashMap<usize, Vec<String>>>,
     ) -> PyResult<Bound<'a, PyAny>> {
         let handler = self.handler.clone();
         let fut = async move {

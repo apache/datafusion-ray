@@ -109,7 +109,7 @@ impl ExecutionPlan for RayStageReaderExec {
         trace!("{name} client_map keys {:?}", client_map.keys());
 
         let clients = client_map
-            .get(&self.stage_id)
+            .get(&(self.stage_id, partition))
             .ok_or(internal_datafusion_err!(
                 "No flight clients found for {}",
                 self.stage_id
