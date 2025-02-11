@@ -4,7 +4,9 @@ use crate::{
     isolator::PartitionIsolatorExec,
     max_rows::MaxRowsExec,
     pre_fetch::PrefetchExec,
-    protobuf::{MaxRowsExecNode, PrefetchExecNode, RayStageReaderExecNode},
+    protobuf::{
+        MaxRowsExecNode, PartitionIsolatorExecNode, PrefetchExecNode, RayStageReaderExecNode,
+    },
 };
 
 use arrow::datatypes::Schema;
@@ -36,13 +38,16 @@ impl PhysicalExtensionCodec for RayCodec {
         registry: &dyn FunctionRegistry,
     ) -> Result<Arc<dyn ExecutionPlan>> {
         // TODO: clean this up
-        if buf == "PartitionIsolatorExec".as_bytes() {
+        if let Ok(node) = PartitionIsolatorExecNode::decode(buf) {
             if inputs.len() != 1 {
                 Err(internal_datafusion_err!(
                     "PartitionIsolatorExec requires one input"
                 ))
             } else {
-                Ok(Arc::new(PartitionIsolatorExec::new(inputs[0].clone())))
+                Ok(Arc::new(PartitionIsolatorExec::new(
+                    inputs[0].clone(),
+                    node.partition_count as usize,
+                )))
             }
         } else if let Ok(node) = RayStageReaderExecNode::decode(buf) {
             let schema: Schema = node
@@ -110,12 +115,14 @@ impl PhysicalExtensionCodec for RayCodec {
             pb.encode(buf)
                 .map_err(|e| internal_datafusion_err!("can't encode ray stage reader pb: {e}"))?;
             Ok(())
-        } else if node
-            .as_any()
-            .downcast_ref::<PartitionIsolatorExec>()
-            .is_some()
-        {
-            buf.extend_from_slice(b"PartitionIsolatorExec");
+        } else if let Some(pi) = node.as_any().downcast_ref::<PartitionIsolatorExec>() {
+            let pb = PartitionIsolatorExecNode {
+                dummy: 0.0,
+                partition_count: pi.partition_count as u64,
+            };
+
+            pb.encode(buf)
+                .map_err(|e| internal_datafusion_err!("can't encode partition isolator pb: {e}"))?;
 
             Ok(())
         } else if let Some(max) = node.as_any().downcast_ref::<MaxRowsExec>() {
@@ -128,6 +135,7 @@ impl PhysicalExtensionCodec for RayCodec {
             Ok(())
         } else if let Some(pre) = node.as_any().downcast_ref::<PrefetchExec>() {
             let pb = PrefetchExecNode {
+                dummy: 0,
                 buf_size: pre.buf_size as u64,
             };
             pb.encode(buf)

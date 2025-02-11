@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::fmt::Display;
 use std::future::Future;
 use std::io::Cursor;
 use std::pin::Pin;
@@ -19,10 +20,11 @@ use arrow_flight::{FlightClient, FlightData, Ticket};
 use async_stream::stream;
 use datafusion::common::internal_datafusion_err;
 use datafusion::common::tree_node::{Transformed, TreeNode};
+use datafusion::datasource::physical_plan::ParquetExec;
 use datafusion::error::DataFusionError;
 use datafusion::execution::{RecordBatchStream, SendableRecordBatchStream, SessionStateBuilder};
 use datafusion::physical_plan::stream::RecordBatchStreamAdapter;
-use datafusion::physical_plan::ExecutionPlan;
+use datafusion::physical_plan::{displayable, ExecutionPlan, ExecutionPlanProperties};
 use datafusion::prelude::{SessionConfig, SessionContext};
 use datafusion_proto::physical_plan::AsExecutionPlan;
 use futures::{Stream, StreamExt};
@@ -260,6 +262,25 @@ where
     Box::pin(out_stream)
 }
 
+/// ParquetExecs do not correctly preserve their options when serialized to substrait.
+/// So we fix it here.
+///
+/// Walk the plan tree and update any ParquetExec nodes to set the options we need.
+/// We'll use this method until we are using a DataFusion version which includes thf
+/// fix https://github.com/apache/datafusion/pull/14465
+pub fn fix_plan(plan: Arc<dyn ExecutionPlan>) -> Result<Arc<dyn ExecutionPlan>, DataFusionError> {
+    Ok(plan
+        .transform_up(|node| {
+            if let Some(parquet) = node.as_any().downcast_ref::<ParquetExec>() {
+                let new_parquet_node = parquet.clone().with_pushdown_filters(true);
+                Ok(Transformed::yes(Arc::new(new_parquet_node)))
+            } else {
+                Ok(Transformed::no(node))
+            }
+        })?
+        .data)
+}
+
 pub async fn collect_from_stage(
     stage_id: usize,
     partition: usize,
@@ -270,7 +291,7 @@ pub async fn collect_from_stage(
 
     let client = make_client(stage_addr).await?;
 
-    client_map.insert(stage_id, Mutex::new(vec![client]));
+    client_map.insert((stage_id, partition), Mutex::new(vec![client]));
     let config = SessionConfig::new().with_extension(Arc::new(ServiceClients(client_map)));
 
     let state = SessionStateBuilder::new()
@@ -343,6 +364,36 @@ impl Stream for CombinedRecordBatchStream {
         } else {
             Pending
         }
+    }
+}
+
+pub fn display_plan_with_partition_counts(plan: &Arc<dyn ExecutionPlan>) -> impl Display {
+    let mut output = String::with_capacity(1000);
+
+    print_node(plan, 0, &mut output);
+    output
+}
+
+fn print_node(plan: &Arc<dyn ExecutionPlan>, indent: usize, output: &mut String) {
+    let extra = if let Some(parquet) = plan.as_any().downcast_ref::<ParquetExec>() {
+        &format!(
+            " [pushdown filters: {}]",
+            parquet.table_parquet_options().global.pushdown_filters
+        )
+    } else {
+        ""
+    };
+    output.push_str(&format!(
+        "[ output_partitions: {}]{:>indent$}{}{}",
+        plan.output_partitioning().partition_count(),
+        "",
+        displayable(plan.as_ref()).one_line(),
+        extra,
+        indent = indent
+    ));
+
+    for child in plan.children() {
+        print_node(child, indent + 2, output);
     }
 }
 

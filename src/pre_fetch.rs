@@ -4,7 +4,7 @@ use datafusion::error::Result;
 use datafusion::physical_plan::stream::RecordBatchStreamAdapter;
 use datafusion::physical_plan::{DisplayAs, DisplayFormatType, ExecutionPlan, PlanProperties};
 use datafusion::{arrow::datatypes::SchemaRef, execution::SendableRecordBatchStream};
-use futures::stream::{Stream, StreamExt};
+use futures::stream::StreamExt;
 use tokio::sync::mpsc::channel;
 
 /// An execution plan that will try to consume and buffer RecordBatches from its input.

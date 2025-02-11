@@ -37,7 +37,7 @@ def main(
     data_path: str,
     concurrency: int,
     batch_size: int,
-    isolate_partitions: bool,
+    partitions_per_worker: int | None,
     listing_tables: bool,
     validate: bool,
     prefetch_buffer_size: int,
@@ -60,7 +60,7 @@ def main(
 
     ctx = RayContext(
         batch_size=batch_size,
-        isolate_partitions=isolate_partitions,
+        partitions_per_worker=partitions_per_worker,
         prefetch_buffer_size=prefetch_buffer_size,
     )
 
@@ -83,9 +83,19 @@ def main(
             ctx.register_parquet(table, path)
             local_ctx.register_parquet(table, path)
 
+    current_time_millis = int(datetime.now().timestamp() * 1000)
+    results_path = f"datafusion-ray-tpch-{current_time_millis}.json"
+    print(f"Writing results to {results_path}")
+
     results = {
-        "engine": "datafusion-python",
+        "engine": "datafusion-ray",
         "benchmark": "tpch",
+        "settings": {
+            "concurrency": concurrency,
+            "batch_size": batch_size,
+            "prefetch_buffer_size": prefetch_buffer_size,
+            "partitions_per_worker": partitions_per_worker,
+        },
         "data_path": data_path,
         "queries": {},
     }
@@ -112,9 +122,9 @@ def main(
         part1 = end_time - start_time
         for stage in df.stages():
             print(
-                f"Stage {stage.stage_id} output partitions:{stage.num_output_partitions()} shadow partitions: {stage.num_shadow_partitions()}"
+                f"Stage {stage.stage_id} output partitions:{stage.num_output_partitions} partition_groups: {stage.partition_groups} full_partitions: {stage.full_partitions}"
             )
-            print(stage.execution_plan().display_indent())
+            print(stage.display_execution_plan())
 
         start_time = time.time()
         batches = df.collect()
@@ -134,15 +144,13 @@ def main(
             results["validated"][qnum] = calculated == expected
         print(f"done with query {qnum}")
 
-    results = json.dumps(results, indent=4)
-    current_time_millis = int(datetime.now().timestamp() * 1000)
-    results_path = f"datafusion-ray-tpch-{current_time_millis}.json"
-    print(f"Writing results to {results_path}")
-    with open(results_path, "w") as f:
-        f.write(results)
+        # write the results as we go, so you can peek at them
+        results_dump = json.dumps(results, indent=4)
+        with open(results_path, "w+") as f:
+            f.write(results_dump)
 
-    # write results to stdout
-    print(results)
+        # write results to stdout
+        print(results_dump)
 
     # give ray a moment to clean up
     print("sleeping for 3 seconds for ray to clean up")
@@ -157,7 +165,6 @@ if __name__ == "__main__":
     parser.add_argument(
         "--concurrency", required=True, help="Number of concurrent tasks"
     )
-    parser.add_argument("--isolate", action="store_true")
     parser.add_argument("--qnum", type=int, default=-1, help="TPCH query number, 1-22")
     parser.add_argument("--listing-tables", action="store_true")
     parser.add_argument("--validate", action="store_true")
@@ -169,6 +176,11 @@ if __name__ == "__main__":
         required=False,
         default=8192,
         help="Desired batch size output per stage",
+    )
+    parser.add_argument(
+        "--partitions-per-worker",
+        type=int,
+        help="Max partitions per Stage Service Worker",
     )
     parser.add_argument(
         "--prefetch-buffer-size",
@@ -185,7 +197,7 @@ if __name__ == "__main__":
         args.data,
         int(args.concurrency),
         int(args.batch_size),
-        args.isolate,
+        args.partitions_per_worker,
         args.listing_tables,
         args.validate,
         args.prefetch_buffer_size,

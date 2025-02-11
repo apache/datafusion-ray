@@ -41,6 +41,7 @@ datafusion-proto = "43.0"
 env_logger = "0.11"
 futures = "0.3"
 glob = "0.3.1"
+itertools = "0.14"
 local-ip-address = "0.6"
 log = "0.4"
 object_store = { version = "0.11.0", features = [

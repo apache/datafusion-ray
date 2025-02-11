@@ -15,6 +15,7 @@
 // specific language governing permissions and limitations
 // under the License.
 
+use std::collections::hash_map::Entry;
 use std::collections::HashMap;
 use std::error::Error;
 use std::sync::Arc;
@@ -46,37 +47,43 @@ use parking_lot::Mutex;
 use tokio::sync::mpsc::{channel, Receiver, Sender};
 
 use crate::flight::{FlightHandler, FlightServ};
-use crate::isolator::ShadowPartitionNumber;
+use crate::isolator::PartitionGroup;
 use crate::util::{
-    bytes_to_physical_plan, extract_ticket, input_stage_ids, make_client, ResultExt,
+    bytes_to_physical_plan, display_plan_with_partition_counts, extract_ticket, fix_plan,
+    input_stage_ids, make_client, ResultExt,
 };
 
-/// a map of stage_id to a list FlightClients that can serve
+/// a map of stage_id, partition to a list FlightClients that can serve
 /// this (stage_id, and partition).   It is assumed that to consume a partition, the consumer
 /// will consume the partition from all clients and merge the results.
-pub(crate) struct ServiceClients(pub HashMap<usize, Mutex<Vec<FlightClient>>>);
+pub(crate) struct ServiceClients(pub HashMap<(usize, usize), Mutex<Vec<FlightClient>>>);
 
 /// StageHandler is a [`FlightHandler`] that serves streams of partitions from a hosted Physical Plan
 /// It only responds to the DoGet Arrow Flight method.
 struct StageHandler {
     /// our stage id that we are hosting
-    stage_id: usize,
+    pub(crate) stage_id: usize,
     /// the physical plan that comprises our stage
     plan: Arc<dyn ExecutionPlan>,
     /// the session context we will use to execute the plan
     ctx: Mutex<Option<SessionContext>>,
-    /// PartitionIsolator looks for this value and if present only exposes
-    /// this partition of its input .
-    shadow_partition_number: Option<usize>,
+    /// The partitions we will be hosting from this plan.
+    partition_group: Vec<usize>,
 }
 
 impl StageHandler {
     pub async fn new(
         stage_id: usize,
         plan_bytes: &[u8],
-        shadow_partition_number: Option<usize>,
+        partition_group: Vec<usize>,
     ) -> DFResult<Self> {
         let plan = bytes_to_physical_plan(&SessionContext::new(), plan_bytes)?;
+        let plan = fix_plan(plan)?;
+        debug!(
+            "StageHandler::new [Stage:{}], plan:\n{}",
+            stage_id,
+            display_plan_with_partition_counts(&plan)
+        );
 
         let ctx = Mutex::new(None);
 
@@ -84,33 +91,57 @@ impl StageHandler {
             stage_id,
             plan,
             ctx,
-            shadow_partition_number,
+            partition_group,
         })
     }
 
-    async fn configure_ctx(&self, stage_addrs: HashMap<usize, Vec<String>>) -> DFResult<()> {
+    async fn configure_ctx(
+        &self,
+        stage_addrs: HashMap<usize, HashMap<usize, Vec<String>>>,
+    ) -> DFResult<()> {
         let stage_ids_i_need = input_stage_ids(&self.plan)?;
 
+        // map of stage_id, partition -> Vec<FlightClient>
         let mut client_map = HashMap::new();
 
+        // a map of address -> FlightClient which we use while building the client map above
+        // so that we don't create duplicate clients for the same address.
+        let mut clients = HashMap::new();
+
+        fn clone_flight_client(c: &FlightClient) -> FlightClient {
+            let inner_clone = c.inner().clone();
+            FlightClient::new_from_inner(inner_clone)
+        }
+
         for stage_id in stage_ids_i_need {
-            let addrs = stage_addrs
-                .get(&stage_id)
-                .ok_or(internal_datafusion_err!("Cannot find stage addr"))?;
-            let mut clients = vec![];
-            for addr in addrs {
-                clients.push(make_client(addr).await?);
+            let partition_addrs = stage_addrs.get(&stage_id).ok_or(internal_datafusion_err!(
+                "Cannot find stage addr {stage_id} in {:?}",
+                stage_addrs
+            ))?;
+
+            for (partition, addrs) in partition_addrs {
+                let mut flight_clients = vec![];
+                for addr in addrs {
+                    let client = match clients.entry(addr) {
+                        Entry::Occupied(o) => clone_flight_client(o.get()),
+                        Entry::Vacant(v) => {
+                            let client = make_client(addr).await?;
+                            let clone = clone_flight_client(&client);
+                            v.insert(client);
+                            clone
+                        }
+                    };
+                    flight_clients.push(client);
+                }
+                client_map.insert((stage_id, *partition), Mutex::new(flight_clients));
             }
-            client_map.insert(stage_id, Mutex::new(clients));
         }
 
         let mut config = SessionConfig::new().with_extension(Arc::new(ServiceClients(client_map)));
 
         // this only matters if the plan includes an PartitionIsolatorExec, which looks for this
         // for this extension and will be ignored otherwise
-        if let Some(shadow) = self.shadow_partition_number {
-            config = config.with_extension(Arc::new(ShadowPartitionNumber(shadow)))
-        }
+        config = config.with_extension(Arc::new(PartitionGroup(self.partition_group.clone())));
 
         let state = SessionStateBuilder::new()
             .with_default_features()
@@ -119,6 +150,7 @@ impl StageHandler {
         let ctx = SessionContext::new_with_state(state);
 
         self.ctx.lock().replace(ctx);
+        trace!("ctx configured for stage {}", self.stage_id);
         Ok(())
     }
 }
@@ -150,18 +182,27 @@ impl FlightHandler for StageHandler {
             .ctx
             .lock()
             .as_ref()
-            .ok_or(Status::internal("get_stream cannot find ctx"))?
+            .ok_or(Status::internal(format!(
+                "Stage [{}] get_stream cannot find ctx",
+                self.stage_id
+            )))?
             .task_ctx();
 
         let stream = self
             .plan
             .execute(partition, task_ctx)
+            .inspect_err(|e| {
+                error!(
+                    "{}",
+                    format!("Could not get partition stream from plan {e}")
+                )
+            })
             .map_err(|e| Status::internal(format!("Could not get partition stream from plan {e}")))?
             .map_err(|e| FlightError::from_external_error(Box::new(e)));
 
         let out_stream = FlightDataEncoderBuilder::new()
             .build(stream)
-            .map_err(|_| Status::internal("Unexpected error building stream {e}"));
+            .map_err(|e| Status::internal(format!("Unexpected error building stream {e}")));
 
         Ok(Response::new(Box::pin(out_stream)))
     }
@@ -184,12 +225,11 @@ pub struct StageService {
 #[pymethods]
 impl StageService {
     #[new]
-    #[pyo3(signature = (stage_id, plan_bytes, shadow_partition=None))]
     pub fn new(
         py: Python,
         stage_id: usize,
         plan_bytes: &[u8],
-        shadow_partition: Option<usize>,
+        partition_group: Vec<usize>,
     ) -> PyResult<Self> {
         let listener = None;
         let addr = None;
@@ -198,7 +238,7 @@ impl StageService {
         let all_done_tx = Arc::new(Mutex::new(all_done_tx));
         let name = format!("StageService[{}]", stage_id);
 
-        let fut = StageHandler::new(stage_id, plan_bytes, shadow_partition);
+        let fut = StageHandler::new(stage_id, plan_bytes, partition_group);
 
         let handler = Arc::new(wait_for_future(py, fut).to_py_err()?);
 
@@ -219,6 +259,7 @@ impl StageService {
     pub fn start_up(&mut self, py: Python) -> PyResult<()> {
         let my_local_ip = local_ip().to_py_err()?;
         let my_host_str = format!("{my_local_ip}:0");
+
         self.listener = Some(wait_for_future(py, TcpListener::bind(&my_host_str)).to_py_err()?);
 
         self.addr = Some(format!(
@@ -236,12 +277,17 @@ impl StageService {
             .ok_or_else(|| PyErr::new::<pyo3::exceptions::PyException, _>("Couldn't get addr"))
     }
 
-    pub fn set_stage_addrs(
+    pub fn set_stage_addrs<'a>(
         &mut self,
-        py: Python,
-        stage_addrs: HashMap<usize, Vec<String>>,
-    ) -> PyResult<()> {
-        wait_for_future(py, self.handler.configure_ctx(stage_addrs)).to_py_err()
+        py: Python<'a>,
+        stage_addrs: HashMap<usize, HashMap<usize, Vec<String>>>,
+    ) -> PyResult<Bound<'a, PyAny>> {
+        let handler = self.handler.clone();
+        let fut = async move {
+            handler.configure_ctx(stage_addrs).await.to_py_err()?;
+            Ok(())
+        };
+        pyo3_async_runtimes::tokio::future_into_py(py, fut)
     }
 
     /// signal to the service that we can shutdown
@@ -275,8 +321,9 @@ impl StageService {
         let listener = self.listener.take().unwrap();
 
         let name = self.name.clone();
+        let stage_id = self.handler.stage_id;
         let serv = async move {
-            trace!("StageService Serving");
+            trace!("StageService [{}] Serving", stage_id);
             Server::builder()
                 .add_service(svc)
                 .serve_with_incoming_shutdown(
@@ -286,7 +333,7 @@ impl StageService {
                 .await
                 .inspect_err(|e| error!("StageService [{}] ERROR serving {e}", name))
                 .map_err(|e| PyErr::new::<pyo3::exceptions::PyException, _>(format!("{e}")))?;
-            info!("StageService [{}] DONE serving", name);
+            info!("tageService [{}] DONE serving", name);
             Ok::<(), Box<dyn Error + Send + Sync>>(())
         };
 

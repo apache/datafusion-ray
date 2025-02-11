@@ -18,12 +18,24 @@ message RayStageReaderExecNode {
   uint64 stage_id = 3;
 }
 
+// the simplicity of the decoder in src/codec.rs currently requires a different byte
+// representation per message.  Hence the dummy fields.
+//
+// I'll come back to this and sort it out.  Its not super critical as the plans are
+// only exchanged at the start of queries, not during execution.
+
 message MaxRowsExecNode {
   uint64 max_rows = 1;
 }
 
 message PrefetchExecNode {
-  uint64 buf_size = 1;
+  uint32 dummy = 1;
+  uint64 buf_size = 2;
+}
+
+message PartitionIsolatorExecNode {
+  float dummy = 1;
+  uint64 partition_count = 2;  
 }
 
 // TODO: why, if FlightTicketData has  the uint64 field first can it also be decoded also
@@ -31,6 +43,7 @@ message PrefetchExecNode {
 message FlightTicketData {
   // stage id of the stream
   // parittion id of the stream
+  bool dummy = 1;
   uint64 partition = 2;
 }
 

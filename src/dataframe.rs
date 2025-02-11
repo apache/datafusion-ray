@@ -22,6 +22,7 @@ use datafusion::common::internal_err;
 use datafusion::common::tree_node::Transformed;
 use datafusion::common::tree_node::TreeNode;
 use datafusion::common::tree_node::TreeNodeRecursion;
+use datafusion::error::DataFusionError;
 use datafusion::execution::SendableRecordBatchStream;
 use datafusion::physical_plan::coalesce_batches::CoalesceBatchesExec;
 use datafusion::physical_plan::displayable;
@@ -34,7 +35,8 @@ use datafusion_python::physical_plan::PyExecutionPlan;
 use datafusion_python::sql::logical::PyLogicalPlan;
 use datafusion_python::utils::wait_for_future;
 use futures::stream::StreamExt;
-use log::{debug, trace};
+use itertools::Itertools;
+use log::trace;
 use pyo3::prelude::*;
 use std::borrow::Cow;
 use std::sync::Arc;
@@ -45,6 +47,7 @@ use crate::pre_fetch::PrefetchExec;
 use crate::ray_stage::RayStageExec;
 use crate::ray_stage_reader::RayStageReaderExec;
 use crate::util::collect_from_stage;
+use crate::util::display_plan_with_partition_counts;
 use crate::util::physical_plan_to_bytes;
 use crate::util::ResultExt;
 
@@ -79,16 +82,15 @@ impl RayDataFrame {
 
 #[pymethods]
 impl RayDataFrame {
+    #[pyo3(signature = (batch_size, prefetch_buffer_size, partitions_per_worker=None))]
     fn stages(
         &mut self,
         py: Python,
         batch_size: usize,
-        isolate_partitions: bool,
         prefetch_buffer_size: usize,
+        partitions_per_worker: Option<usize>,
     ) -> PyResult<Vec<PyDataFrameStage>> {
         let mut stages = vec![];
-        let max_rows = batch_size;
-        let inner_batch_size = batch_size;
 
         // TODO: This can be done more efficiently, likely in one pass but I'm
         // struggling to get the TreeNodeRecursion return values to make it do
@@ -99,8 +101,8 @@ impl RayDataFrame {
         // execute that part of the tree ourselves
         let down = |plan: Arc<dyn ExecutionPlan>| {
             trace!(
-                "examining plan down: {}",
-                displayable(plan.as_ref()).indent(true)
+                "examining plan down:\n{}",
+                display_plan_with_partition_counts(&plan)
             );
 
             if let Some(stage_exec) = plan.as_any().downcast_ref::<RayStageExec>() {
@@ -108,8 +110,15 @@ impl RayDataFrame {
                 assert!(input.len() == 1, "RayStageExec must have exactly one child");
                 let input = input[0];
 
-                let replacement = Arc::new(RayStageReaderExec::try_new_from_input(
-                    input.clone(),
+                trace!(
+                    "inserting a ray stage reader to consume: {} with partitioning {}",
+                    displayable(plan.as_ref()).one_line(),
+                    plan.output_partitioning().partition_count()
+                );
+
+                let replacement = Arc::new(RayStageReaderExec::try_new(
+                    plan.output_partitioning().clone(),
+                    input.schema(),
                     stage_exec.stage_id,
                 )?) as Arc<dyn ExecutionPlan>;
 
@@ -123,78 +132,84 @@ impl RayDataFrame {
             }
         };
 
+        let mut partition_groups = vec![];
+        let mut full_partitions = false;
         // Step 1: we walk up the tree from the leaves to find the stages
         let up = |plan: Arc<dyn ExecutionPlan>| {
             trace!(
-                "examining plan up: {}",
+                "Examining plan up: {}",
                 displayable(plan.as_ref()).one_line()
             );
 
             if let Some(stage_exec) = plan.as_any().downcast_ref::<RayStageExec>() {
+                trace!("ray stage exec");
                 let input = plan.children();
                 assert!(input.len() == 1, "RayStageExec must have exactly one child");
                 let input = input[0];
 
                 let fixed_plan = input.clone().transform_down(down)?.data;
 
-                let stage = PyDataFrameStage::new(stage_exec.stage_id, fixed_plan);
+                let stage = PyDataFrameStage::new(
+                    stage_exec.stage_id,
+                    fixed_plan,
+                    partition_groups.clone(),
+                    full_partitions,
+                );
+                partition_groups = vec![];
+                full_partitions = false;
 
                 stages.push(stage);
                 Ok(Transformed::no(plan))
             } else if plan.as_any().downcast_ref::<RepartitionExec>().is_some() {
-                let mut replacement = plan.clone();
-                if isolate_partitions {
-                    let children = plan.children();
-                    assert!(children.len() == 1, "Unexpected plan structure");
-
-                    let child = children[0];
-
-                    let new_child = Arc::new(PartitionIsolatorExec::new(child.clone()));
-                    replacement = replacement.clone().with_new_children(vec![new_child])?;
-                }
-                // insert a coalescing batches here too so that we aren't sending
-                // too small (or too big) of batches over the network
-                replacement = Arc::new(MaxRowsExec::new(
-                    Arc::new(CoalesceBatchesExec::new(replacement, inner_batch_size))
-                        as Arc<dyn ExecutionPlan>,
-                    max_rows,
-                )) as Arc<dyn ExecutionPlan>;
-
-                if prefetch_buffer_size > 0 {
-                    replacement = Arc::new(PrefetchExec::new(replacement, prefetch_buffer_size))
-                        as Arc<dyn ExecutionPlan>;
-                }
+                trace!("repartition exec");
+                let (calculated_partition_groups, replacement) = build_replacement(
+                    plan,
+                    prefetch_buffer_size,
+                    partitions_per_worker,
+                    true,
+                    batch_size,
+                    batch_size,
+                )?;
+                partition_groups = calculated_partition_groups;
 
                 Ok(Transformed::yes(replacement))
             } else if plan.as_any().downcast_ref::<SortExec>().is_some() {
-                let mut replacement = plan.clone();
+                trace!("sort exec");
+                let (calculated_partition_groups, replacement) = build_replacement(
+                    plan,
+                    prefetch_buffer_size,
+                    partitions_per_worker,
+                    false,
+                    batch_size,
+                    batch_size,
+                )?;
+                partition_groups = calculated_partition_groups;
+                full_partitions = true;
 
-                replacement = Arc::new(MaxRowsExec::new(
-                    Arc::new(CoalesceBatchesExec::new(replacement, inner_batch_size))
-                        as Arc<dyn ExecutionPlan>,
-                    max_rows,
-                )) as Arc<dyn ExecutionPlan>;
-
-                if prefetch_buffer_size > 0 {
-                    replacement = Arc::new(PrefetchExec::new(replacement, prefetch_buffer_size))
-                        as Arc<dyn ExecutionPlan>;
-                }
                 Ok(Transformed::yes(replacement))
             } else if plan.as_any().downcast_ref::<NestedLoopJoinExec>().is_some() {
+                trace!("nested loop join exec");
+                // NestedLoopJoinExec must be on a stage by itself as it materializes the entire left
+                // side of the join and is not suitable to be executed in a partitioned manner.
                 let mut replacement = plan.clone();
+                let partition_count = plan.output_partitioning().partition_count();
+                trace!("nested join output partitioning {}", partition_count);
 
                 replacement = Arc::new(MaxRowsExec::new(
-                    Arc::new(CoalesceBatchesExec::new(replacement, inner_batch_size))
+                    Arc::new(CoalesceBatchesExec::new(replacement, batch_size))
                         as Arc<dyn ExecutionPlan>,
-                    max_rows,
+                    batch_size,
                 )) as Arc<dyn ExecutionPlan>;
 
                 if prefetch_buffer_size > 0 {
                     replacement = Arc::new(PrefetchExec::new(replacement, prefetch_buffer_size))
                         as Arc<dyn ExecutionPlan>;
                 }
+                partition_groups = vec![(0..partition_count).collect()];
+                full_partitions = true;
                 Ok(Transformed::yes(replacement))
             } else {
+                trace!("not special case");
                 Ok(Transformed::no(plan))
             }
         };
@@ -215,10 +230,12 @@ impl RayDataFrame {
         last_stage = PyDataFrameStage::new(
             last_stage.stage_id,
             Arc::new(MaxRowsExec::new(
-                Arc::new(CoalesceBatchesExec::new(last_stage.plan, inner_batch_size))
+                Arc::new(CoalesceBatchesExec::new(last_stage.plan, batch_size))
                     as Arc<dyn ExecutionPlan>,
-                max_rows,
+                batch_size,
             )) as Arc<dyn ExecutionPlan>,
+            vec![vec![0]],
+            true,
         );
 
         // done fixing last stage
@@ -238,6 +255,11 @@ impl RayDataFrame {
     fn execution_plan(&self, py: Python) -> PyResult<PyExecutionPlan> {
         let plan = wait_for_future(py, self.df.clone().create_physical_plan())?;
         Ok(PyExecutionPlan::new(plan))
+    }
+
+    fn display_execution_plan(&self, py: Python) -> PyResult<String> {
+        let plan = wait_for_future(py, self.df.clone().create_physical_plan())?;
+        Ok(display_plan_with_partition_counts(&plan).to_string())
     }
 
     fn logical_plan(&self) -> PyResult<PyLogicalPlan> {
@@ -268,6 +290,57 @@ impl RayDataFrame {
     }
 }
 
+fn build_replacement(
+    plan: Arc<dyn ExecutionPlan>,
+    prefetch_buffer_size: usize,
+    partitions_per_worker: Option<usize>,
+    isolate: bool,
+    max_rows: usize,
+    inner_batch_size: usize,
+) -> Result<(Vec<Vec<usize>>, Arc<dyn ExecutionPlan>), DataFusionError> {
+    let mut replacement = plan.clone();
+    let children = plan.children();
+    assert!(children.len() == 1, "Unexpected plan structure");
+
+    let child = children[0];
+    let partition_count = child.output_partitioning().partition_count();
+    trace!(
+        "build_replacement for {}, partition_count: {}",
+        displayable(plan.as_ref()).one_line(),
+        partition_count
+    );
+
+    let partition_groups = match partitions_per_worker {
+        Some(p) => (0..partition_count)
+            .chunks(p)
+            .into_iter()
+            .map(|chunk| chunk.collect())
+            .collect(),
+        None => vec![(0..partition_count).collect()],
+    };
+
+    if isolate && partition_groups.len() > 1 {
+        let new_child = Arc::new(PartitionIsolatorExec::new(
+            child.clone(),
+            partitions_per_worker.unwrap(), // we know it is a Some, here.
+        ));
+        replacement = replacement.clone().with_new_children(vec![new_child])?;
+    }
+    // insert a coalescing batches here too so that we aren't sending
+    // too small (or too big) of batches over the network
+    replacement = Arc::new(MaxRowsExec::new(
+        Arc::new(CoalesceBatchesExec::new(replacement, inner_batch_size)) as Arc<dyn ExecutionPlan>,
+        max_rows,
+    )) as Arc<dyn ExecutionPlan>;
+
+    if prefetch_buffer_size > 0 {
+        replacement = Arc::new(PrefetchExec::new(replacement, prefetch_buffer_size))
+            as Arc<dyn ExecutionPlan>;
+    }
+
+    Ok((partition_groups, replacement))
+}
+
 /// A Python class to hold a PHysical plan of a single stage
 #[pyclass]
 pub struct PyDataFrameStage {
@@ -275,10 +348,27 @@ pub struct PyDataFrameStage {
     stage_id: usize,
     /// the physical plan of our stage
     plan: Arc<dyn ExecutionPlan>,
+    /// the partition groups for this stage.
+    partition_groups: Vec<Vec<usize>>,
+    /// Are we hosting the complete partitions?  If not
+    /// then RayStageReaderExecs will be inserted to consume its desired partition
+    /// from all stages with this same id, and merge the results.  Using a
+    /// CombinedRecordBatchStream
+    full_partitions: bool,
 }
 impl PyDataFrameStage {
-    fn new(stage_id: usize, plan: Arc<dyn ExecutionPlan>) -> Self {
-        Self { stage_id, plan }
+    fn new(
+        stage_id: usize,
+        plan: Arc<dyn ExecutionPlan>,
+        partition_groups: Vec<Vec<usize>>,
+        full_partitions: bool,
+    ) -> Self {
+        Self {
+            stage_id,
+            plan,
+            partition_groups,
+            full_partitions,
+        }
     }
 }
 
@@ -289,28 +379,20 @@ impl PyDataFrameStage {
         self.stage_id
     }
 
-    /// returns the number of output partitions of this stage
-    pub fn num_output_partitions(&self) -> usize {
-        self.plan.output_partitioning().partition_count()
+    #[getter]
+    fn partition_groups(&self) -> Vec<Vec<usize>> {
+        self.partition_groups.clone()
     }
 
-    /// How many partitions are we shadowing if at all
-    pub fn num_shadow_partitions(&self) -> Option<usize> {
-        let mut result = None;
-        self.plan
-            .clone()
-            .transform_down(|node: Arc<dyn ExecutionPlan>| {
-                if let Some(isolator) = node.as_any().downcast_ref::<PartitionIsolatorExec>() {
-                    let children = isolator.children();
-                    if children.len() != 1 {
-                        return internal_err!("PartitionIsolatorExec must have exactly one child");
-                    }
-                    result = Some(children[0].output_partitioning().partition_count());
-                    //TODO: break early
-                }
-                Ok(Transformed::no(node))
-            });
-        result
+    #[getter]
+    fn full_partitions(&self) -> bool {
+        self.full_partitions
+    }
+
+    /// returns the number of output partitions of this stage
+    #[getter]
+    fn num_output_partitions(&self) -> usize {
+        self.plan.output_partitioning().partition_count()
     }
 
     /// returns the stage ids of that we need to read from in order to execute
@@ -330,6 +412,10 @@ impl PyDataFrameStage {
 
     pub fn execution_plan(&self) -> PyExecutionPlan {
         PyExecutionPlan::new(self.plan.clone())
+    }
+
+    fn display_execution_plan(&self) -> PyResult<String> {
+        Ok(display_plan_with_partition_counts(&self.plan).to_string())
     }
 
     pub fn plan_bytes(&self) -> PyResult<Cow<[u8]>> {

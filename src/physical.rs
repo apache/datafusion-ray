@@ -21,11 +21,12 @@ use datafusion::physical_optimizer::PhysicalOptimizerRule;
 use datafusion::physical_plan::joins::NestedLoopJoinExec;
 use datafusion::physical_plan::repartition::RepartitionExec;
 use datafusion::physical_plan::sorts::sort::SortExec;
-use datafusion::physical_plan::{displayable, ExecutionPlan};
+use datafusion::physical_plan::ExecutionPlan;
 use log::debug;
 use std::sync::Arc;
 
 use crate::ray_stage::RayStageExec;
+use crate::util::display_plan_with_partition_counts;
 
 /// This optimizer rule walks up the physical plan tree
 /// and inserts RayStageExec nodes where appropriate to denote where we will split
@@ -59,7 +60,7 @@ impl PhysicalOptimizerRule for RayStageOptimizerRule {
     ) -> Result<Arc<dyn ExecutionPlan>> {
         debug!(
             "optimizing physical plan:\n{}",
-            displayable(plan.as_ref()).indent(false)
+            display_plan_with_partition_counts(&plan)
         );
 
         let mut stage_counter = 0;
@@ -78,11 +79,11 @@ impl PhysicalOptimizerRule for RayStageOptimizerRule {
         };
 
         let plan = plan.transform_up(up)?.data;
-        let final_plan = Arc::new(RayStageExec::new(plan, stage_counter));
+        let final_plan = Arc::new(RayStageExec::new(plan, stage_counter)) as Arc<dyn ExecutionPlan>;
 
         debug!(
             "optimized physical plan:\n{}",
-            displayable(final_plan.as_ref()).indent(true)
+            display_plan_with_partition_counts(&final_plan)
         );
         Ok(final_plan)
     }

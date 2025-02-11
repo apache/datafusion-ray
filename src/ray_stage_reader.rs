@@ -11,7 +11,7 @@ use datafusion::physical_plan::{
 use datafusion::{arrow::datatypes::SchemaRef, execution::SendableRecordBatchStream};
 use futures::stream::TryStreamExt;
 use futures::StreamExt;
-use log::{debug, info, trace};
+use log::trace;
 use prost::Message;
 
 use crate::protobuf::FlightTicketData;
@@ -109,7 +109,7 @@ impl ExecutionPlan for RayStageReaderExec {
         trace!("{name} client_map keys {:?}", client_map.keys());
 
         let clients = client_map
-            .get(&self.stage_id)
+            .get(&(self.stage_id, partition))
             .ok_or(internal_datafusion_err!(
                 "No flight clients found for {}",
                 self.stage_id
@@ -123,6 +123,7 @@ impl ExecutionPlan for RayStageReaderExec {
             .collect::<Vec<_>>();
 
         let ftd = FlightTicketData {
+            dummy: false,
             partition: partition as u64,
         };
 
