@@ -20,7 +20,6 @@ use arrow_flight::{FlightClient, FlightData, Ticket};
 use async_stream::stream;
 use datafusion::common::internal_datafusion_err;
 use datafusion::common::tree_node::{Transformed, TreeNode};
-use datafusion::datasource::physical_plan::parquet::ParquetExecBuilder;
 use datafusion::datasource::physical_plan::ParquetExec;
 use datafusion::error::DataFusionError;
 use datafusion::execution::{RecordBatchStream, SendableRecordBatchStream, SessionStateBuilder};

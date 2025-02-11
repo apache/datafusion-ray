@@ -25,7 +25,7 @@ use arrow_flight::error::FlightError;
 use arrow_flight::FlightClient;
 use datafusion::common::internal_datafusion_err;
 use datafusion::execution::SessionStateBuilder;
-use datafusion::physical_plan::{displayable, ExecutionPlan};
+use datafusion::physical_plan::ExecutionPlan;
 use datafusion::prelude::{SessionConfig, SessionContext};
 use datafusion_python::utils::wait_for_future;
 use futures::TryStreamExt;

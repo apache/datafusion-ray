@@ -11,7 +11,7 @@ use datafusion::physical_plan::{
 use datafusion::{arrow::datatypes::SchemaRef, execution::SendableRecordBatchStream};
 use futures::stream::TryStreamExt;
 use futures::StreamExt;
-use log::{debug, info, trace};
+use log::trace;
 use prost::Message;
 
 use crate::protobuf::FlightTicketData;

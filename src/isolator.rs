@@ -9,7 +9,7 @@ use datafusion::{
         PlanProperties,
     },
 };
-use log::{error, trace};
+use log::error;
 
 pub struct PartitionGroup(pub Vec<usize>);
 

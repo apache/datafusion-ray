@@ -21,7 +21,7 @@ use datafusion::physical_optimizer::PhysicalOptimizerRule;
 use datafusion::physical_plan::joins::NestedLoopJoinExec;
 use datafusion::physical_plan::repartition::RepartitionExec;
 use datafusion::physical_plan::sorts::sort::SortExec;
-use datafusion::physical_plan::{displayable, ExecutionPlan};
+use datafusion::physical_plan::ExecutionPlan;
 use log::debug;
 use std::sync::Arc;
 

@@ -88,14 +88,14 @@ For example, to execute the following query:
 RAY_COLOR_PREFIX=1 RAY_DEDUP_LOGS=0 python tpc.py --data=file:///path/to/your/tpch/directory/ --concurrency=2 --batch-size=8182 --query `select c.c_name, sum(o.o_totalprice) as total from orders o inner join customer c on o.o_custkey = c.c_custkey group by c_name limit 1`
 ```
 
-To further parallelize execution, and host each partition of each stage as a Ray Actor, add `--isolate`. Note that this can drastically increase the number of Actors. A future version of DataFusion Ray will provide a`--split-factor` which will let you configure how the Stages are split.
+To further parallelize execution, you can choose how many partitions will be served by each Stage with `--partitions-per-worker`. If this number is less than `--concurrency` Then multiple Actors will host portions of the stage. For example, if there are 10 stages calculated for a query, `concurrency=16` and `partitions-per-worker=4`, then `40` `RayStage` Actors will be created. If `partitions-per-worker=16` or is absent, then `10` `RayStage` Actors will be created.
 
 To validate the output against non-ray single node datafusion, add `--validate` which will ensure that both systems produce the same output.
 
 To run the entire TPCH benchmark use
 
 ```bash
-RAY_COLOR_PREFIX=1 RAY_DEDUP_LOGS=0 python tpcbench.py --data=file:///path/to/your/tpch/directory/ --concurrency=2 --batch-size=8182 [--isolate] [--validate]
+RAY_COLOR_PREFIX=1 RAY_DEDUP_LOGS=0 python tpcbench.py --data=file:///path/to/your/tpch/directory/ --concurrency=2 --batch-size=8182 [--partitions-per-worker=] [--validate]
 ```
 
 This will output a json file in the current directory with query timings.
@@ -112,6 +112,7 @@ DataFusion Ray outputs logs from both python and rust, and in order to handle th
 
 ## Known Issues
 
-- The DataFusion config setting, `datafusion.execution.parquet.pushdown_filters`, can produce incorrect results. We think this could be related to an issue with round trip physical path serialization. At the moment, do not enable this setting, as it prevents physical plans from serializing correctly.
+- We are waiting to upgrade to a DataFusion version where the parquet options are serialized into substrait in order to send them correctly in a plan. Currently, we
+  manually add back `table_parquet_options.pushdown_filters=true` after deserialization to compensate. This will be refactored in the future.
 
-  This should be resolved when we update to a DataFusion version which include <https://github.com/apache/datafusion/pull/14465#event-16194180382>
+see <https://github.com/apache/datafusion/pull/14465>
