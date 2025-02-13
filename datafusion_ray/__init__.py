@@ -20,12 +20,6 @@ try:
 except ImportError:
     import importlib_metadata
 
-from ._datafusion_ray_internal import (
-    Context,
-    ExecutionGraph,
-    QueryStage,
-    execute_partition,
-)
-from .context import DatafusionRayContext
+from .core import RayContext, prettify, runtime_env
 
 __version__ = importlib_metadata.version(__name__)

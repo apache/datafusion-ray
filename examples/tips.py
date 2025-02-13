@@ -15,41 +15,41 @@
 # specific language governing permissions and limitations
 # under the License.
 
-import os
+import argparse
+import datafusion
 import ray
 
-from datafusion import SessionContext, col, lit, functions as F
-from datafusion_ray import DatafusionRayContext
+from datafusion_ray import RayContext
 
-SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 
-# Connect to a cluster
-ray.init()
+def go(data_dir: str):
+    ctx = RayContext()
+    # we could set this value to however many CPUs we plan to give each
+    # ray task
+    ctx.set("datafusion.execution.target_partitions", "1")
+    ctx.set("datafusion.optimizer.enable_round_robin_repartition", "false")
 
-# Create a context and register a table
-df_ctx = SessionContext()
+    ctx.register_parquet("tips", f"{data_dir}/tips*.parquet")
 
-ray_ctx = DatafusionRayContext(df_ctx)
-# Register either a CSV or Parquet file
-# ctx.register_csv("tips", f"{SCRIPT_DIR}/tips.csv", True)
-df_ctx.register_parquet("tips", f"{SCRIPT_DIR}/tips.parquet")
-
-result_set = ray_ctx.sql(
-    "select sex, smoker, avg(tip/total_bill) as tip_pct from tips group by sex, smoker"
-)
-for record_batch in result_set:
-    print(record_batch.to_pandas())
-
-# Alternatively, to use the DataFrame API
-df = df_ctx.read_parquet(f"{SCRIPT_DIR}/tips.parquet")
-df = (
-    df.aggregate(
-        [col("sex"), col("smoker"), col("day"), col("time")],
-        [F.avg(col("tip") / col("total_bill")).alias("tip_pct")],
+    df = ctx.sql(
+        "select sex, smoker, avg(tip/total_bill) as tip_pct from tips group by sex, smoker order by sex, smoker"
     )
-    .filter(col("day") != lit("Dinner"))
-    .aggregate([col("sex"), col("smoker")], [F.avg(col("tip_pct")).alias("avg_pct")])
-)
+    df.show()
 
-ray_results = ray_ctx.plan(df.execution_plan())
-df_ctx.create_dataframe([ray_results]).show()
+    print("no ray result:")
+
+    # compare to non ray version
+    ctx = datafusion.SessionContext()
+    ctx.register_parquet("tips", f"{data_dir}/tips*.parquet")
+    ctx.sql(
+        "select sex, smoker, avg(tip/total_bill) as tip_pct from tips group by sex, smoker order by sex, smoker"
+    ).show()
+
+
+if __name__ == "__main__":
+    ray.init(namespace="tips")
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--data-dir", required=True, help="path to tips*.parquet files")
+    args = parser.parse_args()
+
+    go(args.data_dir)

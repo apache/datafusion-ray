@@ -4,36 +4,46 @@ package datafusion_ray.protobuf;
 
 option java_multiple_files = true;
 option java_package = "datafusion_ray.protobuf";
-option java_outer_classname = "RaySqlProto";
+option java_outer_classname = "RayDataFusionProto";
 
 import "datafusion_common.proto";
 import "datafusion.proto";
 
-message RaySqlExecNode {
-  oneof PlanType {
-    ShuffleReaderExecNode shuffle_reader = 1;
-    ShuffleWriterExecNode shuffle_writer = 2;
-  }
-}
-
-message ShuffleReaderExecNode {
+message RayStageReaderExecNode {
+  // schema of the stage we will consume
+  datafusion_common.Schema schema = 1;
+  // properties of the stage we will consume
+  datafusion.Partitioning partitioning = 2;
   // stage to read from
-  uint32 stage_id = 1;
-  // schema of the shuffle stage
-  datafusion_common.Schema schema = 2;
-  // this must match the output partitioning of the writer we are reading from
-  datafusion.PhysicalHashRepartition partitioning = 3;
-  // directory for shuffle files
-  string shuffle_dir = 4;
+  uint64 stage_id = 3;
 }
 
-message ShuffleWriterExecNode {
-  // stage that is writing the shuffle files
-  uint32 stage_id = 1;
-  // plan to execute
-  datafusion.PhysicalPlanNode plan = 2;
-  // output partitioning schema
-  datafusion.PhysicalHashRepartition partitioning = 3;
-  // directory for shuffle files
-  string shuffle_dir = 4;
+// the simplicity of the decoder in src/codec.rs currently requires a different byte
+// representation per message.  Hence the dummy fields.
+//
+// I'll come back to this and sort it out.  Its not super critical as the plans are
+// only exchanged at the start of queries, not during execution.
+
+message MaxRowsExecNode {
+  uint64 max_rows = 1;
 }
+
+message PrefetchExecNode {
+  uint32 dummy = 1;
+  uint64 buf_size = 2;
+}
+
+message PartitionIsolatorExecNode {
+  float dummy = 1;
+  uint64 partition_count = 2;  
+}
+
+// TODO: why, if FlightTicketData has  the uint64 field first can it also be decoded also
+// MaxRowsExecNode?  There is something I don't understand here
+message FlightTicketData {
+  // stage id of the stream
+  // parittion id of the stream
+  bool dummy = 1;
+  uint64 partition = 2;
+}
+

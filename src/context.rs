@@ -15,185 +15,105 @@
 // specific language governing permissions and limitations
 // under the License.
 
-use crate::planner::{make_execution_graph, PyExecutionGraph};
-use crate::shuffle::ShuffleCodec;
-use datafusion::arrow::pyarrow::ToPyArrow;
-use datafusion::arrow::record_batch::RecordBatch;
-use datafusion::error::{DataFusionError, Result};
-use datafusion::execution::context::TaskContext;
-use datafusion::execution::runtime_env::RuntimeEnv;
-use datafusion::physical_plan::{displayable, ExecutionPlan};
-use datafusion::prelude::*;
-use datafusion_proto::physical_plan::AsExecutionPlan;
-use datafusion_proto::protobuf;
-use futures::StreamExt;
-use prost::Message;
-use pyo3::exceptions::PyRuntimeError;
+use datafusion::datasource::file_format::parquet::ParquetFormat;
+use datafusion::datasource::listing::ListingOptions;
+use datafusion::{execution::SessionStateBuilder, prelude::*};
+use datafusion_python::utils::wait_for_future;
+use object_store::aws::AmazonS3Builder;
 use pyo3::prelude::*;
-use pyo3::types::{PyBytes, PyTuple};
-use std::collections::HashMap;
 use std::sync::Arc;
-use tokio::runtime::Runtime;
-use tokio::task::JoinHandle;
 
-type PyResultSet = Vec<PyObject>;
+use crate::dataframe::RayDataFrame;
+use crate::physical::RayStageOptimizerRule;
+use crate::util::ResultExt;
+use url::Url;
 
-#[pyclass(name = "Context", module = "datafusion_ray", subclass)]
-pub struct PyContext {
-    pub(crate) py_ctx: PyObject,
-}
-
-pub(crate) fn execution_plan_from_pyany(
-    py_plan: &Bound<PyAny>,
-) -> PyResult<Arc<dyn ExecutionPlan>> {
-    let py_proto = py_plan.call_method0("to_proto")?;
-    let plan_bytes: &[u8] = py_proto.extract()?;
-    let plan_node = protobuf::PhysicalPlanNode::try_decode(plan_bytes).map_err(|e| {
-        PyRuntimeError::new_err(format!(
-            "Unable to decode physical plan protobuf message: {}",
-            e
-        ))
-    })?;
-
-    let codec = ShuffleCodec {};
-    let runtime = RuntimeEnv::default();
-    let registry = SessionContext::new();
-    plan_node
-        .try_into_physical_plan(&registry, &runtime, &codec)
-        .map_err(|e| e.into())
+/// Internal Session Context object for the python class RayContext
+#[pyclass]
+pub struct RayContext {
+    /// our datafusion context
+    ctx: SessionContext,
 }
 
 #[pymethods]
-impl PyContext {
+impl RayContext {
     #[new]
-    pub fn new(session_ctx: PyObject) -> Result<Self> {
-        Ok(Self {
-            py_ctx: session_ctx,
-        })
+    pub fn new() -> PyResult<Self> {
+        let rule = RayStageOptimizerRule::new();
+
+        let config = SessionConfig::default().with_information_schema(true);
+
+        let state = SessionStateBuilder::new()
+            .with_default_features()
+            .with_physical_optimizer_rule(Arc::new(rule))
+            .with_config(config)
+            .build();
+
+        let ctx = SessionContext::new_with_state(state);
+
+        Ok(Self { ctx })
     }
 
-    /// Execute SQL directly against the DataFusion context. Useful for statements
-    /// such as "create view" or "drop view"
-    pub fn sql(&self, query: &str, py: Python) -> PyResult<()> {
-        println!("Executing {}", query);
-        // let _df = wait_for_future(py, self.ctx.sql(sql))?;
-        let _df = self.run_sql(query, py);
+    pub fn register_s3(&self, bucket_name: String) -> PyResult<()> {
+        let s3 = AmazonS3Builder::from_env()
+            .with_bucket_name(&bucket_name)
+            .build()
+            .to_py_err()?;
+
+        let path = format!("s3://{bucket_name}");
+        let s3_url = Url::parse(&path).to_py_err()?;
+        let arc_s3 = Arc::new(s3);
+        self.ctx.register_object_store(&s3_url, arc_s3.clone());
         Ok(())
     }
 
-    fn run_sql(&self, query: &str, py: Python) -> PyResult<Py<PyAny>> {
-        let args = PyTuple::new_bound(py, [query]);
-        self.py_ctx.call_method1(py, "sql", args)
+    pub fn register_parquet(&self, py: Python, name: String, path: String) -> PyResult<()> {
+        let options = ParquetReadOptions::default();
+
+        wait_for_future(py, self.ctx.register_parquet(&name, &path, options.clone()))?;
+        Ok(())
     }
 
-    /// Plan a distributed SELECT query for executing against the Ray workers
-    pub fn plan(&self, plan: &Bound<PyAny>) -> PyResult<PyExecutionGraph> {
-        // println!("Planning {}", sql);
-        // let df = wait_for_future(py, self.ctx.sql(sql))?;
-        // let py_df = self.run_sql(sql, py)?;
-        // let py_plan = py_df.call_method0(py, "execution_plan")?;
-        // let py_plan = py_plan.bind(py);
-
-        let plan = execution_plan_from_pyany(plan)?;
-        let graph = make_execution_graph(plan.clone())?;
-
-        // debug logging
-        let mut stages = graph.query_stages.values().collect::<Vec<_>>();
-        stages.sort_by_key(|s| s.id);
-        for stage in stages {
-            println!(
-                "Query stage #{}:\n{}",
-                stage.id,
-                displayable(stage.plan.as_ref()).indent(false)
-            );
-        }
-
-        Ok(PyExecutionGraph::new(graph))
-    }
-
-    /// Execute a partition of a query plan. This will typically be executing a shuffle write and write the results to disk
-    pub fn execute_partition(
-        &self,
-        plan: &Bound<'_, PyBytes>,
-        part: usize,
+    #[pyo3(signature = (name, path, file_extension=".parquet"))]
+    pub fn register_listing_table(
+        &mut self,
         py: Python,
-    ) -> PyResult<PyResultSet> {
-        execute_partition(plan, part, py)
+        name: &str,
+        path: &str,
+        file_extension: &str,
+    ) -> PyResult<()> {
+        let options =
+            ListingOptions::new(Arc::new(ParquetFormat::new())).with_file_extension(file_extension);
+
+        wait_for_future(
+            py,
+            self.ctx
+                .register_listing_table(name, path, options, None, None),
+        )
+        .to_py_err()
     }
-}
 
-#[pyfunction]
-pub fn execute_partition(
-    plan_bytes: &Bound<'_, PyBytes>,
-    part: usize,
-    py: Python,
-) -> PyResult<PyResultSet> {
-    let plan = deserialize_execution_plan(plan_bytes)?;
-    _execute_partition(plan, part)
-        .unwrap()
-        .into_iter()
-        .map(|batch| batch.to_pyarrow(py))
-        .collect()
-}
+    pub fn sql(&self, py: Python, query: String) -> PyResult<RayDataFrame> {
+        let df = wait_for_future(py, self.ctx.sql(&query))?;
 
-pub fn serialize_execution_plan(
-    plan: Arc<dyn ExecutionPlan>,
-    py: Python,
-) -> PyResult<Bound<'_, PyBytes>> {
-    let codec = ShuffleCodec {};
-    let proto =
-        datafusion_proto::protobuf::PhysicalPlanNode::try_from_physical_plan(plan.clone(), &codec)?;
+        Ok(RayDataFrame::new(df))
+    }
 
-    let bytes = proto.encode_to_vec();
-    Ok(PyBytes::new_bound(py, &bytes))
-}
+    pub fn set(&self, option: String, value: String) -> PyResult<()> {
+        let state = self.ctx.state_ref();
+        let mut guard = state.write();
+        let config = guard.config_mut();
+        let options = config.options_mut();
+        options.set(&option, &value)?;
 
-pub fn deserialize_execution_plan(proto_msg: &Bound<PyBytes>) -> PyResult<Arc<dyn ExecutionPlan>> {
-    let bytes: &[u8] = proto_msg.extract()?;
-    let proto_plan =
-        datafusion_proto::protobuf::PhysicalPlanNode::try_decode(bytes).map_err(|e| {
-            PyRuntimeError::new_err(format!(
-                "Unable to decode logical node from serialized bytes: {}",
-                e
-            ))
-        })?;
+        Ok(())
+    }
 
-    let ctx = SessionContext::new();
-    let codec = ShuffleCodec {};
-    let plan = proto_plan
-        .try_into_physical_plan(&ctx, &ctx.runtime_env(), &codec)
-        .map_err(DataFusionError::from)?;
-
-    Ok(plan)
-}
-
-/// Execute a partition of a query plan. This will typically be executing a shuffle write and
-/// write the results to disk, except for the final query stage, which will return the data.
-/// inputs is a list of tuples of (stage_id, partition_id, bytes) for each input partition.
-fn _execute_partition(plan: Arc<dyn ExecutionPlan>, part: usize) -> Result<Vec<RecordBatch>> {
-    let ctx = Arc::new(TaskContext::new(
-        Some("task_id".to_string()),
-        "session_id".to_string(),
-        SessionConfig::default(),
-        HashMap::new(),
-        HashMap::new(),
-        HashMap::new(),
-        Arc::new(RuntimeEnv::default()),
-    ));
-
-    // create a Tokio runtime to run the async code
-    let rt = Runtime::new().unwrap();
-
-    let fut: JoinHandle<Result<Vec<RecordBatch>>> = rt.spawn(async move {
-        let mut stream = plan.execute(part, ctx)?;
-        let mut results = vec![];
-        while let Some(result) = stream.next().await {
-            results.push(result?);
-        }
-        Ok(results)
-    });
-
-    // block and wait on future
-    let results = rt.block_on(fut).unwrap()?;
-    Ok(results)
+    pub fn get_target_partitions(&self) -> usize {
+        let state = self.ctx.state_ref();
+        let guard = state.read();
+        let config = guard.config();
+        let options = config.options();
+        options.execution.target_partitions
+    }
 }

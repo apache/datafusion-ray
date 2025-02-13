@@ -17,95 +17,188 @@
 
 import argparse
 import ray
-from datafusion import SessionContext, SessionConfig, RuntimeConfig
-from datafusion_ray import DatafusionRayContext
+from datafusion import SessionContext, SessionConfig
+from datafusion_ray import RayContext, prettify, runtime_env
 from datetime import datetime
 import json
+import os
 import time
 
-def main(benchmark: str, data_path: str, query_path: str, concurrency: int):
+import duckdb
+
+
+def tpch_query(qnum: int) -> str:
+    query_path = os.path.join(os.path.dirname(__file__), "..", "testdata", "queries")
+    return open(os.path.join(query_path, f"q{qnum}.sql")).read()
+
+
+def main(
+    qnum: int,
+    data_path: str,
+    concurrency: int,
+    batch_size: int,
+    partitions_per_worker: int | None,
+    listing_tables: bool,
+    validate: bool,
+    prefetch_buffer_size: int,
+):
 
     # Register the tables
-    if benchmark == "tpch":
-        num_queries = 22
-        table_names = ["customer", "lineitem", "nation", "orders", "part", "partsupp", "region", "supplier"]
-    elif benchmark == "tpcds":
-        num_queries = 99
-        table_names = ["call_center", "catalog_page", "catalog_returns", "catalog_sales", "customer",
-           "customer_address", "customer_demographics", "date_dim", "time_dim", "household_demographics",
-           "income_band", "inventory", "item", "promotion", "reason", "ship_mode", "store", "store_returns",
-           "store_sales", "warehouse", "web_page", "web_returns", "web_sales", "web_site"]
-    else:
-        raise "invalid benchmark"
-
+    table_names = [
+        "customer",
+        "lineitem",
+        "nation",
+        "orders",
+        "part",
+        "partsupp",
+        "region",
+        "supplier",
+    ]
     # Connect to a cluster
     # use ray job submit
-    ray.init(num_cpus=concurrency)
+    ray.init(runtime_env=runtime_env)
 
-    runtime = (
-        RuntimeConfig()
+    ctx = RayContext(
+        batch_size=batch_size,
+        partitions_per_worker=partitions_per_worker,
+        prefetch_buffer_size=prefetch_buffer_size,
     )
-    config = (
-        SessionConfig()
-        .with_target_partitions(concurrency)
-        .set("datafusion.execution.parquet.pushdown_filters", "true")
-    )
-    df_ctx = SessionContext(config, runtime)
 
-    ray_ctx = DatafusionRayContext(df_ctx)
+    ctx.set("datafusion.execution.target_partitions", f"{concurrency}")
+    # ctx.set("datafusion.execution.parquet.pushdown_filters", "true")
+    ctx.set("datafusion.optimizer.enable_round_robin_repartition", "false")
+    ctx.set("datafusion.execution.coalesce_batches", "false")
+
+    local_config = SessionConfig()
+
+    local_ctx = SessionContext(local_config)
 
     for table in table_names:
-        path = f"{data_path}/{table}.parquet"
+        path = os.path.join(data_path, f"{table}.parquet")
         print(f"Registering table {table} using path {path}")
-        df_ctx.register_parquet(table, path)
+        if listing_tables:
+            ctx.register_listing_table(table, f"{path}/")
+            local_ctx.register_listing_table(table, f"{path}/")
+        else:
+            ctx.register_parquet(table, path)
+            local_ctx.register_parquet(table, path)
+
+    current_time_millis = int(datetime.now().timestamp() * 1000)
+    results_path = f"datafusion-ray-tpch-{current_time_millis}.json"
+    print(f"Writing results to {results_path}")
 
     results = {
-        'engine': 'datafusion-python',
-        'benchmark': benchmark,
-        'data_path': data_path,
-        'query_path': query_path,
+        "engine": "datafusion-ray",
+        "benchmark": "tpch",
+        "settings": {
+            "concurrency": concurrency,
+            "batch_size": batch_size,
+            "prefetch_buffer_size": prefetch_buffer_size,
+            "partitions_per_worker": partitions_per_worker,
+        },
+        "data_path": data_path,
+        "queries": {},
     }
+    if validate:
+        results["local_queries"] = {}
+        results["validated"] = {}
 
-    for query in range(1, num_queries + 1):
+    duckdb.sql("load tpch")
 
-        # read text file
-        path = f"{query_path}/q{query}.sql"
-        print(f"Reading query {query} using path {path}")
-        with open(path, "r") as f:
-            text = f.read()
-            # each file can contain multiple queries
-            queries = text.split(";")
+    queries = range(1, 23) if qnum == -1 else [qnum]
+    for qnum in queries:
+        sql = tpch_query(qnum)
 
+        statements = sql.split(";")
+        sql = statements[0]
+
+        print("executing ", sql)
+
+        start_time = time.time()
+        df = ctx.sql(sql)
+        end_time = time.time()
+        print("Logical plan \n", df.logical_plan().display_indent())
+        print("Optimized Logical plan \n", df.optimized_logical_plan().display_indent())
+        part1 = end_time - start_time
+        for stage in df.stages():
+            print(
+                f"Stage {stage.stage_id} output partitions:{stage.num_output_partitions} partition_groups: {stage.partition_groups} full_partitions: {stage.full_partitions}"
+            )
+            print(stage.display_execution_plan())
+
+        start_time = time.time()
+        batches = df.collect()
+        end_time = time.time()
+        results["queries"][qnum] = end_time - start_time + part1
+
+        calculated = prettify(batches)
+        print(calculated)
+        if validate:
             start_time = time.time()
-            for sql in queries:
-                sql = sql.strip()
-                if len(sql) > 0:
-                    print(f"Executing: {sql}")
-                    rows = ray_ctx.sql(sql)
-
-                    print(f"Query {query} returned {len(rows)} rows")
+            answer_batches = local_ctx.sql(sql).collect()
             end_time = time.time()
-            print(f"Query {query} took {end_time - start_time} seconds")
+            results["local_queries"][qnum] = end_time - start_time
 
-            # store timings in list and later add option to run > 1 iterations
-            results[query] = [end_time - start_time]
+            expected = prettify(answer_batches)
 
-    str = json.dumps(results, indent=4)
-    current_time_millis = int(datetime.now().timestamp() * 1000)
-    results_path = f"datafusion-ray-{benchmark}-{current_time_millis}.json"
-    print(f"Writing results to {results_path}")
-    with open(results_path, "w") as f:
-        f.write(str)
+            results["validated"][qnum] = calculated == expected
+        print(f"done with query {qnum}")
 
-    # write results to stdout
-    print(str)
+        # write the results as we go, so you can peek at them
+        results_dump = json.dumps(results, indent=4)
+        with open(results_path, "w+") as f:
+            f.write(results_dump)
+
+        # write results to stdout
+        print(results_dump)
+
+    # give ray a moment to clean up
+    print("sleeping for 3 seconds for ray to clean up")
+    time.sleep(3)
+
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="DataFusion benchmark derived from TPC-H / TPC-DS")
-    parser.add_argument("--benchmark", required=True, help="Benchmark to run (tpch or tpcds)")
+    parser = argparse.ArgumentParser(
+        description="DataFusion benchmark derived from TPC-H / TPC-DS"
+    )
     parser.add_argument("--data", required=True, help="Path to data files")
-    parser.add_argument("--queries", required=True, help="Path to query files")
-    parser.add_argument("--concurrency", required=True, help="Number of concurrent tasks")
+    parser.add_argument(
+        "--concurrency", required=True, help="Number of concurrent tasks"
+    )
+    parser.add_argument("--qnum", type=int, default=-1, help="TPCH query number, 1-22")
+    parser.add_argument("--listing-tables", action="store_true")
+    parser.add_argument("--validate", action="store_true")
+    parser.add_argument(
+        "--log-level", default="INFO", help="ERROR,WARN,INFO,DEBUG,TRACE"
+    )
+    parser.add_argument(
+        "--batch-size",
+        required=False,
+        default=8192,
+        help="Desired batch size output per stage",
+    )
+    parser.add_argument(
+        "--partitions-per-worker",
+        type=int,
+        help="Max partitions per Stage Service Worker",
+    )
+    parser.add_argument(
+        "--prefetch-buffer-size",
+        required=False,
+        default=0,
+        type=int,
+        help="How many batches each stage should eagerly buffer",
+    )
+
     args = parser.parse_args()
 
-    main(args.benchmark, args.data, args.queries, int(args.concurrency))
+    main(
+        args.qnum,
+        args.data,
+        int(args.concurrency),
+        int(args.batch_size),
+        args.partitions_per_worker,
+        args.listing_tables,
+        args.validate,
+        args.prefetch_buffer_size,
+    )

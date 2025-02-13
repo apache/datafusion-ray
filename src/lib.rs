@@ -18,23 +18,45 @@
 extern crate core;
 
 use pyo3::prelude::*;
+use std::env;
 
 mod proto;
-use crate::context::execute_partition;
 pub use proto::generated::protobuf;
 
+pub mod codec;
 pub mod context;
-pub mod planner;
-pub mod query_stage;
-pub mod shuffle;
+pub mod dataframe;
+pub mod flight;
+pub mod isolator;
+pub mod max_rows;
+pub mod physical;
+pub mod pre_fetch;
+pub mod ray_stage;
+pub mod ray_stage_reader;
+pub mod stage_service;
+pub mod util;
 
-/// A Python module implemented in Rust.
 #[pymodule]
 fn _datafusion_ray_internal(m: &Bound<'_, PyModule>) -> PyResult<()> {
-    // register classes that can be created directly from Python code
-    m.add_class::<context::PyContext>()?;
-    m.add_class::<planner::PyExecutionGraph>()?;
-    m.add_class::<query_stage::PyQueryStage>()?;
-    m.add_function(wrap_pyfunction!(execute_partition, m)?)?;
+    setup_logging();
+    m.add_class::<context::RayContext>()?;
+    m.add_class::<dataframe::RayDataFrame>()?;
+    m.add_class::<dataframe::PyDataFrameStage>()?;
+    m.add_class::<stage_service::StageService>()?;
+    m.add_function(wrap_pyfunction!(util::prettify, m)?)?;
     Ok(())
+}
+
+fn setup_logging() {
+    // ensure this python logger will route messages back to rust
+    pyo3_pylogger::register("datafusion_ray");
+
+    let dfr_env = env::var("DATAFUSION_RAY_LOG_LEVEL").unwrap_or("WARN".to_string());
+    let rust_log_env = env::var("RUST_LOG").unwrap_or("WARN".to_string());
+
+    let combined_env = format!("{rust_log_env},datafusion_ray={dfr_env}");
+
+    env_logger::Builder::new()
+        .parse_filters(&combined_env)
+        .init();
 }
