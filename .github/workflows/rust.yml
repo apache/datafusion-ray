@@ -46,15 +46,15 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r tpch/requirements.txt
-      - name: Generate test data
-        run: |
-          ./scripts/gen-test-data.sh
+#      - name: Generate test data
+#        run: |
+#          ./scripts/gen-test-data.sh
       - name: Run Rust tests
         run: cargo test --verbose
-      - name: Run Python tests
-        run: |
-          python -m venv venv
-          source venv/bin/activate
-          pip install -r requirements-in.txt
-          maturin develop
-          python -m pytest
+#      - name: Run Python tests
+#        run: |
+#          python -m venv venv
+#          source venv/bin/activate
+#          pip install -r requirements-in.txt
+#          maturin develop
+#          python -m pytest

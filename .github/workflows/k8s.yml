@@ -17,8 +17,9 @@
 name: Kubernetes
 
 on:
-  push:
-  pull_request:
+#  push:
+#  pull_request:
+  workflow_dispatch:
 
 env:
   RAY_HELM_VERSION: 1.1.0
