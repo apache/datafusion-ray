@@ -195,7 +195,7 @@ class RayContext:
         self,
         batch_size: int = 8192,
         prefetch_buffer_size: int = 0,
-        partitions_per_worker: int | None = None,
+        partitions_per_worker: Optional[int] = None,
     ) -> None:
         self.ctx = RayContextInternal()
         self.batch_size = batch_size
