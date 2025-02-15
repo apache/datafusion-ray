@@ -24,6 +24,7 @@ import asyncio
 import ray
 import uuid
 import time
+from typing import Optional
 
 from datafusion_ray._datafusion_ray_internal import (
     RayContext as RayContextInternal,
@@ -100,7 +101,7 @@ class RayDataFrame:
         ray_internal_df: RayDataFrameInternal,
         query_id: str,
         batch_size=8192,
-        partitions_per_worker: int | None = None,
+        partitions_per_worker: Optional[int] = None,
         prefetch_buffer_size=0,
     ):
         self.df = ray_internal_df

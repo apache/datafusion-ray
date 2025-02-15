@@ -309,7 +309,7 @@ impl StageService {
 
         let signal = async move {
             // TODO: handle Result
-            let result = all_done_rx.recv().await;
+            let _ = all_done_rx.recv().await;
         };
 
         let service = FlightServ {
@@ -337,7 +337,6 @@ impl StageService {
             Ok::<(), Box<dyn Error + Send + Sync>>(())
         };
 
-        let name = self.name.clone();
         let fut = async move {
             serv.await.to_py_err()?;
             Ok(())
