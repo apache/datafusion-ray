@@ -7,6 +7,6 @@ numpy
 pyarrow>=18.0.0
 pytest
 ray==2.40.0
-datafusion==43.1.0
+datafusion==43.0.0
 toml
 importlib_metadata; python_version < "3.8"
