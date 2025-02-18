@@ -24,7 +24,13 @@ import json
 import os
 import time
 
-import duckdb
+try:
+    import duckdb
+except ImportError:
+    print(
+        "duckdb not installed, which is used in this file for retrieving the TPCH query"
+    )
+    sys.exit(1)
 
 
 def tpch_query(qnum: int) -> str:
@@ -38,6 +44,7 @@ def main(
     concurrency: int,
     batch_size: int,
     partitions_per_worker: int | None,
+    worker_pool_min: int,
     listing_tables: bool,
     validate: bool,
     prefetch_buffer_size: int,
@@ -62,6 +69,7 @@ def main(
         batch_size=batch_size,
         partitions_per_worker=partitions_per_worker,
         prefetch_buffer_size=prefetch_buffer_size,
+        worker_pool_min=worker_pool_min,
     )
 
     ctx.set("datafusion.execution.target_partitions", f"{concurrency}")
@@ -189,6 +197,11 @@ if __name__ == "__main__":
         type=int,
         help="How many batches each stage should eagerly buffer",
     )
+    parser.add_argument(
+        "--worker-pool-min",
+        type=int,
+        help="Minimum number of RayStages to keep in pool",
+    )
 
     args = parser.parse_args()
 
@@ -198,6 +211,7 @@ if __name__ == "__main__":
         int(args.concurrency),
         int(args.batch_size),
         args.partitions_per_worker,
+        args.worker_pool_min,
         args.listing_tables,
         args.validate,
         args.prefetch_buffer_size,

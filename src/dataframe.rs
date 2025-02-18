@@ -397,7 +397,7 @@ impl PyDataFrameStage {
 
     /// returns the stage ids of that we need to read from in order to execute
     #[getter]
-    pub fn input_stage_ids(&self) -> PyResult<Vec<usize>> {
+    pub fn child_stage_ids(&self) -> PyResult<Vec<usize>> {
         let mut result = vec![];
         self.plan
             .clone()
