@@ -20,6 +20,6 @@ try:
 except ImportError:
     import importlib_metadata
 
-from .core import RayContext, prettify, runtime_env
+from .core import RayContext, prettify, runtime_env, RayStagePool
 
 __version__ = importlib_metadata.version(__name__)

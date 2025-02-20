@@ -111,8 +111,11 @@ impl ExecutionPlan for RayStageReaderExec {
         let clients = client_map
             .get(&(self.stage_id, partition))
             .ok_or(internal_datafusion_err!(
-                "No flight clients found for {}",
-                self.stage_id
+                "{} No flight clients found for {}:{}, have {:?}",
+                name,
+                self.stage_id,
+                partition,
+                client_map.keys()
             ))?
             .lock()
             .iter()
@@ -138,17 +141,20 @@ impl ExecutionPlan for RayStageReaderExec {
 
             let mut streams = vec![];
             for mut client in clients {
+                let name = name.clone();
+                trace!("{name} Getting flight stream" );
                 match client.do_get(ticket.clone()).await {
                     Ok(flight_stream) => {
+                        trace!("{name} Got flight stream. headers:{:?}", flight_stream.headers());
                         let rbr_stream = RecordBatchStreamAdapter::new(schema.clone(),
                             flight_stream
-                                .map_err(|e| internal_datafusion_err!("Error consuming flight stream: {}", e)));
+                                .map_err(move |e| internal_datafusion_err!("{} Error consuming flight stream: {}", name, e)));
 
                         streams.push(Box::pin(rbr_stream) as SendableRecordBatchStream);
                     },
                     Err(e) => {
                         error = true;
-                        yield internal_err!("Error getting flight stream: {}", e);
+                        yield internal_err!("{} Error getting flight stream: {}", name, e);
                     }
                 }
             }
