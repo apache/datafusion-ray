@@ -8,6 +8,7 @@ use std::task::{Context, Poll};
 use std::time::Duration;
 
 use arrow::array::RecordBatch;
+use arrow::compute::concat_batches;
 use arrow::datatypes::SchemaRef;
 use arrow::error::ArrowError;
 use arrow::ipc::convert::fb_to_schema;
@@ -20,6 +21,9 @@ use arrow_flight::{FlightClient, FlightData, Ticket};
 use async_stream::stream;
 use datafusion::common::internal_datafusion_err;
 use datafusion::common::tree_node::{Transformed, TreeNode};
+use datafusion::datasource::file_format::options::ParquetReadOptions;
+use datafusion::datasource::file_format::parquet::ParquetFormat;
+use datafusion::datasource::listing::ListingOptions;
 use datafusion::datasource::physical_plan::ParquetExec;
 use datafusion::error::DataFusionError;
 use datafusion::execution::{RecordBatchStream, SendableRecordBatchStream, SessionStateBuilder};
@@ -27,6 +31,7 @@ use datafusion::physical_plan::stream::RecordBatchStreamAdapter;
 use datafusion::physical_plan::{displayable, ExecutionPlan, ExecutionPlanProperties};
 use datafusion::prelude::{SessionConfig, SessionContext};
 use datafusion_proto::physical_plan::AsExecutionPlan;
+use datafusion_python::utils::wait_for_future;
 use futures::{Stream, StreamExt};
 use parking_lot::Mutex;
 use pyo3::prelude::*;
@@ -395,6 +400,52 @@ fn print_node(plan: &Arc<dyn ExecutionPlan>, indent: usize, output: &mut String)
     for child in plan.children() {
         print_node(child, indent + 2, output);
     }
+}
+
+async fn exec_sql(query: String, tables: Vec<(String, String)>) -> PyResult<RecordBatch> {
+    let ctx = SessionContext::new();
+    for (name, path) in tables {
+        if path.ends_with(".parquet") {
+            let opt = ParquetReadOptions::default();
+            ctx.register_parquet(&name, &path, opt).await?;
+        } else {
+            let opt =
+                ListingOptions::new(Arc::new(ParquetFormat::new())).with_file_extension(".parquet");
+            ctx.register_listing_table(&name, &path, opt, None, None)
+                .await?;
+        }
+    }
+    let df = ctx.sql(&query).await?;
+    let schema = df.schema().inner().clone();
+    let batches = df.collect().await?;
+    concat_batches(&schema, batches.iter()).to_py_err()
+}
+
+/// Executes a query on the specified tables using DataFusion without Ray.
+///
+/// Returns the query results as a RecordBatch that can be used to verify the
+/// correctness of DataFusion-Ray execution of the same query.
+///
+/// # Arguments
+///
+/// * `py`: the Python token
+/// * `query`: the SQL query string to execute
+/// * `tables`: a list of `(name, path)` tuples specifing the tables to query
+#[pyfunction]
+pub fn exec_sql_on_tables(
+    py: Python,
+    query: String,
+    tables: Bound<'_, PyList>,
+) -> PyResult<PyObject> {
+    let table_vec = {
+        let mut v = Vec::with_capacity(tables.len());
+        for entry in tables.iter() {
+            v.push(entry.extract::<(String, String)>()?);
+        }
+        v
+    };
+    let batch = wait_for_future(py, exec_sql(query, table_vec))?;
+    batch.to_pyarrow(py)
 }
 
 #[cfg(test)]

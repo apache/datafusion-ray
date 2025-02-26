@@ -18,7 +18,7 @@
 import argparse
 import ray
 from datafusion import SessionContext, SessionConfig
-from datafusion_ray import RayContext, prettify, runtime_env
+from datafusion_ray import RayContext, exec_sql_on_tables, prettify, runtime_env
 from datetime import datetime
 import json
 import os
@@ -49,7 +49,6 @@ def main(
     validate: bool,
     prefetch_buffer_size: int,
 ):
-
     # Register the tables
     table_names = [
         "customer",
@@ -79,17 +78,13 @@ def main(
 
     local_config = SessionConfig()
 
-    local_ctx = SessionContext(local_config)
-
     for table in table_names:
         path = os.path.join(data_path, f"{table}.parquet")
         print(f"Registering table {table} using path {path}")
         if listing_tables:
             ctx.register_listing_table(table, f"{path}/")
-            local_ctx.register_listing_table(table, f"{path}/")
         else:
             ctx.register_parquet(table, path)
-            local_ctx.register_parquet(table, path)
 
     current_time_millis = int(datetime.now().timestamp() * 1000)
     results_path = f"datafusion-ray-tpch-{current_time_millis}.json"
@@ -125,6 +120,7 @@ def main(
         start_time = time.time()
         df = ctx.sql(sql)
         end_time = time.time()
+        print(f"Ray output schema {df.schema()}")
         print("Logical plan \n", df.logical_plan().display_indent())
         print("Optimized Logical plan \n", df.optimized_logical_plan().display_indent())
         part1 = end_time - start_time
@@ -143,7 +139,11 @@ def main(
         print(calculated)
         if validate:
             start_time = time.time()
-            answer_batches = local_ctx.sql(sql).collect()
+            tables = [
+                (name, os.path.join(data_path, f"{name}.parquet"))
+                for name in table_names
+            ]
+            answer_batches = [b for b in [exec_sql_on_tables(sql, tables)] if b]
             end_time = time.time()
             results["local_queries"][qnum] = end_time - start_time
 

@@ -20,6 +20,6 @@ try:
 except ImportError:
     import importlib_metadata
 
-from .core import RayContext, prettify, runtime_env, RayStagePool
+from .core import RayContext, exec_sql_on_tables, prettify, runtime_env, RayStagePool
 
 __version__ = importlib_metadata.version(__name__)

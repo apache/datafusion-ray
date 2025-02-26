@@ -266,6 +266,10 @@ impl RayDataFrame {
         Ok(PyLogicalPlan::new(self.df.logical_plan().clone()))
     }
 
+    fn schema(&self, py: Python) -> PyResult<PyObject> {
+        self.df.schema().as_arrow().to_pyarrow(py)
+    }
+
     fn optimized_logical_plan(&self) -> PyResult<PyLogicalPlan> {
         Ok(PyLogicalPlan::new(self.df.clone().into_optimized_plan()?))
     }
