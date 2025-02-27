@@ -21,7 +21,6 @@ use arrow_flight::{FlightClient, FlightData, Ticket};
 use async_stream::stream;
 use datafusion::common::internal_datafusion_err;
 use datafusion::common::tree_node::{Transformed, TreeNode};
-use datafusion::datasource::file_format::options::ParquetReadOptions;
 use datafusion::datasource::file_format::parquet::ParquetFormat;
 use datafusion::datasource::listing::ListingOptions;
 use datafusion::datasource::physical_plan::ParquetExec;
@@ -402,23 +401,21 @@ fn print_node(plan: &Arc<dyn ExecutionPlan>, indent: usize, output: &mut String)
     }
 }
 
-async fn exec_sql(query: String, tables: Vec<(String, String)>) -> PyResult<RecordBatch> {
+async fn exec_sql(
+    query: String,
+    tables: Vec<(String, String)>,
+) -> Result<RecordBatch, DataFusionError> {
     let ctx = SessionContext::new();
     for (name, path) in tables {
-        if path.ends_with(".parquet") {
-            let opt = ParquetReadOptions::default();
-            ctx.register_parquet(&name, &path, opt).await?;
-        } else {
-            let opt =
-                ListingOptions::new(Arc::new(ParquetFormat::new())).with_file_extension(".parquet");
-            ctx.register_listing_table(&name, &path, opt, None, None)
-                .await?;
-        }
+        let opt =
+            ListingOptions::new(Arc::new(ParquetFormat::new())).with_file_extension(".parquet");
+        ctx.register_listing_table(&name, &path, opt, None, None)
+            .await?;
     }
     let df = ctx.sql(&query).await?;
     let schema = df.schema().inner().clone();
     let batches = df.collect().await?;
-    concat_batches(&schema, batches.iter()).to_py_err()
+    concat_batches(&schema, batches.iter()).map_err(|e| DataFusionError::ArrowError(e, None))
 }
 
 /// Executes a query on the specified tables using DataFusion without Ray.
@@ -430,7 +427,10 @@ async fn exec_sql(query: String, tables: Vec<(String, String)>) -> PyResult<Reco
 ///
 /// * `py`: the Python token
 /// * `query`: the SQL query string to execute
-/// * `tables`: a list of `(name, path)` tuples specifing the tables to query
+/// * `tables`: a list of `(name, url)` tuples specifying the tables to query;
+///   the `url` identifies the parquet files for each listing table and see
+///   [`datafusion::datasource::listing::ListingTableUrl::parse`] for details
+///   of supported URL formats
 #[pyfunction]
 pub fn exec_sql_on_tables(
     py: Python,
@@ -450,15 +450,64 @@ pub fn exec_sql_on_tables(
 
 #[cfg(test)]
 mod test {
-    use std::sync::Arc;
+    use std::{sync::Arc, vec};
 
     use arrow::{
-        array::Int32Array,
+        array::{Int32Array, StringArray},
         datatypes::{DataType, Field, Schema},
+    };
+    use datafusion::{
+        parquet::file::properties::WriterProperties, test_util::parquet::TestParquetFile,
     };
     use futures::stream;
 
     use super::*;
+
+    #[tokio::test]
+    async fn test_exec_sql() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("people.parquet");
+
+        let batch = RecordBatch::try_new(
+            Arc::new(Schema::new(vec![
+                Field::new("age", DataType::Int32, false),
+                Field::new("name", DataType::Utf8, false),
+            ])),
+            vec![
+                Arc::new(Int32Array::from(vec![11, 12, 13])),
+                Arc::new(StringArray::from(vec!["alice", "bob", "cindy"])),
+            ],
+        )
+        .unwrap();
+        let props = WriterProperties::builder().build();
+        let file = TestParquetFile::try_new(path.clone(), props, Some(batch.clone())).unwrap();
+
+        // test with file
+        let tables = vec![(
+            "people".to_string(),
+            format!("file://{}", file.path().to_str().unwrap().to_string()),
+        )];
+        let query = "SELECT * FROM people ORDER BY age".to_string();
+        let res = exec_sql(query.clone(), tables).await.unwrap();
+        assert_eq!(
+            format!(
+                "{}",
+                pretty::pretty_format_batches(&[batch.clone()]).unwrap()
+            ),
+            format!("{}", pretty::pretty_format_batches(&[res]).unwrap()),
+        );
+
+        // test with dir
+        let tables = vec![(
+            "people".to_string(),
+            format!("file://{}/", dir.path().to_str().unwrap().to_string()),
+        )];
+        let res = exec_sql(query, tables).await.unwrap();
+        assert_eq!(
+            format!("{}", pretty::pretty_format_batches(&[batch]).unwrap()),
+            format!("{}", pretty::pretty_format_batches(&[res]).unwrap()),
+        );
+    }
 
     #[test]
     fn test_ipc_roundtrip() {
