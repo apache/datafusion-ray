@@ -4,9 +4,10 @@ use arrow_flight::{FlightClient, Ticket};
 use datafusion::common::{internal_datafusion_err, internal_err};
 use datafusion::error::Result;
 use datafusion::physical_expr::EquivalenceProperties;
+use datafusion::physical_plan::execution_plan::{Boundedness, EmissionType};
 use datafusion::physical_plan::stream::RecordBatchStreamAdapter;
 use datafusion::physical_plan::{
-    DisplayAs, DisplayFormatType, ExecutionMode, ExecutionPlan, Partitioning, PlanProperties,
+    DisplayAs, DisplayFormatType, ExecutionPlan, Partitioning, PlanProperties,
 };
 use datafusion::{arrow::datatypes::SchemaRef, execution::SendableRecordBatchStream};
 use futures::stream::TryStreamExt;
@@ -41,7 +42,8 @@ impl RayStageReaderExec {
         let properties = PlanProperties::new(
             EquivalenceProperties::new(schema.clone()),
             Partitioning::UnknownPartitioning(partitioning.partition_count()),
-            ExecutionMode::Unbounded,
+            EmissionType::Incremental,
+            Boundedness::Bounded,
         );
 
         Ok(Self {

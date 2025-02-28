@@ -71,7 +71,7 @@ pub fn batch_to_ipc(py: Python, batch: PyArrowType<RecordBatch>) -> PyResult<Py<
     let bytes = batch_to_ipc_helper(&batch).to_py_err()?;
 
     //TODO:  unsure about this next line.  Compiler is happy but is this correct?
-    Ok(PyBytes::new_bound(py, &bytes).unbind())
+    Ok(PyBytes::new(py, &bytes).unbind())
 }
 
 #[pyfunction]
@@ -187,8 +187,9 @@ where
 pub fn prettify(batches: Bound<'_, PyList>) -> PyResult<String> {
     let b: Vec<RecordBatch> = batches
         .iter()
-        .map(|b| RecordBatch::from_pyarrow_bound(&b).unwrap())
-        .collect();
+        .map(|b| RecordBatch::from_pyarrow_bound(&b))
+        .collect::<Result<Vec<_>, _>>()
+        .to_py_err()?;
 
     pretty::pretty_format_batches(&b)
         .to_py_err()

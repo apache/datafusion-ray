@@ -31,15 +31,19 @@ use datafusion::physical_plan::repartition::RepartitionExec;
 use datafusion::physical_plan::sorts::sort::SortExec;
 use datafusion::physical_plan::{ExecutionPlan, ExecutionPlanProperties};
 use datafusion::prelude::DataFrame;
+use datafusion_python::errors::PyDataFusionError;
 use datafusion_python::physical_plan::PyExecutionPlan;
 use datafusion_python::sql::logical::PyLogicalPlan;
 use datafusion_python::utils::wait_for_future;
 use futures::stream::StreamExt;
 use itertools::Itertools;
 use log::trace;
+use pyo3::exceptions::PyStopAsyncIteration;
+use pyo3::exceptions::PyStopIteration;
 use pyo3::prelude::*;
 use std::borrow::Cow;
 use std::sync::Arc;
+use tokio::sync::Mutex;
 
 use crate::isolator::PartitionIsolatorExec;
 use crate::max_rows::MaxRowsExec;
@@ -424,9 +428,12 @@ impl PyDataFrameStage {
     }
 }
 
+// PyRecordBatch and PyRecordBatchStream are borrowed, and slightly modified from datafusion-python
+// they are not publicly exposed in that repo
+
 #[pyclass]
 pub struct PyRecordBatch {
-    batch: RecordBatch,
+    pub batch: RecordBatch,
 }
 
 #[pymethods]
@@ -444,31 +451,58 @@ impl From<RecordBatch> for PyRecordBatch {
 
 #[pyclass]
 pub struct PyRecordBatchStream {
-    stream: SendableRecordBatchStream,
+    stream: Arc<Mutex<SendableRecordBatchStream>>,
 }
 
 impl PyRecordBatchStream {
     pub fn new(stream: SendableRecordBatchStream) -> Self {
-        Self { stream }
+        Self {
+            stream: Arc::new(Mutex::new(stream)),
+        }
     }
 }
 
 #[pymethods]
 impl PyRecordBatchStream {
-    fn next(&mut self, py: Python) -> PyResult<Option<PyObject>> {
-        let result = self.stream.next();
-        match wait_for_future(py, result) {
-            None => Ok(None),
-            Some(Ok(b)) => Ok(Some(b.to_pyarrow(py)?)),
-            Some(Err(e)) => Err(e.into()),
-        }
+    fn next(&mut self, py: Python) -> PyResult<PyObject> {
+        let stream = self.stream.clone();
+        wait_for_future(py, next_stream(stream, true)).and_then(|b| b.to_pyarrow(py))
     }
 
-    fn __next__(&mut self, py: Python) -> PyResult<Option<PyObject>> {
+    fn __next__(&mut self, py: Python) -> PyResult<PyObject> {
         self.next(py)
+    }
+
+    fn __anext__<'py>(&'py self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        let stream = self.stream.clone();
+        pyo3_async_runtimes::tokio::future_into_py(py, next_stream(stream, false))
     }
 
     fn __iter__(slf: PyRef<'_, Self>) -> PyRef<'_, Self> {
         slf
+    }
+
+    fn __aiter__(slf: PyRef<'_, Self>) -> PyRef<'_, Self> {
+        slf
+    }
+}
+
+async fn next_stream(
+    stream: Arc<Mutex<SendableRecordBatchStream>>,
+    sync: bool,
+) -> PyResult<PyRecordBatch> {
+    let mut stream = stream.lock().await;
+    match stream.next().await {
+        Some(Ok(batch)) => Ok(batch.into()),
+        Some(Err(e)) => Err(PyDataFusionError::from(e))?,
+        None => {
+            // Depending on whether the iteration is sync or not, we raise either a
+            // StopIteration or a StopAsyncIteration
+            if sync {
+                Err(PyStopIteration::new_err("stream exhausted"))
+            } else {
+                Err(PyStopAsyncIteration::new_err("stream exhausted"))
+            }
+        }
     }
 }
