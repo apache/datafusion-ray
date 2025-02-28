@@ -86,6 +86,9 @@ tonic-build = { version = "0.8", default-features = false, features = [
 ] }
 url = "2"
 
+[dev-dependencies]
+tempfile = "3.17"
+
 [lib]
 name = "datafusion_ray"
 crate-type = ["cdylib", "rlib"]

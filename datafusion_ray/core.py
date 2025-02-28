@@ -31,6 +31,7 @@ from .friendly import new_friendly_name
 from datafusion_ray._datafusion_ray_internal import (
     RayContext as RayContextInternal,
     RayDataFrame as RayDataFrameInternal,
+    exec_sql_on_tables,
     prettify,
 )
 
@@ -465,6 +466,9 @@ class RayDataFrame:
 
         return self._stages
 
+    def schema(self):
+        return self.df.schema()
+
     def execution_plan(self):
         return self.df.execution_plan()
 
@@ -479,7 +483,7 @@ class RayDataFrame:
             t1 = time.time()
             self.stages()
             t2 = time.time()
-            log.debug(f"creating stages took {t2 -t1}s")
+            log.debug(f"creating stages took {t2 - t1}s")
 
             last_stage_id = max([stage.stage_id for stage in self._stages])
             log.debug(f"last stage is {last_stage_id}")
@@ -553,7 +557,9 @@ class RayContext:
         s = time.time()
         call_sync(wait_for([start_ref], "RayContextSupervisor start"))
         e = time.time()
-        log.info(f"RayContext::__init__ waiting for supervisor to be ready took {e-s}s")
+        log.info(
+            f"RayContext::__init__ waiting for supervisor to be ready took {e - s}s"
+        )
 
     def register_parquet(self, name: str, path: str):
         self.ctx.register_parquet(name, path)
