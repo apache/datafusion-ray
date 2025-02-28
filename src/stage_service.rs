@@ -21,13 +21,11 @@ use std::error::Error;
 use std::sync::Arc;
 
 use arrow::array::RecordBatch;
-use arrow::datatypes::Schema;
 use arrow_flight::encode::FlightDataEncoderBuilder;
 use arrow_flight::error::FlightError;
 use arrow_flight::FlightClient;
 use datafusion::common::internal_datafusion_err;
 use datafusion::execution::SessionStateBuilder;
-use datafusion::physical_plan::empty::EmptyExec;
 use datafusion::physical_plan::ExecutionPlan;
 use datafusion::prelude::{SessionConfig, SessionContext};
 use datafusion_python::utils::wait_for_future;
@@ -49,10 +47,10 @@ use parking_lot::{Mutex, RwLock};
 
 use tokio::sync::mpsc::{channel, Receiver, Sender};
 
-use crate::flight::{DoGetStream, FlightHandler, FlightServ};
+use crate::flight::{FlightHandler, FlightServ};
 use crate::isolator::PartitionGroup;
 use crate::util::{
-    bytes_to_physical_plan, display_plan_with_partition_counts, extract_ticket, fix_plan,
+    bytes_to_physical_plan, display_plan_with_partition_counts, extract_ticket,
     input_stage_ids, make_client, ResultExt,
 };
 
@@ -71,8 +69,6 @@ struct StageHandler {
 }
 
 struct StageHandlerInner {
-    /// our stage id that we are hosting
-    pub(crate) stage_id: usize,
     /// the physical plan that comprises our stage
     pub(crate) plan: Arc<dyn ExecutionPlan>,
     /// the session context we will use to execute the plan
@@ -96,10 +92,6 @@ impl StageHandler {
         self.inner.write().replace(inner);
         Ok(())
     }
-
-    fn stage_id(&self) -> Option<usize> {
-        self.inner.read().as_ref().map(|i| i.stage_id)
-    }
 }
 
 impl StageHandlerInner {
@@ -111,11 +103,7 @@ impl StageHandlerInner {
     ) -> DFResult<Self> {
         let ctx = Self::configure_ctx(stage_id, stage_addrs, &plan, partition_group).await?;
 
-        Ok(Self {
-            stage_id,
-            plan,
-            ctx,
-        })
+        Ok(Self { plan, ctx })
     }
 
     async fn configure_ctx(
@@ -124,7 +112,7 @@ impl StageHandlerInner {
         plan: &Arc<dyn ExecutionPlan>,
         partition_group: Vec<usize>,
     ) -> DFResult<SessionContext> {
-        let stage_ids_i_need = input_stage_ids(&plan)?;
+        let stage_ids_i_need = input_stage_ids(plan)?;
 
         // map of stage_id, partition -> Vec<FlightClient>
         let mut client_map = HashMap::new();
@@ -371,8 +359,10 @@ impl StageService {
         let mut all_done_rx = self.all_done_rx.take().unwrap();
 
         let signal = async move {
-            // TODO: handle Result
-            let result = all_done_rx.recv().await;
+            all_done_rx
+                .recv()
+                .await
+                .expect("problem receiving shutdown signal");
         };
 
         let service = FlightServ {
