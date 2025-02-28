@@ -8,6 +8,7 @@ use std::task::{Context, Poll};
 use std::time::Duration;
 
 use arrow::array::RecordBatch;
+use arrow::compute::concat_batches;
 use arrow::datatypes::SchemaRef;
 use arrow::error::ArrowError;
 use arrow::ipc::convert::fb_to_schema;
@@ -20,6 +21,8 @@ use arrow_flight::{FlightClient, FlightData, Ticket};
 use async_stream::stream;
 use datafusion::common::internal_datafusion_err;
 use datafusion::common::tree_node::{Transformed, TreeNode};
+use datafusion::datasource::file_format::parquet::ParquetFormat;
+use datafusion::datasource::listing::ListingOptions;
 use datafusion::datasource::physical_plan::ParquetExec;
 use datafusion::error::DataFusionError;
 use datafusion::execution::{RecordBatchStream, SendableRecordBatchStream, SessionStateBuilder};
@@ -27,6 +30,7 @@ use datafusion::physical_plan::stream::RecordBatchStreamAdapter;
 use datafusion::physical_plan::{displayable, ExecutionPlan, ExecutionPlanProperties};
 use datafusion::prelude::{SessionConfig, SessionContext};
 use datafusion_proto::physical_plan::AsExecutionPlan;
+use datafusion_python::utils::wait_for_future;
 use futures::{Stream, StreamExt};
 use parking_lot::Mutex;
 use pyo3::prelude::*;
@@ -397,17 +401,113 @@ fn print_node(plan: &Arc<dyn ExecutionPlan>, indent: usize, output: &mut String)
     }
 }
 
+async fn exec_sql(
+    query: String,
+    tables: Vec<(String, String)>,
+) -> Result<RecordBatch, DataFusionError> {
+    let ctx = SessionContext::new();
+    for (name, path) in tables {
+        let opt =
+            ListingOptions::new(Arc::new(ParquetFormat::new())).with_file_extension(".parquet");
+        ctx.register_listing_table(&name, &path, opt, None, None)
+            .await?;
+    }
+    let df = ctx.sql(&query).await?;
+    let schema = df.schema().inner().clone();
+    let batches = df.collect().await?;
+    concat_batches(&schema, batches.iter()).map_err(|e| DataFusionError::ArrowError(e, None))
+}
+
+/// Executes a query on the specified tables using DataFusion without Ray.
+///
+/// Returns the query results as a RecordBatch that can be used to verify the
+/// correctness of DataFusion-Ray execution of the same query.
+///
+/// # Arguments
+///
+/// * `py`: the Python token
+/// * `query`: the SQL query string to execute
+/// * `tables`: a list of `(name, url)` tuples specifying the tables to query;
+///   the `url` identifies the parquet files for each listing table and see
+///   [`datafusion::datasource::listing::ListingTableUrl::parse`] for details
+///   of supported URL formats
+#[pyfunction]
+pub fn exec_sql_on_tables(
+    py: Python,
+    query: String,
+    tables: Bound<'_, PyList>,
+) -> PyResult<PyObject> {
+    let table_vec = {
+        let mut v = Vec::with_capacity(tables.len());
+        for entry in tables.iter() {
+            v.push(entry.extract::<(String, String)>()?);
+        }
+        v
+    };
+    let batch = wait_for_future(py, exec_sql(query, table_vec))?;
+    batch.to_pyarrow(py)
+}
+
 #[cfg(test)]
 mod test {
-    use std::sync::Arc;
+    use std::{sync::Arc, vec};
 
     use arrow::{
-        array::Int32Array,
+        array::{Int32Array, StringArray},
         datatypes::{DataType, Field, Schema},
+    };
+    use datafusion::{
+        parquet::file::properties::WriterProperties, test_util::parquet::TestParquetFile,
     };
     use futures::stream;
 
     use super::*;
+
+    #[tokio::test]
+    async fn test_exec_sql() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("people.parquet");
+
+        let batch = RecordBatch::try_new(
+            Arc::new(Schema::new(vec![
+                Field::new("age", DataType::Int32, false),
+                Field::new("name", DataType::Utf8, false),
+            ])),
+            vec![
+                Arc::new(Int32Array::from(vec![11, 12, 13])),
+                Arc::new(StringArray::from(vec!["alice", "bob", "cindy"])),
+            ],
+        )
+        .unwrap();
+        let props = WriterProperties::builder().build();
+        let file = TestParquetFile::try_new(path.clone(), props, Some(batch.clone())).unwrap();
+
+        // test with file
+        let tables = vec![(
+            "people".to_string(),
+            format!("file://{}", file.path().to_str().unwrap().to_string()),
+        )];
+        let query = "SELECT * FROM people ORDER BY age".to_string();
+        let res = exec_sql(query.clone(), tables).await.unwrap();
+        assert_eq!(
+            format!(
+                "{}",
+                pretty::pretty_format_batches(&[batch.clone()]).unwrap()
+            ),
+            format!("{}", pretty::pretty_format_batches(&[res]).unwrap()),
+        );
+
+        // test with dir
+        let tables = vec![(
+            "people".to_string(),
+            format!("file://{}/", dir.path().to_str().unwrap().to_string()),
+        )];
+        let res = exec_sql(query, tables).await.unwrap();
+        assert_eq!(
+            format!("{}", pretty::pretty_format_batches(&[batch]).unwrap()),
+            format!("{}", pretty::pretty_format_batches(&[res]).unwrap()),
+        );
+    }
 
     #[test]
     fn test_ipc_roundtrip() {

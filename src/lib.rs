@@ -44,6 +44,7 @@ fn _datafusion_ray_internal(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<dataframe::PyDataFrameStage>()?;
     m.add_class::<stage_service::StageService>()?;
     m.add_function(wrap_pyfunction!(util::prettify, m)?)?;
+    m.add_function(wrap_pyfunction!(util::exec_sql_on_tables, m)?)?;
     Ok(())
 }
 
