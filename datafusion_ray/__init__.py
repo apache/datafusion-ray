@@ -20,6 +20,10 @@ try:
 except ImportError:
     import importlib_metadata
 
-from .core import RayContext, exec_sql_on_tables, prettify, runtime_env, RayStagePool
+from .core import DFRayContext, df_ray_runtime_env
+
+from . import util
+
+__all__ = ["DFRayContext", "df_ray_runtime_env", "util"]
 
 __version__ = importlib_metadata.version(__name__)

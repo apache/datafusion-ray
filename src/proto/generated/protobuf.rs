@@ -1,6 +1,6 @@
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
-pub struct RayStageReaderExecNode {
+pub struct DfRayStageReaderExecNode {
     /// schema of the stage we will consume
     #[prost(message, optional, tag = "1")]
     pub schema: ::core::option::Option<::datafusion_proto::protobuf::Schema>,
