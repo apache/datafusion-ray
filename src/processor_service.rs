@@ -50,8 +50,8 @@ use tokio::sync::mpsc::{channel, Receiver, Sender};
 use crate::flight::{FlightHandler, FlightServ};
 use crate::isolator::PartitionGroup;
 use crate::util::{
-    bytes_to_physical_plan, display_plan_with_partition_counts, extract_ticket,
-    input_stage_ids, make_client, ResultExt,
+    bytes_to_physical_plan, display_plan_with_partition_counts, extract_ticket, input_stage_ids,
+    make_client, ResultExt,
 };
 
 /// a map of stage_id, partition to a list FlightClients that can serve
@@ -59,23 +59,23 @@ use crate::util::{
 /// will consume the partition from all clients and merge the results.
 pub(crate) struct ServiceClients(pub HashMap<(usize, usize), Mutex<Vec<FlightClient>>>);
 
-/// StageHandler is a [`FlightHandler`] that serves streams of partitions from a hosted Physical Plan
+/// DFRayProcessorHandler is a [`FlightHandler`] that serves streams of partitions from a hosted Physical Plan
 /// It only responds to the DoGet Arrow Flight method.
-struct StageHandler {
+struct DFRayProcessorHandler {
     /// our name, useful for logging
     name: String,
     /// Inner state of the handler
-    inner: RwLock<Option<StageHandlerInner>>,
+    inner: RwLock<Option<DFRayProcessorHandlerInner>>,
 }
 
-struct StageHandlerInner {
+struct DFRayProcessorHandlerInner {
     /// the physical plan that comprises our stage
     pub(crate) plan: Arc<dyn ExecutionPlan>,
     /// the session context we will use to execute the plan
     pub(crate) ctx: SessionContext,
 }
 
-impl StageHandler {
+impl DFRayProcessorHandler {
     pub fn new(name: String) -> Self {
         let inner = RwLock::new(None);
 
@@ -88,13 +88,14 @@ impl StageHandler {
         plan: Arc<dyn ExecutionPlan>,
         partition_group: Vec<usize>,
     ) -> DFResult<()> {
-        let inner = StageHandlerInner::new(stage_id, stage_addrs, plan, partition_group).await?;
+        let inner =
+            DFRayProcessorHandlerInner::new(stage_id, stage_addrs, plan, partition_group).await?;
         self.inner.write().replace(inner);
         Ok(())
     }
 }
 
-impl StageHandlerInner {
+impl DFRayProcessorHandlerInner {
     pub async fn new(
         stage_id: usize,
         stage_addrs: HashMap<usize, HashMap<usize, Vec<String>>>,
@@ -169,7 +170,7 @@ impl StageHandlerInner {
 }
 
 fn make_stream(
-    inner: &StageHandlerInner,
+    inner: &DFRayProcessorHandlerInner,
     partition: usize,
 ) -> Result<impl Stream<Item = Result<RecordBatch, FlightError>> + Send + 'static, Status> {
     let task_ctx = inner.ctx.task_ctx();
@@ -190,7 +191,7 @@ fn make_stream(
 }
 
 #[async_trait]
-impl FlightHandler for StageHandler {
+impl FlightHandler for DFRayProcessorHandler {
     async fn get_stream(
         &self,
         request: Request<Ticket>,
@@ -234,22 +235,22 @@ impl FlightHandler for StageHandler {
     }
 }
 
-/// StageService is a Arrow Flight service that serves streams of
+/// DFRayProcessorService is a Arrow Flight service that serves streams of
 /// partitions from a hosted Physical Plan
 ///
 /// It only responds to the DoGet Arrow Flight method
 #[pyclass]
-pub struct StageService {
+pub struct DFRayProcessorService {
     name: String,
     listener: Option<TcpListener>,
-    handler: Arc<StageHandler>,
+    handler: Arc<DFRayProcessorHandler>,
     addr: Option<String>,
     all_done_tx: Arc<Mutex<Sender<()>>>,
     all_done_rx: Option<Receiver<()>>,
 }
 
 #[pymethods]
-impl StageService {
+impl DFRayProcessorService {
     #[new]
     pub fn new(name: String) -> PyResult<Self> {
         let name = format!("[{}]", name);
@@ -259,7 +260,7 @@ impl StageService {
         let (all_done_tx, all_done_rx) = channel(1);
         let all_done_tx = Arc::new(Mutex::new(all_done_tx));
 
-        let handler = Arc::new(StageHandler::new(name.clone()));
+        let handler = Arc::new(DFRayProcessorHandler::new(name.clone()));
 
         Ok(Self {
             name,
@@ -313,7 +314,7 @@ impl StageService {
     }
 
     /// replace the plan that this service was providing, we will do this when we want
-    /// to reuse the StageService for a subsequent query
+    /// to reuse the DFRayProcessorService for a subsequent query
     ///
     /// returns a python coroutine that should be awaited
     pub fn update_plan<'a>(

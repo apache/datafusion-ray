@@ -38,9 +38,9 @@ use pyo3::types::{PyBytes, PyList};
 use tonic::transport::Channel;
 
 use crate::codec::RayCodec;
+use crate::processor_service::ServiceClients;
 use crate::protobuf::FlightTicketData;
-use crate::ray_stage_reader::RayStageReaderExec;
-use crate::stage_service::ServiceClients;
+use crate::stage_reader::DFRayStageReaderExec;
 use prost::Message;
 use tokio::macros::support::thread_rng_n;
 
@@ -218,7 +218,7 @@ pub fn input_stage_ids(plan: &Arc<dyn ExecutionPlan>) -> Result<Vec<usize>, Data
     let mut result = vec![];
     plan.clone()
         .transform_down(|node: Arc<dyn ExecutionPlan>| {
-            if let Some(reader) = node.as_any().downcast_ref::<RayStageReaderExec>() {
+            if let Some(reader) = node.as_any().downcast_ref::<DFRayStageReaderExec>() {
                 result.push(reader.stage_id);
             }
             Ok(Transformed::no(node))
@@ -486,7 +486,7 @@ mod test {
         // test with file
         let tables = vec![(
             "people".to_string(),
-            format!("file://{}", file.path().to_str().unwrap().to_string()),
+            format!("file://{}", file.path().to_str().unwrap()),
         )];
         let query = "SELECT * FROM people ORDER BY age".to_string();
         let res = exec_sql(query.clone(), tables).await.unwrap();
@@ -501,7 +501,7 @@ mod test {
         // test with dir
         let tables = vec![(
             "people".to_string(),
-            format!("file://{}/", dir.path().to_str().unwrap().to_string()),
+            format!("file://{}/", dir.path().to_str().unwrap()),
         )];
         let res = exec_sql(query, tables).await.unwrap();
         assert_eq!(

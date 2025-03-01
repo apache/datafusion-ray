@@ -23,20 +23,20 @@ use object_store::aws::AmazonS3Builder;
 use pyo3::prelude::*;
 use std::sync::Arc;
 
-use crate::dataframe::RayDataFrame;
+use crate::dataframe::DFRayDataFrame;
 use crate::physical::RayStageOptimizerRule;
 use crate::util::ResultExt;
 use url::Url;
 
-/// Internal Session Context object for the python class RayContext
+/// Internal Session Context object for the python class DFRayContext
 #[pyclass]
-pub struct RayContext {
+pub struct DFRayContext {
     /// our datafusion context
     ctx: SessionContext,
 }
 
 #[pymethods]
-impl RayContext {
+impl DFRayContext {
     #[new]
     pub fn new() -> PyResult<Self> {
         let rule = RayStageOptimizerRule::new();
@@ -93,10 +93,10 @@ impl RayContext {
         .to_py_err()
     }
 
-    pub fn sql(&self, py: Python, query: String) -> PyResult<RayDataFrame> {
+    pub fn sql(&self, py: Python, query: String) -> PyResult<DFRayDataFrame> {
         let df = wait_for_future(py, self.ctx.sql(&query))?;
 
-        Ok(RayDataFrame::new(df))
+        Ok(DFRayDataFrame::new(df))
     }
 
     pub fn set(&self, option: String, value: String) -> PyResult<()> {

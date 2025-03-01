@@ -31,18 +31,18 @@ pub mod isolator;
 pub mod max_rows;
 pub mod physical;
 pub mod pre_fetch;
-pub mod ray_stage;
-pub mod ray_stage_reader;
-pub mod stage_service;
+pub mod processor_service;
+pub mod stage;
+pub mod stage_reader;
 pub mod util;
 
 #[pymodule]
 fn _datafusion_ray_internal(m: &Bound<'_, PyModule>) -> PyResult<()> {
     setup_logging();
-    m.add_class::<context::RayContext>()?;
-    m.add_class::<dataframe::RayDataFrame>()?;
-    m.add_class::<dataframe::PyDataFrameStage>()?;
-    m.add_class::<stage_service::StageService>()?;
+    m.add_class::<context::DFRayContext>()?;
+    m.add_class::<dataframe::DFRayDataFrame>()?;
+    m.add_class::<dataframe::PyDFRayStage>()?;
+    m.add_class::<processor_service::DFRayProcessorService>()?;
     m.add_function(wrap_pyfunction!(util::prettify, m)?)?;
     m.add_function(wrap_pyfunction!(util::exec_sql_on_tables, m)?)?;
     Ok(())
