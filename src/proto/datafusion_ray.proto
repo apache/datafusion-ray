@@ -9,7 +9,7 @@ option java_outer_classname = "RayDataFusionProto";
 import "datafusion_common.proto";
 import "datafusion.proto";
 
-message RayStageReaderExecNode {
+message DFRayStageReaderExecNode {
   // schema of the stage we will consume
   datafusion_common.Schema schema = 1;
   // properties of the stage we will consume

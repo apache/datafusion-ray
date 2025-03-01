@@ -5,7 +5,7 @@ use crate::{
     max_rows::MaxRowsExec,
     pre_fetch::PrefetchExec,
     protobuf::{
-        MaxRowsExecNode, PartitionIsolatorExecNode, PrefetchExecNode, RayStageReaderExecNode,
+        DfRayStageReaderExecNode, MaxRowsExecNode, PartitionIsolatorExecNode, PrefetchExecNode,
     },
 };
 
@@ -24,7 +24,7 @@ use datafusion_proto::protobuf;
 
 use prost::Message;
 
-use crate::ray_stage_reader::RayStageReaderExec;
+use crate::stage_reader::DFRayStageReaderExec;
 
 #[derive(Debug)]
 /// Physical Extension Codec for for DataFusion Ray plans
@@ -49,7 +49,7 @@ impl PhysicalExtensionCodec for RayCodec {
                     node.partition_count as usize,
                 )))
             }
-        } else if let Ok(node) = RayStageReaderExecNode::decode(buf) {
+        } else if let Ok(node) = DfRayStageReaderExecNode::decode(buf) {
             let schema: Schema = node
                 .schema
                 .as_ref()
@@ -64,7 +64,7 @@ impl PhysicalExtensionCodec for RayCodec {
             )?
             .ok_or(internal_datafusion_err!("missing partitioning in proto"))?;
 
-            Ok(Arc::new(RayStageReaderExec::try_new(
+            Ok(Arc::new(DFRayStageReaderExec::try_new(
                 part,
                 Arc::new(schema),
                 node.stage_id as usize,
@@ -99,14 +99,14 @@ impl PhysicalExtensionCodec for RayCodec {
     }
 
     fn try_encode(&self, node: Arc<dyn ExecutionPlan>, buf: &mut Vec<u8>) -> Result<()> {
-        if let Some(reader) = node.as_any().downcast_ref::<RayStageReaderExec>() {
+        if let Some(reader) = node.as_any().downcast_ref::<DFRayStageReaderExec>() {
             let schema: protobuf::Schema = reader.schema().try_into()?;
             let partitioning: protobuf::Partitioning = serialize_partitioning(
                 reader.properties().output_partitioning(),
                 &DefaultPhysicalExtensionCodec {},
             )?;
 
-            let pb = RayStageReaderExecNode {
+            let pb = DfRayStageReaderExecNode {
                 schema: Some(schema),
                 partitioning: Some(partitioning),
                 stage_id: reader.stage_id as u64,
@@ -151,7 +151,7 @@ impl PhysicalExtensionCodec for RayCodec {
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::ray_stage_reader::RayStageReaderExec;
+    use crate::stage_reader::DFRayStageReaderExec;
     use arrow::datatypes::DataType;
     use datafusion::{
         physical_plan::{display::DisplayableExecutionPlan, displayable, Partitioning},
@@ -169,7 +169,7 @@ mod test {
         ]));
         let ctx = SessionContext::new();
         let part = Partitioning::UnknownPartitioning(2);
-        let exec = Arc::new(RayStageReaderExec::try_new(part, schema, 1).unwrap());
+        let exec = Arc::new(DFRayStageReaderExec::try_new(part, schema, 1).unwrap());
         let codec = RayCodec {};
         let mut buf = vec![];
         codec.try_encode(exec.clone(), &mut buf).unwrap();
@@ -185,7 +185,7 @@ mod test {
         let ctx = SessionContext::new();
         let part = Partitioning::UnknownPartitioning(2);
         let exec = Arc::new(MaxRowsExec::new(
-            Arc::new(RayStageReaderExec::try_new(part, schema, 1).unwrap()),
+            Arc::new(DFRayStageReaderExec::try_new(part, schema, 1).unwrap()),
             10,
         ));
         let codec = RayCodec {};

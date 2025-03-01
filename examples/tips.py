@@ -19,11 +19,11 @@ import argparse
 import datafusion
 import ray
 
-from datafusion_ray import RayContext
+from datafusion_ray import DFRayContext
 
 
 def go(data_dir: str):
-    ctx = RayContext()
+    ctx = DFRayContext()
     # we could set this value to however many CPUs we plan to give each
     # ray task
     ctx.set("datafusion.execution.target_partitions", "1")

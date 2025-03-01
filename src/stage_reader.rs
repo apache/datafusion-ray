@@ -15,8 +15,8 @@ use futures::StreamExt;
 use log::trace;
 use prost::Message;
 
+use crate::processor_service::ServiceClients;
 use crate::protobuf::FlightTicketData;
-use crate::stage_service::ServiceClients;
 use crate::util::CombinedRecordBatchStream;
 
 /// An [`ExecutionPlan`] that will produce a stream of batches fetched from another stage
@@ -25,13 +25,13 @@ use crate::util::CombinedRecordBatchStream;
 /// Note that discovery of the service is handled by populating an instance of [`crate::stage_service::ServiceClients`]
 /// and storing it as an extension in the [`datafusion::execution::TaskContext`] configuration.
 #[derive(Debug)]
-pub struct RayStageReaderExec {
+pub struct DFRayStageReaderExec {
     properties: PlanProperties,
     schema: SchemaRef,
     pub stage_id: usize,
 }
 
-impl RayStageReaderExec {
+impl DFRayStageReaderExec {
     pub fn try_new_from_input(input: Arc<dyn ExecutionPlan>, stage_id: usize) -> Result<Self> {
         let properties = input.properties().clone();
 
@@ -53,7 +53,7 @@ impl RayStageReaderExec {
         })
     }
 }
-impl DisplayAs for RayStageReaderExec {
+impl DisplayAs for DFRayStageReaderExec {
     fn fmt_as(&self, _t: DisplayFormatType, f: &mut Formatter) -> std::fmt::Result {
         write!(
             f,
@@ -64,7 +64,7 @@ impl DisplayAs for RayStageReaderExec {
     }
 }
 
-impl ExecutionPlan for RayStageReaderExec {
+impl ExecutionPlan for DFRayStageReaderExec {
     fn schema(&self) -> SchemaRef {
         self.schema.clone()
     }

@@ -25,7 +25,7 @@ use datafusion::physical_plan::ExecutionPlan;
 use log::debug;
 use std::sync::Arc;
 
-use crate::ray_stage::RayStageExec;
+use crate::stage::DFRayStageExec;
 use crate::util::display_plan_with_partition_counts;
 
 /// This optimizer rule walks up the physical plan tree
@@ -70,7 +70,7 @@ impl PhysicalOptimizerRule for RayStageOptimizerRule {
                 || plan.as_any().downcast_ref::<SortExec>().is_some()
                 || plan.as_any().downcast_ref::<NestedLoopJoinExec>().is_some()
             {
-                let stage = Arc::new(RayStageExec::new(plan, stage_counter));
+                let stage = Arc::new(DFRayStageExec::new(plan, stage_counter));
                 stage_counter += 1;
                 Ok(Transformed::yes(stage as Arc<dyn ExecutionPlan>))
             } else {
@@ -79,7 +79,8 @@ impl PhysicalOptimizerRule for RayStageOptimizerRule {
         };
 
         let plan = plan.transform_up(up)?.data;
-        let final_plan = Arc::new(RayStageExec::new(plan, stage_counter)) as Arc<dyn ExecutionPlan>;
+        let final_plan =
+            Arc::new(DFRayStageExec::new(plan, stage_counter)) as Arc<dyn ExecutionPlan>;
 
         debug!(
             "optimized physical plan:\n{}",
