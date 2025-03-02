@@ -22,22 +22,22 @@ on:
   pull_request:
     branches: [main]
 
-#concurrency:
-#  group: ${{ github.rejpository }}-${{ github.head_ref || github.sha }}-${{ github.workflow }}
-#cancel-in-progress: true
+concurrency:
+  group: ${{ github.repository }}-${{ github.head_ref || github.sha }}-${{ github.workflow }}
+  cancel-in-progress: true
 
 env:
   MATURIN_PEP517_ARGS: --profile=dev
 
 jobs:
   test-matrix:
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
       matrix:
         runner:
           - ubuntu-24.04
-          - ubuntu-24.04-arm
+          #- ubuntu-24.04-arm
         python-version:
           #- "3.10"
           #- "3.11"
@@ -45,7 +45,7 @@ jobs:
         ray-version:
           #- "2.40"
           #- "2.41"
-          - "2.42.1"
+          #- "2.42.1"
           - "2.43"
 
     steps:
@@ -79,11 +79,11 @@ jobs:
           enable-cache: true
 
       - name: install dependencies
-        run: uv sync --all-extras --all-groups --no-install-project
+        run: uv sync --dev --no-install-package datafusion-ray --no-install-package ray
         working-directory: ${{ github.workspace }}
 
       - name: maturin develop
-        run: uv run maturin develop --uv
+        run: uv run --no-project maturin develop --uv
         working-directory: ${{ github.workspace }}
 
       - name: Cache the generated dataset
@@ -96,12 +96,11 @@ jobs:
       - name: create the dataset
         if: ${{ steps.cache-tpch-dataset.outputs.cache-hit != 'true' }}
         run: |
-          uv add duckdb
-          uv run python tpch/make_data.py 1 testdata/tpch/
+          uv run --no-project python tpch/make_data.py 1 testdata/tpch/
 
       - name: add ray
         run: |
-          uv add -v 'ray[default]==${{ matrix.ray-version}}'
+          uv add -v --reinstall 'ray[default]==${{ matrix.ray-version}}'
 
       - name: validate tpch
         env:

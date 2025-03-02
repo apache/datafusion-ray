@@ -16,7 +16,7 @@
 # under the License.
 
 [build-system]
-requires = ["maturin>=1.8,<2.0"]
+requires = ["maturin>=1.8.1,<2.0"]
 build-backend = "maturin"
 
 [project]
@@ -29,6 +29,7 @@ classifiers = [
 ]
 dependencies = [
   "datafusion>=45.0.0",
+  "ray==2.43.0",
   "pyarrow>=18.0.0",
   "typing-extensions;python_version<'3.13'",
 ]
@@ -36,3 +37,6 @@ dynamic = ["version"]
 
 [tool.maturin]
 module-name = "datafusion_ray._datafusion_ray_internal"
+
+[dependency-groups]
+dev = ["maturin>=1.8.1", "duckdb"]
