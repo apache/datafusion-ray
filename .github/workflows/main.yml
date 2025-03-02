@@ -100,7 +100,7 @@ jobs:
 
       - name: add ray
         run: |
-          uv add -v --reinstall 'ray[default]==${{ matrix.ray-version}}'
+          uv add -v --no-sync 'ray[default]==${{ matrix.ray-version}}'
 
       - name: validate tpch
         env:

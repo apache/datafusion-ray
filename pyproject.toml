@@ -27,9 +27,16 @@ classifiers = [
   "Programming Language :: Python :: Implementation :: CPython",
   "Programming Language :: Python :: Implementation :: PyPy",
 ]
+keywords = [
+  "datafusion",
+  "ray",
+  "dataframe",
+  "rust",
+  "query-engine",
+  "distributed",
+]
 dependencies = [
-  "datafusion>=45.0.0",
-  "ray==2.43.0",
+  "ray[default]==2.43.0",
   "pyarrow>=18.0.0",
   "typing-extensions;python_version<'3.13'",
 ]
