@@ -62,8 +62,10 @@ In this mode, execution follows a staged model similar to Apache Spark. Each que
 
 ## Getting Started
 
-To use DataFusion Ray, install the required dependencies and configure your Ray cluster. Then, you can run queries
-using DataFusion's familiar API while leveraging the distributed execution capabilities of Ray.
+See the [contributor guide] for instructions on building DataFusion Ray.
+
+Once instralled, you can run queries using DataFusion's familiar API while leveraging the distributed execution 
+capabilities of Ray.
 
 ```python
 import ray
@@ -90,3 +92,6 @@ Contributions are welcome! Please open an issue or submit a pull request if you 
 ## License
 
 DataFusion Ray is licensed under Apache 2.0.
+
+
+[contributor guide]: docs/contributing.md
