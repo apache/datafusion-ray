@@ -1,1 +1,3 @@
+duckdb
 ray[default]
+maturin

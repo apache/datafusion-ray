@@ -22,9 +22,8 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
-  PYTHON_VERSION: 3.9
+  PYTHON_VERSION: 3.12
   TPCH_SCALING_FACTOR: "1"
-  TPCH_TEST_PARTITIONS: "1"
   TPCH_DATA_PATH: "data"
 
 jobs:
@@ -42,19 +41,8 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: ${{ env.PYTHON_VERSION }}
-      - name: Install test dependencies
+      - name: Run Python Tests
         run: |
-          python -m pip install --upgrade pip
-          pip install -r tpch/requirements.txt
-#      - name: Generate test data
-#        run: |
-#          ./scripts/gen-test-data.sh
+          ./scripts/python_tests.sh
       - name: Run Rust tests
         run: cargo test --verbose
-#      - name: Run Python tests
-#        run: |
-#          python -m venv venv
-#          source venv/bin/activate
-#          pip install -r requirements-in.txt
-#          maturin develop
-#          python -m pytest
