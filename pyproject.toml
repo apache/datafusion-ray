@@ -36,3 +36,10 @@ dynamic = ["version"]
 
 [tool.maturin]
 module-name = "datafusion_ray._datafusion_ray_internal"
+
+[tool.uv]
+cache-keys = [
+  { file = "pyproject.toml" },
+  { file = "rust/Cargo.toml" },
+  { file = "**/*.rs" },
+]

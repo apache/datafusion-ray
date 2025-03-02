@@ -26,6 +26,9 @@ on:
 #  group: ${{ github.rejpository }}-${{ github.head_ref || github.sha }}-${{ github.workflow }}
 #cancel-in-progress: true
 
+env:
+  MATURIN_PEP517_ARGS: --profile=dev
+
 jobs:
   test-matrix:
     runs-on: ubuntu-latest
@@ -86,14 +89,9 @@ jobs:
           uv add duckdb
           uv run python tpch/make_data.py 1 testdata/tpch/
 
-      - name: add ray and maturin
+      - name: add ray
         run: |
           uv add -v 'ray[default]==${{ matrix.ray-version}}'
-          uv add -v 'maturin'
-
-      - name: install datafusion-ray to uv project
-        run: |
-          uv run -v --no-project maturin develop --uv
 
       - name: validate tpch
         env:
