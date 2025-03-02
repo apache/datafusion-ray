@@ -23,7 +23,6 @@ from datetime import datetime
 import json
 import os
 import time
-import sys
 
 
 def tpch_query(qnum: int) -> str:
@@ -143,7 +142,8 @@ def main(
 
     if validate and False in results["validated"].values():
         # return a non zero return code if we did not validate all queries
-        sys.exit(1)
+        print("Possible incorrect query result")
+        exit(1)
 
 
 if __name__ == "__main__":
