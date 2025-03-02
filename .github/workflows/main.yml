@@ -47,7 +47,6 @@ jobs:
           - "2.41"
           - "2.42.1"
           - "2.43"
-
     steps:
       - uses: actions/checkout@v4
 
@@ -69,7 +68,8 @@ jobs:
           path: ~/.cargo
           key: cargo-cache-${{ steps.rust-toolchain.outputs.cachekey }}-${{ hashFiles('Cargo.lock') }}
 
-      - uses: actions/setup-python@v5
+      - name: setup python
+        uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
 
