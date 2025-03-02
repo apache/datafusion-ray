@@ -86,9 +86,9 @@ jobs:
           uv add duckdb
           uv run python tpch/make_data.py 1 testdata/tpch/
 
-      - name: add ray
+      - name: add ray and maturin
         run: |
-          uv add 'ray[default]==${{ matrix.ray-version}}'
+          uv add -v 'ray[default]==${{ matrix.ray-version}} maturin'
 
       - name: install datafusion-ray to uv project
         run: |
