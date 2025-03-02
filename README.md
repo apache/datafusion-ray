@@ -50,9 +50,9 @@ capabilities of Ray.
 
 ```python
 import ray
-from datafusion_ray import DFRayContext
+from datafusion_ray import DFRayContext, df_ray_runtime_env
 
-ray.init()
+ray.init(runtime_env=df_ray_runtime_env)
 session = DFRayContext()
 df = session.sql("SELECT * FROM my_table WHERE value > 100")
 df.show()
