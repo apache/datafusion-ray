@@ -54,11 +54,6 @@ jobs:
           version: "27.4"
           repo-token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Setup Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: ${{ matrix.python-version }}
-
       - name: Cache Cargo
         uses: actions/cache@v4
         with:
@@ -68,7 +63,12 @@ jobs:
       - name: Install dependencies and build
         uses: astral-sh/setup-uv@v5
         with:
+          python-version: ${{ matrix.python-version }}
           enable-cache: true
+
+      - name: Create virtual env
+        run: |
+          uv venv
 
       #- name: Run tests
       # env:
