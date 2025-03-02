@@ -89,5 +89,5 @@ jobs:
         if: ${{ steps.cache-tpch-dataset.outputs.cache-hit != 'true' }}
         working-directory: ./testdata/tpch
         run: |
-          uv pip install -r requirements.text
+          uv pip install -r requirements.txt
           python make_data.py 1 .
