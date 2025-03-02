@@ -23,7 +23,7 @@ on:
     branches: [main]
 
 #concurrency:
-#  group: ${{ github.repository }}-${{ github.head_ref || github.sha }}-${{ github.workflow }}
+#  group: ${{ github.rejpository }}-${{ github.head_ref || github.sha }}-${{ github.workflow }}
 #cancel-in-progress: true
 
 jobs:
@@ -36,8 +36,11 @@ jobs:
           #- "3.10"
           #- "3.11"
           - "3.12"
-        toolchain:
-          - "stable"
+        ray-version:
+          #- "2.40"
+          #- "2.41"
+          #- "2.42.1"
+          - "2.43"
 
     steps:
       - uses: actions/checkout@v4
@@ -83,18 +86,20 @@ jobs:
           uv add duckdb
           uv run python tpch/make_data.py 1 testdata/tpch/
 
-      - name: build and install datafusion-ray
-        env:
-          RUST_BACKTRACE: 1
+      - name: add ray
         run: |
-          uv add 'ray[default]'
-          uv run --no-project maturin develop --uv
+          uv add 'ray[default]==${{ matrix.ray-version}}'
+
+      - name: install datafusion-ray to uv project
+        run: |
+          uv run -v --no-project maturin develop --uv
 
       - name: validate tpch
         env:
           DATAFUSION_RAY_LOG_LEVEL: debug
           RAY_COLOR_PREFIX: 1
           RAY_DEDUP_LOGS: 0
+          RUST_BACKTRACE: 1
         run: |
           uv run python tpch/tpcbench.py \
             --data='file:///${{ github.workspace }}/testdata/tpch/' \
