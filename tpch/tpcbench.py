@@ -17,14 +17,12 @@
 
 import argparse
 import ray
-from datafusion import SessionContext, SessionConfig
 from datafusion_ray import DFRayContext, df_ray_runtime_env
 from datafusion_ray.util import exec_sql_on_tables, prettify
 from datetime import datetime
 import json
 import os
 import time
-import sys
 
 
 def tpch_query(qnum: int) -> str:
@@ -69,8 +67,6 @@ def main(
     # ctx.set("datafusion.execution.parquet.pushdown_filters", "true")
     ctx.set("datafusion.optimizer.enable_round_robin_repartition", "false")
     ctx.set("datafusion.execution.coalesce_batches", "false")
-
-    local_config = SessionConfig()
 
     for table in table_names:
         path = os.path.join(data_path, f"{table}.parquet")
