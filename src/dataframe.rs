@@ -48,14 +48,14 @@ use tokio::sync::Mutex;
 use crate::isolator::PartitionIsolatorExec;
 use crate::max_rows::MaxRowsExec;
 use crate::pre_fetch::PrefetchExec;
-use crate::ray_stage::RayStageExec;
-use crate::ray_stage_reader::RayStageReaderExec;
+use crate::stage::DFRayStageExec;
+use crate::stage_reader::DFRayStageReaderExec;
 use crate::util::collect_from_stage;
 use crate::util::display_plan_with_partition_counts;
 use crate::util::physical_plan_to_bytes;
 use crate::util::ResultExt;
 
-/// Internal rust class beyind the RayDataFrame python object
+/// Internal rust class beyind the DFRayDataFrame python object
 ///
 /// It is a container for a plan for a query, as we would expect.
 ///
@@ -67,7 +67,7 @@ use crate::util::ResultExt;
 /// The second role of this object is to be able to fetch record batches from the final_
 /// stage in the plan and return them to python.
 #[pyclass]
-pub struct RayDataFrame {
+pub struct DFRayDataFrame {
     /// holds the logical plan of the query we will execute
     df: DataFrame,
     /// the physical plan we will use to consume the final stage.
@@ -75,7 +75,7 @@ pub struct RayDataFrame {
     final_plan: Option<Arc<dyn ExecutionPlan>>,
 }
 
-impl RayDataFrame {
+impl DFRayDataFrame {
     pub fn new(df: DataFrame) -> Self {
         Self {
             df,
@@ -85,7 +85,7 @@ impl RayDataFrame {
 }
 
 #[pymethods]
-impl RayDataFrame {
+impl DFRayDataFrame {
     #[pyo3(signature = (batch_size, prefetch_buffer_size, partitions_per_worker=None))]
     fn stages(
         &mut self,
@@ -93,7 +93,7 @@ impl RayDataFrame {
         batch_size: usize,
         prefetch_buffer_size: usize,
         partitions_per_worker: Option<usize>,
-    ) -> PyResult<Vec<PyDataFrameStage>> {
+    ) -> PyResult<Vec<PyDFRayStage>> {
         let mut stages = vec![];
 
         // TODO: This can be done more efficiently, likely in one pass but I'm
@@ -109,7 +109,7 @@ impl RayDataFrame {
                 display_plan_with_partition_counts(&plan)
             );
 
-            if let Some(stage_exec) = plan.as_any().downcast_ref::<RayStageExec>() {
+            if let Some(stage_exec) = plan.as_any().downcast_ref::<DFRayStageExec>() {
                 let input = plan.children();
                 assert!(input.len() == 1, "RayStageExec must have exactly one child");
                 let input = input[0];
@@ -120,7 +120,7 @@ impl RayDataFrame {
                     plan.output_partitioning().partition_count()
                 );
 
-                let replacement = Arc::new(RayStageReaderExec::try_new(
+                let replacement = Arc::new(DFRayStageReaderExec::try_new(
                     plan.output_partitioning().clone(),
                     input.schema(),
                     stage_exec.stage_id,
@@ -145,7 +145,7 @@ impl RayDataFrame {
                 displayable(plan.as_ref()).one_line()
             );
 
-            if let Some(stage_exec) = plan.as_any().downcast_ref::<RayStageExec>() {
+            if let Some(stage_exec) = plan.as_any().downcast_ref::<DFRayStageExec>() {
                 trace!("ray stage exec");
                 let input = plan.children();
                 assert!(input.len() == 1, "RayStageExec must have exactly one child");
@@ -153,7 +153,7 @@ impl RayDataFrame {
 
                 let fixed_plan = input.clone().transform_down(down)?.data;
 
-                let stage = PyDataFrameStage::new(
+                let stage = PyDFRayStage::new(
                     stage_exec.stage_id,
                     fixed_plan,
                     partition_groups.clone(),
@@ -231,7 +231,7 @@ impl RayDataFrame {
             return internal_err!("Last stage expected to have one partition").to_py_err();
         }
 
-        last_stage = PyDataFrameStage::new(
+        last_stage = PyDFRayStage::new(
             last_stage.stage_id,
             Arc::new(MaxRowsExec::new(
                 Arc::new(CoalesceBatchesExec::new(last_stage.plan, batch_size))
@@ -244,7 +244,7 @@ impl RayDataFrame {
 
         // done fixing last stage
 
-        let reader_plan = Arc::new(RayStageReaderExec::try_new_from_input(
+        let reader_plan = Arc::new(DFRayStageReaderExec::try_new_from_input(
             last_stage.plan.clone(),
             last_stage.stage_id,
         )?) as Arc<dyn ExecutionPlan>;
@@ -298,6 +298,7 @@ impl RayDataFrame {
     }
 }
 
+#[allow(clippy::type_complexity)]
 fn build_replacement(
     plan: Arc<dyn ExecutionPlan>,
     prefetch_buffer_size: usize,
@@ -351,7 +352,7 @@ fn build_replacement(
 
 /// A Python class to hold a PHysical plan of a single stage
 #[pyclass]
-pub struct PyDataFrameStage {
+pub struct PyDFRayStage {
     /// our stage id
     stage_id: usize,
     /// the physical plan of our stage
@@ -364,7 +365,7 @@ pub struct PyDataFrameStage {
     /// CombinedRecordBatchStream
     full_partitions: bool,
 }
-impl PyDataFrameStage {
+impl PyDFRayStage {
     fn new(
         stage_id: usize,
         plan: Arc<dyn ExecutionPlan>,
@@ -381,7 +382,7 @@ impl PyDataFrameStage {
 }
 
 #[pymethods]
-impl PyDataFrameStage {
+impl PyDFRayStage {
     #[getter]
     fn stage_id(&self) -> usize {
         self.stage_id
@@ -410,7 +411,7 @@ impl PyDataFrameStage {
         self.plan
             .clone()
             .transform_down(|node: Arc<dyn ExecutionPlan>| {
-                if let Some(reader) = node.as_any().downcast_ref::<RayStageReaderExec>() {
+                if let Some(reader) = node.as_any().downcast_ref::<DFRayStageReaderExec>() {
                     result.push(reader.stage_id);
                 }
                 Ok(Transformed::no(node))

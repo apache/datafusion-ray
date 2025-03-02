@@ -17,24 +17,16 @@
 
 import argparse
 import ray
-from datafusion import SessionContext, SessionConfig
-from datafusion_ray import RayContext, exec_sql_on_tables, prettify, runtime_env
+from datafusion_ray import DFRayContext, df_ray_runtime_env
+from datafusion_ray.util import exec_sql_on_tables, prettify
 from datetime import datetime
 import json
 import os
 import time
 
-try:
-    import duckdb
-except ImportError:
-    print(
-        "duckdb not installed, which is used in this file for retrieving the TPCH query"
-    )
-    sys.exit(1)
-
 
 def tpch_query(qnum: int) -> str:
-    query_path = os.path.join(os.path.dirname(__file__), "..", "testdata", "queries")
+    query_path = os.path.join(os.path.dirname(__file__), "queries")
     return open(os.path.join(query_path, f"q{qnum}.sql")).read()
 
 
@@ -62,9 +54,9 @@ def main(
     ]
     # Connect to a cluster
     # use ray job submit
-    ray.init(runtime_env=runtime_env)
+    ray.init(runtime_env=df_ray_runtime_env)
 
-    ctx = RayContext(
+    ctx = DFRayContext(
         batch_size=batch_size,
         partitions_per_worker=partitions_per_worker,
         prefetch_buffer_size=prefetch_buffer_size,
@@ -75,8 +67,6 @@ def main(
     # ctx.set("datafusion.execution.parquet.pushdown_filters", "true")
     ctx.set("datafusion.optimizer.enable_round_robin_repartition", "false")
     ctx.set("datafusion.execution.coalesce_batches", "false")
-
-    local_config = SessionConfig()
 
     for table in table_names:
         path = os.path.join(data_path, f"{table}.parquet")
@@ -105,8 +95,6 @@ def main(
     if validate:
         results["local_queries"] = {}
         results["validated"] = {}
-
-    duckdb.sql("load tpch")
 
     queries = range(1, 23) if qnum == -1 else [qnum]
     for qnum in queries:

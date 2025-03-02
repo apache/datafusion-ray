@@ -1,0 +1,105 @@
+# Licensed to the Apache Software Foundation (ASF) under one
+# or more contributor license agreements.  See the NOTICE file
+# distributed with this work for additional information
+# regarding copyright ownership.  The ASF licenses this file
+# to you under the Apache License, Version 2.0 (the
+# "License"); you may not use this file except in compliance
+# with the License.  You may obtain a copy of the License at
+#
+#   http:/www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing,
+# software distributed under the License is distributed on an
+# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+# KIND, either express or implied.  See the License for the
+# specific language governing permissions and limitations
+# under the License.
+
+name: main
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+#concurrency:
+#  group: ${{ github.repository }}-${{ github.head_ref || github.sha }}-${{ github.workflow }}
+#cancel-in-progress: true
+
+jobs:
+  test-matrix:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version:
+          #- "3.10"
+          #- "3.11"
+          - "3.12"
+        toolchain:
+          - "stable"
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Rust Toolchain
+        uses: dtolnay/rust-toolchain@stable
+        id: rust-toolchain
+        with:
+          components: clippy,rustfmt
+
+      - name: Install Protoc
+        uses: arduino/setup-protoc@v3
+        with:
+          version: "27.4"
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Cache Cargo
+        uses: actions/cache@v4
+        with:
+          path: ~/.cargo
+          key: cargo-cache-${{ steps.rust-toolchain.outputs.cachekey }}-${{ hashFiles('Cargo.lock') }}
+
+      - name: Install dependencies and build
+        uses: astral-sh/setup-uv@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          enable-cache: true
+
+      - name: Create virtual env
+        run: |
+          uv venv
+
+      - name: Cache the generated dataset
+        id: cache-tpch-dataset
+        uses: actions/cache@v4
+        with:
+          path: ./testdata/tpch
+          key: tpch-data
+
+      - name: create the dataset
+        if: ${{ steps.cache-tpch-dataset.outputs.cache-hit != 'true' }}
+        run: |
+          uv add duckdb
+          uv run python tpch/make_data.py 1 testdata/tpch/
+
+      - name: build and install datafusion-ray
+        env:
+          RUST_BACKTRACE: 1
+        run: |
+          uv add 'ray[default]'
+          uv run --no-project maturin develop --uv
+
+      - name: validate tpch
+        env:
+          DATAFUSION_RAY_LOG_LEVEL: debug
+          RAY_COLOR_PREFIX: 1
+          RAY_DEDUP_LOGS: 0
+        run: |
+          uv run python tpch/tpcbench.py \
+            --data='file:///${{ github.workspace }}/testdata/tpch/' \
+            --concurrency 3 \
+            --partitions-per-worker 2 \
+            --batch-size=8192 \
+            --worker-pool-min=20 \
+            --validate

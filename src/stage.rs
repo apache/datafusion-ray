@@ -79,7 +79,7 @@ use datafusion::{arrow::datatypes::SchemaRef, execution::SendableRecordBatchStre
 ///
 /// See [`crate::isolator::PartitionIsolatorExec`] for more information on how the shadow partitions work
 #[derive(Debug)]
-pub struct RayStageExec {
+pub struct DFRayStageExec {
     /// Input plan
     pub(crate) input: Arc<dyn ExecutionPlan>,
     /// Output partitioning
@@ -87,7 +87,7 @@ pub struct RayStageExec {
     pub stage_id: usize,
 }
 
-impl RayStageExec {
+impl DFRayStageExec {
     pub fn new(input: Arc<dyn ExecutionPlan>, stage_id: usize) -> Self {
         let properties = input.properties().clone();
 
@@ -110,7 +110,7 @@ impl RayStageExec {
         }
     }
 }
-impl DisplayAs for RayStageExec {
+impl DisplayAs for DFRayStageExec {
     fn fmt_as(&self, _t: DisplayFormatType, f: &mut Formatter) -> std::fmt::Result {
         write!(
             f,
@@ -121,7 +121,7 @@ impl DisplayAs for RayStageExec {
     }
 }
 
-impl ExecutionPlan for RayStageExec {
+impl ExecutionPlan for DFRayStageExec {
     fn schema(&self) -> SchemaRef {
         self.input.schema()
     }
@@ -152,7 +152,7 @@ impl ExecutionPlan for RayStageExec {
         // as the plan tree is rearranged we want to remember the original partitioning that we
         // had, even if we get new inputs.   This is because RayStageReaderExecs, when created by
         // the RayDataFrame will need to know the original partitioning
-        Ok(Arc::new(RayStageExec::new_with_properties(
+        Ok(Arc::new(DFRayStageExec::new_with_properties(
             child,
             self.stage_id,
             self.properties.clone(),
