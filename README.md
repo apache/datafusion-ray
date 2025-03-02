@@ -29,7 +29,7 @@ queries in a distributed fashion.
 
 DataFusion Ray supports two execution modes:
 
-1. Greedy Execution Mode
+### Greedy Execution Mode
 
 This mode mimics the default execution strategy of DataFusion. Each operator in the query plan starts executing
 as soon as its inputs are available, leading to a more pipelined execution model.
@@ -45,7 +45,7 @@ as soon as its inputs are available, leading to a more pipelined execution model
 - Can lead to high memory pressure as intermediate results are held in memory instead of being written to disk.
 - More difficult to scale efficiently for large queries since tasks must hold data until downstream consumers are ready.
 
-2. Spark-like Execution Mode
+### Spark-like Execution Mode
 
 In this mode, execution follows a staged model similar to Apache Spark. Each query stage runs to completion, producing intermediate shuffle files that are persisted and used as input for the next stage.
 
