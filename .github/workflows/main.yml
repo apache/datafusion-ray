@@ -35,6 +35,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
+        runner:
+          - ubuntu-24.04
+          - ubuntu-24.04-arm
         python-version:
           #- "3.10"
           #- "3.11"
@@ -42,7 +45,7 @@ jobs:
         ray-version:
           #- "2.40"
           #- "2.41"
-          #- "2.42.1"
+          - "2.42.1"
           - "2.43"
 
     steps:
