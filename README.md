@@ -70,10 +70,10 @@ capabilities of Ray.
 
 ```python
 import ray
-from datafusion_ray import DataFusionRaySession
+from datafusion_ray import DFRayContext
 
 ray.init()
-session = DataFusionRaySession()
+session = DFRayContext()
 df = session.sql("SELECT * FROM my_table WHERE value > 100")
 df.show()
 ```
