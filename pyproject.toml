@@ -16,7 +16,7 @@
 # under the License.
 
 [build-system]
-requires = ["maturin>=0.14"]
+requires = ["maturin>=1.8,<2.0"]
 build-backend = "maturin"
 
 [project]
@@ -36,10 +36,3 @@ dynamic = ["version"]
 
 [tool.maturin]
 module-name = "datafusion_ray._datafusion_ray_internal"
-
-[tool.uv]
-cache-keys = [
-  { file = "pyproject.toml" },
-  { file = "rust/Cargo.toml" },
-  { file = "**/*.rs" },
-]

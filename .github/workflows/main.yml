@@ -66,15 +66,22 @@ jobs:
           path: ~/.cargo
           key: cargo-cache-${{ steps.rust-toolchain.outputs.cachekey }}-${{ hashFiles('Cargo.lock') }}
 
-      - name: Install dependencies and build
-        uses: astral-sh/setup-uv@v5
+      - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
+
+      - name: install uv
+        uses: astral-sh/setup-uv@v5
+        with:
           enable-cache: true
 
-      - name: Create virtual env
-        run: |
-          uv venv
+      - name: install dependencies
+        run: uv sync --all-extras --all-groups --no-install-project
+        working-directory: ${{ github.workspace }}
+
+      - name: maturin develop
+        run: uv run maturin develop --uv
+        working-directory: ${{ github.workspace }}
 
       - name: Cache the generated dataset
         id: cache-tpch-dataset
