@@ -1,3 +1,0 @@
-maturin
-ray==2.43.0
-datafusion==45.1.0
