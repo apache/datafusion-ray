@@ -45,7 +45,9 @@ as soon as its inputs are available, leading to a more pipelined execution model
 - Can lead to high memory pressure as intermediate results are held in memory instead of being written to disk.
 - More difficult to scale efficiently for large queries since tasks must hold data until downstream consumers are ready.
 
-### Batch Execution (not implemented yet)
+### Batch Execution
+
+_Note: Batch Execution is not implemented yet. Tracking issue: https://github.com/apache/datafusion-ray/issues/69_
 
 In this mode, execution follows a staged model similar to Apache Spark. Each query stage runs to completion, producing 
 intermediate shuffle files that are persisted and used as input for the next stage.
