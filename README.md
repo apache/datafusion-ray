@@ -29,7 +29,7 @@ queries in a distributed fashion.
 
 DataFusion Ray supports two execution modes:
 
-### Greedy Execution Mode
+### Streaming Execution
 
 This mode mimics the default execution strategy of DataFusion. Each operator in the query plan starts executing
 as soon as its inputs are available, leading to a more pipelined execution model.
@@ -45,9 +45,10 @@ as soon as its inputs are available, leading to a more pipelined execution model
 - Can lead to high memory pressure as intermediate results are held in memory instead of being written to disk.
 - More difficult to scale efficiently for large queries since tasks must hold data until downstream consumers are ready.
 
-### Spark-like Execution Mode
+### Batch Execution (not implemented yet)
 
-In this mode, execution follows a staged model similar to Apache Spark. Each query stage runs to completion, producing intermediate shuffle files that are persisted and used as input for the next stage.
+In this mode, execution follows a staged model similar to Apache Spark. Each query stage runs to completion, producing 
+intermediate shuffle files that are persisted and used as input for the next stage.
 
 **Pros:**
 
@@ -64,7 +65,7 @@ In this mode, execution follows a staged model similar to Apache Spark. Each que
 
 See the [contributor guide] for instructions on building DataFusion Ray.
 
-Once instralled, you can run queries using DataFusion's familiar API while leveraging the distributed execution 
+Once installed, you can run queries using DataFusion's familiar API while leveraging the distributed execution 
 capabilities of Ray.
 
 ```python
