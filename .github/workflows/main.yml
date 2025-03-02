@@ -88,7 +88,8 @@ jobs:
 
       - name: add ray and maturin
         run: |
-          uv add -v 'ray[default]==${{ matrix.ray-version}} maturin'
+          uv add -v 'ray[default]==${{ matrix.ray-version}}'
+          uv add -v 'maturin'
 
       - name: install datafusion-ray to uv project
         run: |
