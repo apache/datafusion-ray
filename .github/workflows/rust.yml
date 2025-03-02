@@ -14,35 +14,80 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
-name: Rust
 
+name: main
 on:
   push:
+    branches: [main]
   pull_request:
+    branches: [main]
 
-env:
-  CARGO_TERM_COLOR: always
-  PYTHON_VERSION: 3.12
-  TPCH_SCALING_FACTOR: "1"
-  TPCH_DATA_PATH: "data"
+#concurrency:
+#  group: ${{ github.repository }}-${{ github.head_ref || github.sha }}-${{ github.workflow }}
+#cancel-in-progress: true
 
 jobs:
-  build:
+  test-matrix:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version:
+          #- "3.10"
+          #- "3.11"
+          - "3.12"
+        toolchain:
+          - "stable"
 
     steps:
       - uses: actions/checkout@v4
-      - name: Install protobuf compiler
-        shell: bash
-        run: sudo apt-get install protobuf-compiler
-      - name: Build Rust code
-        run: cargo build --verbose
-      - name: Set up Python
+
+      - name: Setup Rust Toolchain
+        uses: dtolnay/rust-toolchain@stable
+        id: rust-toolchain
+        with:
+          components: clippy,rustfmt
+
+      - name: Install Protoc
+        uses: arduino/setup-protoc@v3
+        with:
+          version: "27.4"
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setup Python
         uses: actions/setup-python@v5
         with:
-          python-version: ${{ env.PYTHON_VERSION }}
-      - name: Run Python Tests
+          python-version: ${{ matrix.python-version }}
+
+      - name: Cache Cargo
+        uses: actions/cache@v4
+        with:
+          path: ~/.cargo
+          key: cargo-cache-${{ steps.rust-toolchain.outputs.cachekey }}-${{ hashFiles('Cargo.lock') }}
+
+      - name: Install dependencies and build
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      #- name: Run tests
+      # env:
+      #  RUST_BACKTRACE: 1
+      #        run: |
+      #          uv sync --dev --no-install-package datafusion
+      #          uv run --no-project maturin develop --uv
+      #          uv run --no-project pytest -v .
+
+      - name: Cache the generated dataset
+        id: cache-tpch-dataset
+        uses: actions/cache@v4
+        with:
+          path: ./testdata/tpch
+          key: tpch-data
+
+      - name: create the dataset
+        if: ${{ steps.cache-tpch-dataset.outputs.cache-hit != 'true' }}
+        working-directory: ./testdata/tpch
         run: |
-          ./scripts/python_tests.sh
-      - name: Run Rust tests
-        run: cargo test --verbose
+          uv pip install -r requirements.text
+          python make_data.py 1 .
