@@ -34,34 +34,12 @@ DataFusion Ray supports two execution modes:
 This mode mimics the default execution strategy of DataFusion. Each operator in the query plan starts executing
 as soon as its inputs are available, leading to a more pipelined execution model.
 
-**Pros:**
-
-- Lower latency for streaming-like queries where intermediate results can be processed as they arrive.
-- Efficient for smaller queries that fit within a single Ray task's memory.
-- Good for interactive workloads.
-
-**Cons:**
-
-- Can lead to high memory pressure as intermediate results are held in memory instead of being written to disk.
-- More difficult to scale efficiently for large queries since tasks must hold data until downstream consumers are ready.
-
 ### Batch Execution
 
 _Note: Batch Execution is not implemented yet. Tracking issue: https://github.com/apache/datafusion-ray/issues/69_
 
 In this mode, execution follows a staged model similar to Apache Spark. Each query stage runs to completion, producing 
 intermediate shuffle files that are persisted and used as input for the next stage.
-
-**Pros:**
-
-- Better memory management since intermediate results are persisted instead of held in memory.
-- Improved scalability for large queries due to controlled task execution and shuffle handling.
-- More predictable execution patterns suitable for batch processing.
-
-**Cons:**
-
-- Higher query latency due to the overhead of writing and reading shuffle files.
-- May not be as efficient for interactive or low-latency queries.
 
 ## Getting Started
 
@@ -79,13 +57,6 @@ session = DFRayContext()
 df = session.sql("SELECT * FROM my_table WHERE value > 100")
 df.show()
 ```
-
-## Use Cases
-
-Greedy Execution Mode is ideal for interactive queries and real-time analytics with lower latency requirements.
-
-Spark-like Execution Mode is better suited for batch processing, large-scale queries, and workloads where memory
-constraints are a concern.
 
 ## Contributing
 
