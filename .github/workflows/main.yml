@@ -63,6 +63,7 @@ jobs:
         id: rust-toolchain-out
         run: |
           rustc --version --verbose
+          cargo --version
 
       - name: Install Protoc
         uses: arduino/setup-protoc@v3
