@@ -31,10 +31,10 @@ env:
   MATURIN_PEP517_ARGS: --profile=dev
 
 jobs:
-  test-matrix:
+  validate-tpch:
     runs-on: ${{ matrix.platform.image }}
     strategy:
-      fail-fast: false
+      fail-fast: true
       matrix:
         platform:
           - image: ubuntu-24.04
