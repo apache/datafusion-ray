@@ -83,15 +83,21 @@ jobs:
           enable-cache: true
           python-version: ${{ matrix.python-version }}
 
+      - name: initial project sync
+        run: |
+          uv sync --no-install-package datafusion-ray --no-install-package ray
+
       # reset the version of ray in pyproject.toml
       # to agree align with our matrix version
       - name: add ray
         run: |
+          cargo --version
           uv add --no-sync 'ray[default]==${{ matrix.ray-version}}'
 
       # sync the environment, building everything other than datafusion-ray
       - name: install dependencies
-        run: uv sync --no-install-package datafusion-ray
+        run: |
+          uv sync --no-install-package datafusion-ray
         working-directory: ${{ github.workspace }}
 
       # build datafusion ray honoring the MATURIN_PEP517_ARGS env
@@ -110,7 +116,7 @@ jobs:
       - name: create the dataset
         if: ${{ steps.cache-tpch-dataset.outputs.cache-hit != 'true' }}
         run: |
-          uv run --no-project python tpch/make_data.py 1 testdata/tpch/
+          uv run tpch/make_data.py 1 testdata/tpch/
 
       # run the tpcbench.py file with --validate which will cause
       # it to exit with an error code if any of the queries do not validate
