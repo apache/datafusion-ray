@@ -118,7 +118,7 @@ jobs:
           uv run python tpch/tpcbench.py \
             --data='file:///${{ github.workspace }}/testdata/tpch/' \
             --concurrency 3 \
-            --partitions-per-worker 2 \
+            --partitions-per-processor 2 \
             --batch-size=8192 \
             --worker-pool-min=20 \
             --validate
