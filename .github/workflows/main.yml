@@ -37,18 +37,16 @@ jobs:
       fail-fast: false
       matrix:
         platform:
-          - image: ubuntu-24.04
+          - image: ubuntu-latest
             target: x86_64-unknown-linux-musl
-          - image: ubuntu-24.04-arm
-            target: aarch64-unknown-linux-musl
         python-version:
-          #- "3.10"
+          - "3.10"
           - "3.11"
-          #- "3.12"
+          - "3.12"
         ray-version:
-          #- "2.40"
-          #- "2.41"
-          #- "2.42.1"
+          - "2.40"
+          - "2.41"
+          - "2.42.1"
           - "2.43"
     steps:
       - uses: actions/checkout@v4
