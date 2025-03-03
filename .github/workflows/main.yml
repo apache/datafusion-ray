@@ -36,16 +36,16 @@ jobs:
       fail-fast: false
       matrix:
         runner:
-          - ubuntu-24.04
+          #- ubuntu-24.04
           - ubuntu-24.04-arm
         python-version:
-          - "3.10"
-          - "3.11"
+          #- "3.10"
+          #- "3.11"
           - "3.12"
         ray-version:
-          - "2.40"
-          - "2.41"
-          - "2.42.1"
+          #- "2.40"
+          #- "2.41"
+          #- "2.42.1"
           - "2.43"
     steps:
       - uses: actions/checkout@v4
@@ -78,12 +78,21 @@ jobs:
         with:
           enable-cache: true
 
+      # reset the version of ray in pyproject.toml
+      # to agree align with our matrix version
+      - name: add ray
+        run: |
+          uv add --no-sync-project 'ray[default]==${{ matrix.ray-version}}'
+
+      # sync the environment, building everything other than datafusion-ray
       - name: install dependencies
-        run: uv sync --dev --no-install-package datafusion-ray --no-install-package ray
+        run: uv sync --no-install-package datafusion-ray
         working-directory: ${{ github.workspace }}
 
+      # build datafusion ray honoring the MATURIN_PEP517_ARGS env
+      # var to ensure that we build this in dev mode so its faster
       - name: maturin develop
-        run: uv run --no-project maturin develop --uv
+        run: uv run maturin develop --uv
         working-directory: ${{ github.workspace }}
 
       - name: Cache the generated dataset
@@ -97,10 +106,6 @@ jobs:
         if: ${{ steps.cache-tpch-dataset.outputs.cache-hit != 'true' }}
         run: |
           uv run --no-project python tpch/make_data.py 1 testdata/tpch/
-
-      - name: add ray
-        run: |
-          uv add -v --no-sync 'ray[default]==${{ matrix.ray-version}}'
 
       - name: validate tpch
         env:

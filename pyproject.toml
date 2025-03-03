@@ -36,7 +36,7 @@ keywords = [
   "distributed",
 ]
 dependencies = [
-  "ray[default]==2.43.0",
+  "ray[default]==2.40.0",
   "pyarrow>=18.0.0",
   "typing-extensions;python_version<'3.13'",
 ]
