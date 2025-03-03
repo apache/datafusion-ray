@@ -17,6 +17,8 @@
   under the License.
 -->
 
+[![Python Tests](https://github.com/robtandy/datafusion-ray/actions/workflows/main.yml/badge.svg)](https://github.com/robtandy/datafusion-ray/actions/workflows/main.yml)
+
 # DataFusion on Ray
 
 ## Overview
@@ -36,16 +38,16 @@ as soon as its inputs are available, leading to a more pipelined execution model
 
 ### Batch Execution
 
-_Note: Batch Execution is not implemented yet. Tracking issue: https://github.com/apache/datafusion-ray/issues/69_
+_Note: Batch Execution is not implemented yet. Tracking issue: <https://github.com/apache/datafusion-ray/issues/69>_
 
-In this mode, execution follows a staged model similar to Apache Spark. Each query stage runs to completion, producing 
+In this mode, execution follows a staged model similar to Apache Spark. Each query stage runs to completion, producing
 intermediate shuffle files that are persisted and used as input for the next stage.
 
 ## Getting Started
 
 See the [contributor guide] for instructions on building DataFusion Ray.
 
-Once installed, you can run queries using DataFusion's familiar API while leveraging the distributed execution 
+Once installed, you can run queries using DataFusion's familiar API while leveraging the distributed execution
 capabilities of Ray.
 
 ```python
@@ -66,6 +68,5 @@ Contributions are welcome! Please open an issue or submit a pull request if you 
 ## License
 
 DataFusion Ray is licensed under Apache 2.0.
-
 
 [contributor guide]: docs/contributing.md

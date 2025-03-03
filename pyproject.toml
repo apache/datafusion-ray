@@ -16,19 +16,27 @@
 # under the License.
 
 [build-system]
-requires = ["maturin>=0.14"]
+requires = ["maturin>=1.8.1,<2.0"]
 build-backend = "maturin"
 
 [project]
 name = "datafusion-ray"
-requires-python = ">=3.10"
+requires-python = ">=3.10,<3.13"
 classifiers = [
   "Programming Language :: Rust",
   "Programming Language :: Python :: Implementation :: CPython",
   "Programming Language :: Python :: Implementation :: PyPy",
 ]
+keywords = [
+  "datafusion",
+  "ray",
+  "dataframe",
+  "rust",
+  "query-engine",
+  "distributed",
+]
 dependencies = [
-  "datafusion>=45.0.0",
+  "ray[default]==2.43.0",
   "pyarrow>=18.0.0",
   "typing-extensions;python_version<'3.13'",
 ]
@@ -36,3 +44,6 @@ dynamic = ["version"]
 
 [tool.maturin]
 module-name = "datafusion_ray._datafusion_ray_internal"
+
+[dependency-groups]
+dev = ["maturin>=1.8.1", "duckdb", "datafusion>=43.0.0"]

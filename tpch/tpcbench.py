@@ -107,21 +107,9 @@ def main(
 
         start_time = time.time()
         df = ctx.sql(sql)
-        end_time = time.time()
-        print(f"Ray output schema {df.schema()}")
-        print("Logical plan \n", df.logical_plan().display_indent())
-        print("Optimized Logical plan \n", df.optimized_logical_plan().display_indent())
-        part1 = end_time - start_time
-        for stage in df.stages():
-            print(
-                f"Stage {stage.stage_id} output partitions:{stage.num_output_partitions} partition_groups: {stage.partition_groups} full_partitions: {stage.full_partitions}"
-            )
-            print(stage.display_execution_plan())
-
-        start_time = time.time()
         batches = df.collect()
         end_time = time.time()
-        results["queries"][qnum] = end_time - start_time + part1
+        results["queries"][qnum] = end_time - start_time
 
         calculated = prettify(batches)
         print(calculated)
@@ -152,6 +140,11 @@ def main(
     print("sleeping for 3 seconds for ray to clean up")
     time.sleep(3)
 
+    if validate and False in results["validated"].values():
+        # return a non zero return code if we did not validate all queries
+        print("Possible incorrect query result")
+        exit(1)
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
@@ -174,7 +167,7 @@ if __name__ == "__main__":
         help="Desired batch size output per stage",
     )
     parser.add_argument(
-        "--partitions-per-worker",
+        "--partitions-per-processor",
         type=int,
         help="Max partitions per Stage Service Worker",
     )
@@ -198,7 +191,7 @@ if __name__ == "__main__":
         args.data,
         int(args.concurrency),
         int(args.batch_size),
-        args.partitions_per_worker,
+        args.partitions_per_processor,
         args.worker_pool_min,
         args.listing_tables,
         args.validate,
