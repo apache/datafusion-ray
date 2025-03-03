@@ -21,32 +21,43 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  workflow_dispatch:
 
-#concurrency:
-#  group: ${{ github.repository }}-${{ github.head_ref || github.sha }}-${{ github.workflow }}
-#cancel-in-progress: true
+concurrency:
+  group: ${{ github.repository }}-${{ github.head_ref || github.sha }}-${{ github.workflow }}
+  cancel-in-progress: true
+
+env:
+  MATURIN_PEP517_ARGS: --profile=dev
 
 jobs:
   test-matrix:
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.platform.image }}
     strategy:
       fail-fast: false
       matrix:
+        platform:
+          - image: ubuntu-24.04
+            target: x86_64-unknown-linux-musl
+          - image: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-musl
         python-version:
-          #- "3.10"
-          #- "3.11"
+          - "3.10"
+          - "3.11"
           - "3.12"
-        toolchain:
-          - "stable"
-
+        ray-version:
+          - "2.40"
+          - "2.41"
+          - "2.42.1"
+          - "2.43"
     steps:
       - uses: actions/checkout@v4
 
       - name: Setup Rust Toolchain
         uses: dtolnay/rust-toolchain@stable
-        id: rust-toolchain
+        id: rust-toolchain-arm
         with:
-          components: clippy,rustfmt
+          target: ${{ matrix.platform.target }}
 
       - name: Install Protoc
         uses: arduino/setup-protoc@v3
@@ -60,15 +71,28 @@ jobs:
           path: ~/.cargo
           key: cargo-cache-${{ steps.rust-toolchain.outputs.cachekey }}-${{ hashFiles('Cargo.lock') }}
 
-      - name: Install dependencies and build
+      - name: install uv
         uses: astral-sh/setup-uv@v5
         with:
-          python-version: ${{ matrix.python-version }}
           enable-cache: true
+          python-version: ${{ matrix.python-version }}
 
-      - name: Create virtual env
+      # reset the version of ray in pyproject.toml
+      # to agree align with our matrix version
+      - name: add ray
         run: |
-          uv venv
+          uv add --no-sync 'ray[default]==${{ matrix.ray-version}}'
+
+      # sync the environment, building everything other than datafusion-ray
+      - name: install dependencies
+        run: uv sync --no-install-package datafusion-ray
+        working-directory: ${{ github.workspace }}
+
+      # build datafusion ray honoring the MATURIN_PEP517_ARGS env
+      # var to ensure that we build this in dev mode so its faster
+      - name: maturin develop
+        run: uv run maturin develop --uv
+        working-directory: ${{ github.workspace }}
 
       - name: Cache the generated dataset
         id: cache-tpch-dataset
@@ -80,21 +104,16 @@ jobs:
       - name: create the dataset
         if: ${{ steps.cache-tpch-dataset.outputs.cache-hit != 'true' }}
         run: |
-          uv add duckdb
-          uv run python tpch/make_data.py 1 testdata/tpch/
+          uv run --no-project python tpch/make_data.py 1 testdata/tpch/
 
-      - name: build and install datafusion-ray
-        env:
-          RUST_BACKTRACE: 1
-        run: |
-          uv add 'ray[default]'
-          uv run --no-project maturin develop --uv
-
+      # run the tpcbench.py file with --validate which will cause
+      # it to exit with an error code if any of the queries do not validate
       - name: validate tpch
         env:
           DATAFUSION_RAY_LOG_LEVEL: debug
           RAY_COLOR_PREFIX: 1
           RAY_DEDUP_LOGS: 0
+          RUST_BACKTRACE: 1
         run: |
           uv run python tpch/tpcbench.py \
             --data='file:///${{ github.workspace }}/testdata/tpch/' \
