@@ -148,7 +148,7 @@ jobs:
 
       - name: Build Python package
         run: |
-          uv sync --dev --no-install-package datafusion
+          uv sync --dev --no-install-package datafusion-ray
           uv run --no-project maturin build --release --strip
 
       - name: List Mac wheels
