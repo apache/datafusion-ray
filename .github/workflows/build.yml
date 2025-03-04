@@ -172,7 +172,13 @@ jobs:
         with:
           name: python-wheel-license
           path: .
-      - run: cat LICENSE.txt
+
+      - name: Install Protoc
+        uses: arduino/setup-protoc@v3
+        with:
+          version: "27.4"
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Build wheels
         uses: PyO3/maturin-action@v1
         env:
@@ -201,7 +207,13 @@ jobs:
         with:
           name: python-wheel-license
           path: .
-      - run: cat LICENSE.txt
+
+      - name: Install Protoc
+        uses: arduino/setup-protoc@v3
+        with:
+          version: "27.4"
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Build wheels
         uses: PyO3/maturin-action@v1
         env:
@@ -231,7 +243,13 @@ jobs:
         with:
           name: python-wheel-license
           path: .
-      - run: cat LICENSE.txt
+
+      - name: Install Protoc
+        uses: arduino/setup-protoc@v3
+        with:
+          version: "27.4"
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Build sdist
         uses: PyO3/maturin-action@v1
         with:
