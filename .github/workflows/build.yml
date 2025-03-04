@@ -184,8 +184,7 @@ jobs:
           rustup-components: rust-std rustfmt # Keep them in one line due to https://github.com/PyO3/maturin-action/issues/153
           args: --release --manylinux 2014
           before-script-linux: |
-            sudo apt-get update
-            sudo apt-get install protobuf-compiler
+            yum install -y protobuf-compiler
 
       - name: Archive wheels
         uses: actions/upload-artifact@v4
@@ -218,8 +217,7 @@ jobs:
           rustup-components: rust-std rustfmt # Keep them in one line due to https://github.com/PyO3/maturin-action/issues/153
           args: --release
           before-script-linux: |
-            sudo apt-get update
-            sudo apt-get install protobuf-compiler
+            yum install -y protobuf-compiler
 
       - name: Archive wheels
         uses: actions/upload-artifact@v4
@@ -248,8 +246,7 @@ jobs:
           rustup-components: rust-std rustfmt
           args: --release --sdist --out dist
           before-script-linux: |
-            sudo apt-get update
-            sudo apt-get install protobuf-compiler
+            yum install -y protobuf-compiler
 
       - name: Assert sdist build does not generate wheels
         run: |
