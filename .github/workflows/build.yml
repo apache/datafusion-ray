@@ -22,6 +22,7 @@ on:
   push:
     tags: ["*-rc*"]
     branches: ["branch-*"]
+  workflow_dispatch:
 
 jobs:
   build:
