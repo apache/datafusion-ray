@@ -185,8 +185,10 @@ jobs:
           args: --release --manylinux 2014
           before-script-linux: |
             yum install -y wget
+            cd /
             wget https://github.com/protocolbuffers/protobuf/releases/download/v29.3/protoc-29.3-linux-x86_64.zip
-            cd / && unzip -o proto*zip && cd -
+            unzip -o proto*zip
+            cd -
             which protoc
             protoc --version
 
@@ -222,8 +224,10 @@ jobs:
           args: --release
           before-script-linux: |
             apt-get install -y unzip
+            cd /
             wget https://github.com/protocolbuffers/protobuf/releases/download/v29.3/protoc-29.3-linux-aarch_64.zip
-            cd / && unzip -o proto*zip && cd -
+            unzip -o proto*zip
+            cd -
             which protoc
             protoc --version
 
@@ -255,8 +259,10 @@ jobs:
           args: --release --sdist --out dist
           before-script-linux: |
             yum install -y wget
+            cd /
             wget https://github.com/protocolbuffers/protobuf/releases/download/v29.3/protoc-29.3-linux-x86_64.zip
-            cd / && unzip -o proto*zip && cd -
+            unzip -o proto*zip
+            cd -
             which protoc
             protoc --version
 
