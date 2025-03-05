@@ -17,9 +17,18 @@
   under the License.
 -->
 
-[![Python Tests](https://github.com/robtandy/datafusion-ray/actions/workflows/main.yml/badge.svg)](https://github.com/robtandy/datafusion-ray/actions/workflows/main.yml)
+# DataFusion Ray
 
-# DataFusion on Ray
+[![Apache licensed][license-badge]][license-url]
+[![Python Tests][actions-badge]][actions-url]
+[![Discord chat][discord-badge]][discord-url]
+
+[license-badge]: https://img.shields.io/badge/license-Apache%20v2-blue.svg
+[license-url]: https://github.com/apache/datafusion-ray/blob/main/LICENSE.txt
+[actions-badge]: https://github.com/apache/datafusion-ray/actions/workflows/main.yml/badge.svg
+[actions-url]: https://github.com/apache/datafusion-ray/actions?query=branch%3Amain
+[discord-badge]: https://img.shields.io/badge/Chat-Discord-purple
+[discord-url]: https://discord.com/invite/Qw5gKqHxUM
 
 ## Overview
 
