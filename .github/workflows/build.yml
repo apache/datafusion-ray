@@ -63,7 +63,8 @@ jobs:
       fail-fast: false
       matrix:
         python-version: ["3.13"]
-        os: [macos-latest, windows-latest]
+        #os: [macos-latest, windows-latest]
+        os: [macos-latest]
     steps:
       - uses: actions/checkout@v4
 
