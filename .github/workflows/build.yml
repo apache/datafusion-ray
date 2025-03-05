@@ -225,7 +225,7 @@ jobs:
           before-script-linux: |
             apt-get install -y unzip
             cd /
-            wget https://github.com/protocolbuffers/protobuf/releases/download/v29.3/protoc-29.3-linux-aarch_64.zip
+            wget https://github.com/protocolbuffers/protobuf/releases/download/v29.3/protoc-29.3-linux-x64_64.zip
             unzip -o proto*zip
             cd -
             which protoc
