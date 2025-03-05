@@ -186,7 +186,7 @@ jobs:
           before-script-linux: |
             yum install -y wget
             wget https://github.com/protocolbuffers/protobuf/releases/download/v29.3/protoc-29.3-linux-x86_64.zip
-            unzip -o proto*zip
+            cd / && unzip -o proto*zip && cd -
             which protoc
             protoc --version
 
@@ -223,7 +223,7 @@ jobs:
           before-script-linux: |
             apt-get install -y unzip
             wget https://github.com/protocolbuffers/protobuf/releases/download/v29.3/protoc-29.3-linux-aarch_64.zip
-            unzip -o proto*zip
+            cd / && unzip -o proto*zip && cd -
             which protoc
             protoc --version
 
@@ -256,7 +256,7 @@ jobs:
           before-script-linux: |
             yum install -y wget
             wget https://github.com/protocolbuffers/protobuf/releases/download/v29.3/protoc-29.3-linux-x86_64.zip
-            unzip -o proto*zip
+            cd / && unzip -o proto*zip && cd -
             which protoc
             protoc --version
 
