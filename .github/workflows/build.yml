@@ -187,6 +187,8 @@ jobs:
             yum install -y wget
             wget https://github.com/protocolbuffers/protobuf/releases/download/v29.3/protoc-29.3-linux-x86_64.zip
             unzip -o proto*zip
+            which protoc
+            protoc --version
 
       - name: Archive wheels
         uses: actions/upload-artifact@v4
@@ -219,9 +221,11 @@ jobs:
           rustup-components: rust-std rustfmt # Keep them in one line due to https://github.com/PyO3/maturin-action/issues/153
           args: --release
           before-script-linux: |
-            yum install -y wget
-            wget https://github.com/protocolbuffers/protobuf/releases/download/v29.3/protoc-29.3-linux-x86_64.zip
+            apt-get install -y unzip
+            wget https://github.com/protocolbuffers/protobuf/releases/download/v29.3/protoc-29.3-linux-aarch_64.zip
             unzip -o proto*zip
+            which protoc
+            protoc --version
 
       - name: Archive wheels
         uses: actions/upload-artifact@v4
@@ -253,6 +257,8 @@ jobs:
             yum install -y wget
             wget https://github.com/protocolbuffers/protobuf/releases/download/v29.3/protoc-29.3-linux-x86_64.zip
             unzip -o proto*zip
+            which protoc
+            protoc --version
 
       - name: Assert sdist build does not generate wheels
         run: |
