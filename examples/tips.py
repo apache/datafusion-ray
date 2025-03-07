@@ -16,40 +16,27 @@
 # under the License.
 
 import argparse
-import datafusion
+import os
 import ray
 
-from datafusion_ray import DFRayContext
+from datafusion_ray import DFRayContext, df_ray_runtime_env
 
 
 def go(data_dir: str):
     ctx = DFRayContext()
-    # we could set this value to however many CPUs we plan to give each
-    # ray task
-    ctx.set("datafusion.execution.target_partitions", "1")
-    ctx.set("datafusion.optimizer.enable_round_robin_repartition", "false")
 
-    ctx.register_parquet("tips", f"{data_dir}/tips*.parquet")
+    ctx.register_parquet("tips", os.path.join(data_dir, "tips.parquet"))
 
     df = ctx.sql(
         "select sex, smoker, avg(tip/total_bill) as tip_pct from tips group by sex, smoker order by sex, smoker"
     )
     df.show()
 
-    print("no ray result:")
-
-    # compare to non ray version
-    ctx = datafusion.SessionContext()
-    ctx.register_parquet("tips", f"{data_dir}/tips*.parquet")
-    ctx.sql(
-        "select sex, smoker, avg(tip/total_bill) as tip_pct from tips group by sex, smoker order by sex, smoker"
-    ).show()
-
 
 if __name__ == "__main__":
-    ray.init(namespace="tips")
+    ray.init(namespace="tips", runtime_env=df_ray_runtime_env)
     parser = argparse.ArgumentParser()
-    parser.add_argument("--data-dir", required=True, help="path to tips*.parquet files")
+    parser.add_argument("--data-dir", required=True, help="path to tips.parquet files")
     args = parser.parse_args()
 
     go(args.data_dir)

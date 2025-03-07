@@ -16,16 +16,17 @@
 // under the License.
 
 use datafusion::datasource::file_format::parquet::ParquetFormat;
-use datafusion::datasource::listing::ListingOptions;
-use datafusion::{execution::SessionStateBuilder, prelude::*};
+use datafusion::datasource::listing::{ListingOptions, ListingTableUrl};
+use datafusion::execution::SessionStateBuilder;
+use datafusion::prelude::{CsvReadOptions, ParquetReadOptions, SessionConfig, SessionContext};
 use datafusion_python::utils::wait_for_future;
-use object_store::aws::AmazonS3Builder;
+use log::debug;
 use pyo3::prelude::*;
 use std::sync::Arc;
 
 use crate::dataframe::DFRayDataFrame;
 use crate::physical::RayStageOptimizerRule;
-use crate::util::ResultExt;
+use crate::util::{maybe_register_object_store, ResultExt};
 use url::Url;
 
 /// Internal Session Context object for the python class DFRayContext
@@ -54,23 +55,27 @@ impl DFRayContext {
         Ok(Self { ctx })
     }
 
-    pub fn register_s3(&self, bucket_name: String) -> PyResult<()> {
-        let s3 = AmazonS3Builder::from_env()
-            .with_bucket_name(&bucket_name)
-            .build()
-            .to_py_err()?;
-
-        let path = format!("s3://{bucket_name}");
-        let s3_url = Url::parse(&path).to_py_err()?;
-        let arc_s3 = Arc::new(s3);
-        self.ctx.register_object_store(&s3_url, arc_s3.clone());
-        Ok(())
-    }
-
     pub fn register_parquet(&self, py: Python, name: String, path: String) -> PyResult<()> {
         let options = ParquetReadOptions::default();
 
+        let url = ListingTableUrl::parse(&path).to_py_err()?;
+
+        maybe_register_object_store(&self.ctx, url.as_ref()).to_py_err()?;
+        debug!("register_parquet: registering table {} at {}", name, path);
+
         wait_for_future(py, self.ctx.register_parquet(&name, &path, options.clone()))?;
+        Ok(())
+    }
+
+    pub fn register_csv(&self, py: Python, name: String, path: String) -> PyResult<()> {
+        let options = CsvReadOptions::default();
+
+        let url = ListingTableUrl::parse(&path).to_py_err()?;
+
+        maybe_register_object_store(&self.ctx, url.as_ref()).to_py_err()?;
+        debug!("register_csv: registering table {} at {}", name, path);
+
+        wait_for_future(py, self.ctx.register_csv(&name, &path, options.clone()))?;
         Ok(())
     }
 
@@ -85,6 +90,15 @@ impl DFRayContext {
         let options =
             ListingOptions::new(Arc::new(ParquetFormat::new())).with_file_extension(file_extension);
 
+        let path = format!("{path}/");
+        let url = ListingTableUrl::parse(&path).to_py_err()?;
+
+        maybe_register_object_store(&self.ctx, url.as_ref()).to_py_err()?;
+
+        debug!(
+            "register_listing_table: registering table {} at {}",
+            name, path
+        );
         wait_for_future(
             py,
             self.ctx

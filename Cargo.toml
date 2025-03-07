@@ -52,6 +52,7 @@ object_store = { version = "0.11.0", features = [
 ] }
 parking_lot = { version = "0.12", features = ["deadlock_detection"] }
 prost = "0.13"
+protobuf-src = "2.1"
 pyo3 = { version = "0.23", features = [
   "extension-module",
   "abi3",
@@ -85,7 +86,6 @@ tonic-build = { version = "0.8", default-features = false, features = [
   "prost",
 ] }
 url = "2"
-protobuf-src = "2.1"
 
 [dev-dependencies]
 tempfile = "3.17"
