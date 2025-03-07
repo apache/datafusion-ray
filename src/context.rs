@@ -27,7 +27,6 @@ use std::sync::Arc;
 use crate::dataframe::DFRayDataFrame;
 use crate::physical::RayStageOptimizerRule;
 use crate::util::{maybe_register_object_store, ResultExt};
-use url::Url;
 
 /// Internal Session Context object for the python class DFRayContext
 #[pyclass]

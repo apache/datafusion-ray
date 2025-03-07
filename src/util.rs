@@ -20,7 +20,7 @@ use arrow::util::pretty;
 use arrow_flight::{FlightClient, FlightData, Ticket};
 use async_stream::stream;
 use datafusion::common::internal_datafusion_err;
-use datafusion::common::tree_node::{Transformed, TreeNode, TreeNodeRecursion};
+use datafusion::common::tree_node::{Transformed, TreeNode};
 use datafusion::datasource::file_format::parquet::ParquetFormat;
 use datafusion::datasource::listing::{ListingOptions, ListingTableUrl};
 use datafusion::datasource::physical_plan::{
