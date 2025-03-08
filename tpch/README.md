@@ -57,7 +57,7 @@ spec:
         containers:
           - name: ray-head
             image: rayproject/ray:2.43.0-py312-cpu
-            imagePullPolicy: Always
+            imagePullPolicy: IfNotPresent
             resources:
               limits:
                 cpu: 2
@@ -82,7 +82,7 @@ spec:
           containers:
             - name: ray-worker
               image: rayproject/ray:2.43.0-py312-cpu
-              imagePullPolicy: Always
+              imagePullPolicy: IfNotPresent
               resources:
                 limits:
                   cpu: 5
