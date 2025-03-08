@@ -24,7 +24,7 @@ This is a rough guide to deploying and benchmarking DataFusion Ray on Kubernetes
 ## Building Wheels
 
 Follow the instructions in the [contributor guide] to set up a development environment and then build the project 
-using the following command.
+using the following command. Note that the `--strip` argument is important for keeping the wheel size below 100MB
 
 [contributor guide]: ../docs/contributing.md
 
@@ -114,7 +114,7 @@ ray job submit --address='http://localhost:8265' \
   python tpcbench.py \
   --data /mnt/bigdata/tpch/sf100 \
   --concurrency 8 \
-  --partitions-per-worker 4 \
+  --partitions-per-processor 4 \
   --worker-pool-min 30 \
   --listing-tables
 ```
