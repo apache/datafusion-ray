@@ -19,23 +19,25 @@
 
 # Benchmarking DataFusion Ray on Kubernetes
 
-This is a rough guide to deploying and benchmarking DataFusion Ray on Kubernetes.
+This is a rough guide to deploying and benchmarking DataFusion Ray on Kubernetes as part of the development process.
 
-set up new venv
+## Building Wheels
 
-```shell
-python3 -m venv venv
-source venv/bin/activate
-pip3 install maturin
-pip3 install ray
-pip3 install ray[default]
-```
+Follow the instructions in the [contributor guide] to set up a development environment and then build the project 
+using the following command.
 
-Build the project.
+[contributor guide]: ../docs/contributing.md
 
 ```shell
 maturin build --strip
 ```
+
+## Create a Ray Cluster
+
+Create a `datafusion-ray.yaml` file using the following template. It is important that the Ray Docker image uses the 
+same Python version that was used to build the wheels. This example yaml assumes that the TPC-H data files are 
+available locally on each node in the cluster at the path `/mnt/bigdata`. If the data is stored on object storage then 
+the `volume` and `volumeMount` sections can be removed.
 
 ```yaml
 apiVersion: ray.io/v1alpha1
@@ -93,11 +95,14 @@ spec:
                 claimName: ray-pvc
 ```
 
+Run the following command to create the cluster:
+
 ```shell
 kubectl apply -f datafusion-ray.yaml
 ```
 
-set up port forwarding on head node 8265
+Once the cluster is running, set up port forwarding on port 8265 on the head node and then run the following 
+command to run the benchmarks.
 
 ```shell
 ray job submit --address='http://localhost:8265' \
