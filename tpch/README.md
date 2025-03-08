@@ -34,6 +34,10 @@ maturin build --strip
 
 ## Create a Ray Cluster
 
+Follow the instructions in the [Ray on Kubernetes] documentation to install the KubeRay operator.
+
+[Ray on Kubernetes]: https://docs.ray.io/en/latest/cluster/kubernetes/index.html
+
 Create a `datafusion-ray.yaml` file using the following template. It is important that the Ray Docker image uses the 
 same Python version that was used to build the wheels. This example yaml assumes that the TPC-H data files are 
 available locally on each node in the cluster at the path `/mnt/bigdata`. If the data is stored on object storage then 
