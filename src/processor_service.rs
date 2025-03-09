@@ -15,15 +15,15 @@
 // specific language governing permissions and limitations
 // under the License.
 
-use std::collections::hash_map::Entry;
 use std::collections::HashMap;
+use std::collections::hash_map::Entry;
 use std::error::Error;
 use std::sync::Arc;
 
 use arrow::array::RecordBatch;
+use arrow_flight::FlightClient;
 use arrow_flight::encode::FlightDataEncoderBuilder;
 use arrow_flight::error::FlightError;
-use arrow_flight::FlightClient;
 use datafusion::common::internal_datafusion_err;
 use datafusion::execution::SessionStateBuilder;
 use datafusion::physical_plan::ExecutionPlan;
@@ -35,23 +35,23 @@ use log::{debug, error, info, trace};
 use tokio::net::TcpListener;
 
 use tonic::transport::Server;
-use tonic::{async_trait, Request, Response, Status};
+use tonic::{Request, Response, Status, async_trait};
 
 use datafusion::error::Result as DFResult;
 
-use arrow_flight::{flight_service_server::FlightServiceServer, Ticket};
+use arrow_flight::{Ticket, flight_service_server::FlightServiceServer};
 
 use pyo3::prelude::*;
 
 use parking_lot::{Mutex, RwLock};
 
-use tokio::sync::mpsc::{channel, Receiver, Sender};
+use tokio::sync::mpsc::{Receiver, Sender, channel};
 
 use crate::flight::{FlightHandler, FlightServ};
 use crate::isolator::PartitionGroup;
 use crate::util::{
-    bytes_to_physical_plan, display_plan_with_partition_counts, extract_ticket, input_stage_ids,
-    make_client, ResultExt,
+    ResultExt, bytes_to_physical_plan, display_plan_with_partition_counts, extract_ticket,
+    input_stage_ids, make_client, register_object_store_for_paths_in_plan,
 };
 
 /// a map of stage_id, partition to a list FlightClients that can serve
@@ -102,7 +102,7 @@ impl DFRayProcessorHandlerInner {
         plan: Arc<dyn ExecutionPlan>,
         partition_group: Vec<usize>,
     ) -> DFResult<Self> {
-        let ctx = Self::configure_ctx(stage_id, stage_addrs, &plan, partition_group).await?;
+        let ctx = Self::configure_ctx(stage_id, stage_addrs, plan.clone(), partition_group).await?;
 
         Ok(Self { plan, ctx })
     }
@@ -110,10 +110,10 @@ impl DFRayProcessorHandlerInner {
     async fn configure_ctx(
         stage_id: usize,
         stage_addrs: HashMap<usize, HashMap<usize, Vec<String>>>,
-        plan: &Arc<dyn ExecutionPlan>,
+        plan: Arc<dyn ExecutionPlan>,
         partition_group: Vec<usize>,
     ) -> DFResult<SessionContext> {
-        let stage_ids_i_need = input_stage_ids(plan)?;
+        let stage_ids_i_need = input_stage_ids(&plan)?;
 
         // map of stage_id, partition -> Vec<FlightClient>
         let mut client_map = HashMap::new();
@@ -162,6 +162,8 @@ impl DFRayProcessorHandlerInner {
             .with_config(config)
             .build();
         let ctx = SessionContext::new_with_state(state);
+
+        register_object_store_for_paths_in_plan(&ctx, plan.clone())?;
 
         trace!("ctx configured for stage {}", stage_id);
 
@@ -212,9 +214,7 @@ impl FlightHandler for DFRayProcessorHandler {
 
         trace!(
             "{}, request for partition {} from {}",
-            self.name,
-            partition,
-            remote_addr
+            self.name, partition, remote_addr
         );
 
         let name = self.name.clone();

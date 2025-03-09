@@ -60,12 +60,20 @@ Once installed, you can run queries using DataFusion's familiar API while levera
 capabilities of Ray.
 
 ```python
+# from example in ./examples/http_csv.py
 import ray
 from datafusion_ray import DFRayContext, df_ray_runtime_env
 
 ray.init(runtime_env=df_ray_runtime_env)
-session = DFRayContext()
-df = session.sql("SELECT * FROM my_table WHERE value > 100")
+
+ctx = DFRayContext()
+ctx.register_csv(
+    "aggregate_test_100",
+    "https://github.com/apache/arrow-testing/raw/master/data/csv/aggregate_test_100.csv",
+)
+
+df = ctx.sql("SELECT c1,c2,c3 FROM aggregate_test_100 LIMIT 5")
+
 df.show()
 ```
 

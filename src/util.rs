@@ -22,9 +22,12 @@ use async_stream::stream;
 use datafusion::common::internal_datafusion_err;
 use datafusion::common::tree_node::{Transformed, TreeNode};
 use datafusion::datasource::file_format::parquet::ParquetFormat;
-use datafusion::datasource::listing::ListingOptions;
-use datafusion::datasource::physical_plan::ParquetExec;
+use datafusion::datasource::listing::{ListingOptions, ListingTableUrl};
+use datafusion::datasource::physical_plan::{
+    ArrowExec, AvroExec, CsvExec, NdJsonExec, ParquetExec,
+};
 use datafusion::error::DataFusionError;
+use datafusion::execution::object_store::ObjectStoreUrl;
 use datafusion::execution::{RecordBatchStream, SendableRecordBatchStream, SessionStateBuilder};
 use datafusion::physical_plan::stream::RecordBatchStreamAdapter;
 use datafusion::physical_plan::{displayable, ExecutionPlan, ExecutionPlanProperties};
@@ -32,10 +35,16 @@ use datafusion::prelude::{SessionConfig, SessionContext};
 use datafusion_proto::physical_plan::AsExecutionPlan;
 use datafusion_python::utils::wait_for_future;
 use futures::{Stream, StreamExt};
+use log::debug;
+use object_store::aws::AmazonS3Builder;
+use object_store::gcp::GoogleCloudStorageBuilder;
+use object_store::http::HttpBuilder;
+use object_store::ObjectStore;
 use parking_lot::Mutex;
 use pyo3::prelude::*;
 use pyo3::types::{PyBytes, PyList};
 use tonic::transport::Channel;
+use url::Url;
 
 use crate::codec::RayCodec;
 use crate::processor_service::ServiceClients;
@@ -410,6 +419,12 @@ async fn exec_sql(
     for (name, path) in tables {
         let opt =
             ListingOptions::new(Arc::new(ParquetFormat::new())).with_file_extension(".parquet");
+        debug!("exec_sql: registering table {} at {}", name, path);
+
+        let url = ListingTableUrl::parse(&path)?;
+
+        maybe_register_object_store(&ctx, url.as_ref())?;
+
         ctx.register_listing_table(&name, &path, opt, None, None)
             .await?;
     }
@@ -432,21 +447,122 @@ async fn exec_sql(
 ///   the `url` identifies the parquet files for each listing table and see
 ///   [`datafusion::datasource::listing::ListingTableUrl::parse`] for details
 ///   of supported URL formats
+///  * `listing`: boolean indicating whether this is a listing table path or not
 #[pyfunction]
+#[pyo3(signature = (query, tables, listing=false))]
 pub fn exec_sql_on_tables(
     py: Python,
     query: String,
     tables: Bound<'_, PyList>,
+    listing: bool,
 ) -> PyResult<PyObject> {
     let table_vec = {
         let mut v = Vec::with_capacity(tables.len());
         for entry in tables.iter() {
-            v.push(entry.extract::<(String, String)>()?);
+            let (name, path) = entry.extract::<(String, String)>()?;
+            let path = if listing { format!("{path}/") } else { path };
+            v.push((name, path));
         }
         v
     };
     let batch = wait_for_future(py, exec_sql(query, table_vec))?;
     batch.to_pyarrow(py)
+}
+
+pub(crate) fn register_object_store_for_paths_in_plan(
+    ctx: &SessionContext,
+    plan: Arc<dyn ExecutionPlan>,
+) -> Result<(), DataFusionError> {
+    let check_plan = |plan: Arc<dyn ExecutionPlan>| -> Result<_, DataFusionError> {
+        for input in plan.children().into_iter() {
+            if let Some(node) = input.as_any().downcast_ref::<ParquetExec>() {
+                let url = &node.base_config().object_store_url;
+                maybe_register_object_store(ctx, url.as_ref())?
+            } else if let Some(node) = input.as_any().downcast_ref::<CsvExec>() {
+                let url = &node.base_config().object_store_url;
+                maybe_register_object_store(ctx, url.as_ref())?
+            } else if let Some(node) = input.as_any().downcast_ref::<NdJsonExec>() {
+                let url = &node.base_config().object_store_url;
+                maybe_register_object_store(ctx, url.as_ref())?
+            } else if let Some(node) = input.as_any().downcast_ref::<AvroExec>() {
+                let url = &node.base_config().object_store_url;
+                maybe_register_object_store(ctx, url.as_ref())?
+            } else if let Some(node) = input.as_any().downcast_ref::<ArrowExec>() {
+                let url = &node.base_config().object_store_url;
+                maybe_register_object_store(ctx, url.as_ref())?
+            }
+        }
+        Ok(Transformed::no(plan))
+    };
+
+    plan.transform_down(check_plan)?;
+
+    Ok(())
+}
+
+/// Registers an object store with the given session context based on the provided path.
+///
+/// # Arguments
+///
+/// * `ctx` - A reference to the `SessionContext` where the object store will be registered.
+/// * `path` - A string slice that holds the path or URL of the object store.
+pub(crate) fn maybe_register_object_store(
+    ctx: &SessionContext,
+    url: &Url,
+) -> Result<(), DataFusionError> {
+    let (ob_url, object_store) = if url.as_str().starts_with("s3://") {
+        let bucket = url
+            .host_str()
+            .ok_or(internal_datafusion_err!("missing bucket name in s3:// url"))?;
+
+        let s3 = AmazonS3Builder::from_env()
+            .with_bucket_name(bucket)
+            .build()?;
+        (
+            ObjectStoreUrl::parse(format!("s3://{bucket}"))?,
+            Arc::new(s3) as Arc<dyn ObjectStore>,
+        )
+    } else if url.as_str().starts_with("gs://") || url.as_str().starts_with("gcs://") {
+        let bucket = url
+            .host_str()
+            .ok_or(internal_datafusion_err!("missing bucket name in gs:// url"))?;
+
+        let gs = GoogleCloudStorageBuilder::new()
+            .with_bucket_name(bucket)
+            .build()?;
+
+        (
+            ObjectStoreUrl::parse(format!("gs://{bucket}"))?,
+            Arc::new(gs) as Arc<dyn ObjectStore>,
+        )
+    } else if url.as_str().starts_with("http://") || url.as_str().starts_with("https://") {
+        let scheme = url.scheme();
+
+        let host = url.host_str().ok_or(internal_datafusion_err!(
+            "missing host name in {}:// url",
+            scheme
+        ))?;
+
+        let http = HttpBuilder::new()
+            .with_url(format!("{scheme}://{host}"))
+            .build()?;
+
+        (
+            ObjectStoreUrl::parse(format!("{scheme}://{host}"))?,
+            Arc::new(http) as Arc<dyn ObjectStore>,
+        )
+    } else {
+        let local = object_store::local::LocalFileSystem::new();
+        (
+            ObjectStoreUrl::parse("file://")?,
+            Arc::new(local) as Arc<dyn ObjectStore>,
+        )
+    };
+
+    debug!("Registering object store for {}", ob_url);
+
+    ctx.register_object_store(ob_url.as_ref(), object_store);
+    Ok(())
 }
 
 #[cfg(test)]

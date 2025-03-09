@@ -72,7 +72,7 @@ def main(
         path = os.path.join(data_path, f"{table}.parquet")
         print(f"Registering table {table} using path {path}")
         if listing_tables:
-            ctx.register_listing_table(table, f"{path}/")
+            ctx.register_listing_table(table, path)
         else:
             ctx.register_parquet(table, path)
 
@@ -93,7 +93,6 @@ def main(
         "queries": {},
     }
     if validate:
-        results["local_queries"] = {}
         results["validated"] = {}
 
     queries = range(1, 23) if qnum == -1 else [qnum]
@@ -114,15 +113,13 @@ def main(
         calculated = prettify(batches)
         print(calculated)
         if validate:
-            start_time = time.time()
             tables = [
                 (name, os.path.join(data_path, f"{name}.parquet"))
                 for name in table_names
             ]
-            answer_batches = [b for b in [exec_sql_on_tables(sql, tables)] if b]
-            end_time = time.time()
-            results["local_queries"][qnum] = end_time - start_time
-
+            answer_batches = [
+                b for b in [exec_sql_on_tables(sql, tables, listing_tables)] if b
+            ]
             expected = prettify(answer_batches)
 
             results["validated"][qnum] = calculated == expected
@@ -137,7 +134,7 @@ def main(
         print(results_dump)
 
     # give ray a moment to clean up
-    print("sleeping for 3 seconds for ray to clean up")
+    print("benchmark complete. sleeping for 3 seconds for ray to clean up")
     time.sleep(3)
 
     if validate and False in results["validated"].values():

@@ -86,9 +86,7 @@ async def wait_for(coros, name=""):
     # wrap the coro in a task to work with python 3.10 and 3.11+ where asyncio.wait semantics
     # changed to not accept any awaitable
     start = time.time()
-    done, _ = await asyncio.wait(
-        [asyncio.create_task(_ensure_coro(c)) for c in coros]
-    )
+    done, _ = await asyncio.wait([asyncio.create_task(_ensure_coro(c)) for c in coros])
     end = time.time()
     log.info(f"waiting for {name} took {end - start}s")
     for d in done:
@@ -166,9 +164,7 @@ class DFRayProcessorPool:
         need_to_make = need - have
 
         if need_to_make > can_make:
-            raise Exception(
-                f"Cannot allocate workers above {self.max_workers}"
-            )
+            raise Exception(f"Cannot allocate workers above {self.max_workers}")
 
         if need_to_make > 0:
             log.debug(f"creating {need_to_make} additional processors")
@@ -197,9 +193,9 @@ class DFRayProcessorPool:
         self.processors_ready.clear()
         processor_key = new_friendly_name()
         log.debug(f"starting processor: {processor_key}")
-        processor = DFRayProcessor.options(
-            name=f"Processor : {processor_key}"
-        ).remote(processor_key)
+        processor = DFRayProcessor.options(name=f"Processor : {processor_key}").remote(
+            processor_key
+        )
         self.pool[processor_key] = processor
         self.processors_started.add(processor.start_up.remote())
         self.available.add(processor_key)
@@ -248,9 +244,7 @@ class DFRayProcessorPool:
 
     async def all_done(self):
         log.info("calling processor all done")
-        refs = [
-            processor.all_done.remote() for processor in self.pool.values()
-        ]
+        refs = [processor.all_done.remote() for processor in self.pool.values()]
         await wait_for(refs, "processors to be all done")
         log.info("all processors shutdown")
 
@@ -293,9 +287,7 @@ class DFRayProcessor:
         )
 
     async def serve(self):
-        log.info(
-            f"[{self.processor_key}] serving on {self.processor_service.addr()}"
-        )
+        log.info(f"[{self.processor_key}] serving on {self.processor_service.addr()}")
         await self.processor_service.serve()
         log.info(f"[{self.processor_key}] done serving")
 
@@ -332,9 +324,7 @@ class DFRayContextSupervisor:
         worker_pool_min: int,
         worker_pool_max: int,
     ) -> None:
-        log.info(
-            f"Creating DFRayContextSupervisor worker_pool_min: {worker_pool_min}"
-        )
+        log.info(f"Creating DFRayContextSupervisor worker_pool_min: {worker_pool_min}")
         self.pool = DFRayProcessorPool(worker_pool_min, worker_pool_max)
         self.stages: dict[str, InternalStageData] = {}
         log.info("Created DFRayContextSupervisor")
@@ -347,9 +337,7 @@ class DFRayContextSupervisor:
 
     async def get_stage_addrs(self, stage_id: int):
         addrs = [
-            sd.remote_addr
-            for sd in self.stages.values()
-            if sd.stage_id == stage_id
+            sd.remote_addr for sd in self.stages.values() if sd.stage_id == stage_id
         ]
         return addrs
 
@@ -399,10 +387,7 @@ class DFRayContextSupervisor:
             refs.append(
                 isd.remote_processor.update_plan.remote(
                     isd.stage_id,
-                    {
-                        stage_id: val["child_addrs"]
-                        for (stage_id, val) in kid.items()
-                    },
+                    {stage_id: val["child_addrs"] for (stage_id, val) in kid.items()},
                     isd.partition_group,
                     isd.plan_bytes,
                 )
@@ -434,9 +419,7 @@ class DFRayContextSupervisor:
                 ]
 
                 # sanity check
-                assert all(
-                    [op == output_partitions[0] for op in output_partitions]
-                )
+                assert all([op == output_partitions[0] for op in output_partitions])
                 output_partitions = output_partitions[0]
 
                 for child_stage_isd in child_stage_datas:
@@ -520,9 +503,7 @@ class DFRayDataFrame:
             )
             log.debug(f"last stage addrs {last_stage_addrs}")
 
-            reader = self.df.read_final_stage(
-                last_stage_id, last_stage_addrs[0]
-            )
+            reader = self.df.read_final_stage(last_stage_id, last_stage_addrs[0])
             log.debug("got reader")
             self._batches = list(reader)
         return self._batches
@@ -589,11 +570,55 @@ class DFRayContext:
         )
 
     def register_parquet(self, name: str, path: str):
+        """
+        Register a Parquet file with the given name and path.
+        The path can be a local filesystem path, absolute filesystem path, or a url.
+
+        If the path is a object store url, the appropriate object store will be registered.
+        Configuration of the object store will be gathered from the environment.
+
+        For example for s3:// urls, credentials will be looked for by the AWS SDK,
+        which will check environment variables, credential files, etc
+
+        Parameters:
+        path (str): The file path to the Parquet file.
+        name (str): The name to register the Parquet file under.
+        """
         self.ctx.register_parquet(name, path)
 
-    def register_listing_table(
-        self, name: str, path: str, file_extention="parquet"
-    ):
+    def register_csv(self, name: str, path: str):
+        """
+        Register a csvfile with the given name and path.
+        The path can be a local filesystem path, absolute filesystem path, or a url.
+
+        If the path is a object store url, the appropriate object store will be registered.
+        Configuration of the object store will be gathered from the environment.
+
+        For example for s3:// urls, credentials will be looked for by the AWS SDK,
+        which will check environment variables, credential files, etc
+
+        Parameters:
+        path (str): The file path to the csv file.
+        name (str): The name to register the Parquet file under.
+        """
+        self.ctx.register_csv(name, path)
+
+    def register_listing_table(self, name: str, path: str, file_extention="parquet"):
+        """
+        Register a directory of parquet files with the given name.
+        The path can be a local filesystem path, absolute filesystem path, or a url.
+
+        If the path is a object store url, the appropriate object store will be registered.
+        Configuration of the object store will be gathered from the environment.
+
+        For example for s3:// urls, credentials will be looked for by the AWS SDK,
+        which will check environment variables, credential files, etc
+
+        Parameters:
+        path (str): The file path to the Parquet file directory
+        name (str): The name to register the Parquet file under.
+        """
+
         self.ctx.register_listing_table(name, path, file_extention)
 
     def sql(self, query: str) -> DFRayDataFrame:

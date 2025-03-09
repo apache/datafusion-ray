@@ -15,28 +15,26 @@
 # specific language governing permissions and limitations
 # under the License.
 
-import argparse
-import os
+# this is a port of the example at
+# https://github.com/apache/datafusion/blob/45.0.0/datafusion-examples/examples/query-http-csv.rs
+
 import ray
 
 from datafusion_ray import DFRayContext, df_ray_runtime_env
 
 
-def go(data_dir: str):
+def main():
     ctx = DFRayContext()
-
-    ctx.register_parquet("tips", os.path.join(data_dir, "tips.parquet"))
-
-    df = ctx.sql(
-        "select sex, smoker, avg(tip/total_bill) as tip_pct from tips group by sex, smoker order by sex, smoker"
+    ctx.register_csv(
+        "aggregate_test_100",
+        "https://github.com/apache/arrow-testing/raw/master/data/csv/aggregate_test_100.csv",
     )
+
+    df = ctx.sql("SELECT c1,c2,c3 FROM aggregate_test_100 LIMIT 5")
+
     df.show()
 
 
-if __name__ == "__main__":
-    ray.init(namespace="tips", runtime_env=df_ray_runtime_env)
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--data-dir", required=True, help="path to tips.parquet files")
-    args = parser.parse_args()
-
-    go(args.data_dir)
+if __name__ == __name__:
+    ray.init(namespace="http_csv", runtime_env=df_ray_runtime_env)
+    main()
