@@ -249,7 +249,7 @@ class DFRayProcessorPool:
         log.info("all processors shutdown")
 
 
-@ray.remote(num_cpus=0)
+@ray.remote(num_cpus=0.01, scheduling_strategy="SPREAD")
 class DFRayProcessor:
     def __init__(self, processor_key):
         self.processor_key = processor_key
@@ -317,7 +317,7 @@ class InternalStageData:
         return f"""Stage: {self.stage_id}, pg: {self.partition_group}, child_stages:{self.child_stage_ids}, listening addr:{self.remote_addr}"""
 
 
-@ray.remote(num_cpus=0)
+@ray.remote(num_cpus=0.01, scheduling_strategy="SPREAD")
 class DFRayContextSupervisor:
     def __init__(
         self,

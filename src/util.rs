@@ -8,13 +8,12 @@ use std::task::{Context, Poll};
 use std::time::Duration;
 
 use arrow::array::RecordBatch;
-use arrow::compute::concat_batches;
 use arrow::datatypes::SchemaRef;
 use arrow::error::ArrowError;
 use arrow::ipc::convert::fb_to_schema;
 use arrow::ipc::reader::StreamReader;
 use arrow::ipc::writer::{IpcWriteOptions, StreamWriter};
-use arrow::ipc::{root_as_message, MetadataVersion};
+use arrow::ipc::{MetadataVersion, root_as_message};
 use arrow::pyarrow::*;
 use arrow::util::pretty;
 use arrow_flight::{FlightClient, FlightData, Ticket};
@@ -30,16 +29,16 @@ use datafusion::error::DataFusionError;
 use datafusion::execution::object_store::ObjectStoreUrl;
 use datafusion::execution::{RecordBatchStream, SendableRecordBatchStream, SessionStateBuilder};
 use datafusion::physical_plan::stream::RecordBatchStreamAdapter;
-use datafusion::physical_plan::{displayable, ExecutionPlan, ExecutionPlanProperties};
-use datafusion::prelude::{SessionConfig, SessionContext};
+use datafusion::physical_plan::{ExecutionPlan, ExecutionPlanProperties, displayable};
+use datafusion::prelude::{ParquetReadOptions, SessionConfig, SessionContext};
 use datafusion_proto::physical_plan::AsExecutionPlan;
 use datafusion_python::utils::wait_for_future;
 use futures::{Stream, StreamExt};
 use log::debug;
+use object_store::ObjectStore;
 use object_store::aws::AmazonS3Builder;
 use object_store::gcp::GoogleCloudStorageBuilder;
 use object_store::http::HttpBuilder;
-use object_store::ObjectStore;
 use parking_lot::Mutex;
 use pyo3::prelude::*;
 use pyo3::types::{PyBytes, PyList};
@@ -411,62 +410,77 @@ fn print_node(plan: &Arc<dyn ExecutionPlan>, indent: usize, output: &mut String)
     }
 }
 
-async fn exec_sql(
-    query: String,
-    tables: Vec<(String, String)>,
-) -> Result<RecordBatch, DataFusionError> {
-    let ctx = SessionContext::new();
-    for (name, path) in tables {
-        let opt =
-            ListingOptions::new(Arc::new(ParquetFormat::new())).with_file_extension(".parquet");
-        debug!("exec_sql: registering table {} at {}", name, path);
-
-        let url = ListingTableUrl::parse(&path)?;
-
-        maybe_register_object_store(&ctx, url.as_ref())?;
-
-        ctx.register_listing_table(&name, &path, opt, None, None)
-            .await?;
-    }
-    let df = ctx.sql(&query).await?;
-    let schema = df.schema().inner().clone();
-    let batches = df.collect().await?;
-    concat_batches(&schema, batches.iter()).map_err(|e| DataFusionError::ArrowError(e, None))
+#[pyclass]
+pub struct LocalValidator {
+    ctx: SessionContext,
 }
 
-/// Executes a query on the specified tables using DataFusion without Ray.
-///
-/// Returns the query results as a RecordBatch that can be used to verify the
-/// correctness of DataFusion-Ray execution of the same query.
-///
-/// # Arguments
-///
-/// * `py`: the Python token
-/// * `query`: the SQL query string to execute
-/// * `tables`: a list of `(name, url)` tuples specifying the tables to query;
-///   the `url` identifies the parquet files for each listing table and see
-///   [`datafusion::datasource::listing::ListingTableUrl::parse`] for details
-///   of supported URL formats
-///  * `listing`: boolean indicating whether this is a listing table path or not
-#[pyfunction]
-#[pyo3(signature = (query, tables, listing=false))]
-pub fn exec_sql_on_tables(
-    py: Python,
-    query: String,
-    tables: Bound<'_, PyList>,
-    listing: bool,
-) -> PyResult<PyObject> {
-    let table_vec = {
-        let mut v = Vec::with_capacity(tables.len());
-        for entry in tables.iter() {
-            let (name, path) = entry.extract::<(String, String)>()?;
-            let path = if listing { format!("{path}/") } else { path };
-            v.push((name, path));
-        }
-        v
-    };
-    let batch = wait_for_future(py, exec_sql(query, table_vec))?;
-    batch.to_pyarrow(py)
+#[pymethods]
+impl LocalValidator {
+    #[new]
+    fn new() -> Self {
+        let ctx = SessionContext::new();
+        Self { ctx }
+    }
+
+    pub fn register_parquet(&self, py: Python, name: String, path: String) -> PyResult<()> {
+        let options = ParquetReadOptions::default();
+
+        let url = ListingTableUrl::parse(&path).to_py_err()?;
+
+        maybe_register_object_store(&self.ctx, url.as_ref()).to_py_err()?;
+        debug!("register_parquet: registering table {} at {}", name, path);
+
+        wait_for_future(py, self.ctx.register_parquet(&name, &path, options.clone()))?;
+        Ok(())
+    }
+
+    #[pyo3(signature = (name, path, file_extension=".parquet"))]
+    pub fn register_listing_table(
+        &mut self,
+        py: Python,
+        name: &str,
+        path: &str,
+        file_extension: &str,
+    ) -> PyResult<()> {
+        let options =
+            ListingOptions::new(Arc::new(ParquetFormat::new())).with_file_extension(file_extension);
+
+        let path = format!("{path}/");
+        let url = ListingTableUrl::parse(&path).to_py_err()?;
+
+        maybe_register_object_store(&self.ctx, url.as_ref()).to_py_err()?;
+
+        debug!(
+            "register_listing_table: registering table {} at {}",
+            name, path
+        );
+        wait_for_future(
+            py,
+            self.ctx
+                .register_listing_table(name, path, options, None, None),
+        )
+        .to_py_err()
+    }
+
+    #[pyo3(signature = (query))]
+    fn collect_sql(&self, py: Python, query: String) -> PyResult<PyObject> {
+        let fut = async || {
+            let df = self.ctx.sql(&query).await?;
+            let batches = df.collect().await?;
+
+            Ok::<_, DataFusionError>(batches)
+        };
+
+        let batches = wait_for_future(py, fut())
+            .to_py_err()?
+            .iter()
+            .map(|batch| batch.to_pyarrow(py))
+            .collect::<PyResult<Vec<_>>>()?;
+
+        let pylist = PyList::new(py, batches)?;
+        Ok(pylist.into())
+    }
 }
 
 pub(crate) fn register_object_store_for_paths_in_plan(
@@ -570,61 +584,13 @@ mod test {
     use std::{sync::Arc, vec};
 
     use arrow::{
-        array::{Int32Array, StringArray},
+        array::Int32Array,
         datatypes::{DataType, Field, Schema},
     };
-    use datafusion::{
-        parquet::file::properties::WriterProperties, test_util::parquet::TestParquetFile,
-    };
+    
     use futures::stream;
 
     use super::*;
-
-    #[tokio::test]
-    async fn test_exec_sql() {
-        let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("people.parquet");
-
-        let batch = RecordBatch::try_new(
-            Arc::new(Schema::new(vec![
-                Field::new("age", DataType::Int32, false),
-                Field::new("name", DataType::Utf8, false),
-            ])),
-            vec![
-                Arc::new(Int32Array::from(vec![11, 12, 13])),
-                Arc::new(StringArray::from(vec!["alice", "bob", "cindy"])),
-            ],
-        )
-        .unwrap();
-        let props = WriterProperties::builder().build();
-        let file = TestParquetFile::try_new(path.clone(), props, Some(batch.clone())).unwrap();
-
-        // test with file
-        let tables = vec![(
-            "people".to_string(),
-            format!("file://{}", file.path().to_str().unwrap()),
-        )];
-        let query = "SELECT * FROM people ORDER BY age".to_string();
-        let res = exec_sql(query.clone(), tables).await.unwrap();
-        assert_eq!(
-            format!(
-                "{}",
-                pretty::pretty_format_batches(&[batch.clone()]).unwrap()
-            ),
-            format!("{}", pretty::pretty_format_batches(&[res]).unwrap()),
-        );
-
-        // test with dir
-        let tables = vec![(
-            "people".to_string(),
-            format!("file://{}/", dir.path().to_str().unwrap()),
-        )];
-        let res = exec_sql(query, tables).await.unwrap();
-        assert_eq!(
-            format!("{}", pretty::pretty_format_batches(&[batch]).unwrap()),
-            format!("{}", pretty::pretty_format_batches(&[res]).unwrap()),
-        );
-    }
 
     #[test]
     fn test_ipc_roundtrip() {
@@ -641,10 +607,9 @@ mod test {
     #[tokio::test]
     async fn test_max_rows_stream() {
         let schema = Arc::new(Schema::new(vec![Field::new("a", DataType::Int32, false)]));
-        let batch = RecordBatch::try_new(
-            schema.clone(),
-            vec![Arc::new(Int32Array::from(vec![1, 2, 3, 4, 5, 6, 7, 8]))],
-        )
+        let batch = RecordBatch::try_new(schema.clone(), vec![Arc::new(Int32Array::from(vec![
+            1, 2, 3, 4, 5, 6, 7, 8,
+        ]))])
         .unwrap();
 
         // 24 total rows
