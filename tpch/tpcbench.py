@@ -18,7 +18,7 @@
 import argparse
 import ray
 from datafusion_ray import DFRayContext, df_ray_runtime_env
-from datafusion_ray.util import exec_sql_on_tables, prettify
+from datafusion_ray.util import exec_sqls_on_tables, prettify
 from datetime import datetime
 import json
 import os
@@ -31,7 +31,7 @@ def tpch_query(qnum: int) -> str:
 
 
 def main(
-    qnum: int,
+    queries: list[(str, str)],
     data_path: str,
     concurrency: int,
     batch_size: int,
@@ -95,35 +95,43 @@ def main(
     if validate:
         results["validated"] = {}
 
-    queries = range(1, 23) if qnum == -1 else [qnum]
-    for qnum in queries:
-        sql = tpch_query(qnum)
-
-        statements = sql.split(";")
-        sql = statements[0]
-
+    for (qid, sql) in queries:
         print("executing ", sql)
 
+        statements = [s for s in sql.split(";") if s.strip() != ""]
         start_time = time.time()
-        df = ctx.sql(sql)
-        batches = df.collect()
+        batches = [ctx.sql(s).collect() for s in statements]
         end_time = time.time()
-        results["queries"][qnum] = end_time - start_time
+        results["queries"][qid] = end_time - start_time
 
-        calculated = prettify(batches)
-        print(calculated)
+        calculated = [prettify(batch) for batch in batches if batch]
+        for pretty_batch in calculated:
+            print(pretty_batch)
         if validate:
             tables = [
                 (name, os.path.join(data_path, f"{name}.parquet"))
                 for name in table_names
             ]
-            answer_batches = [
-                b for b in [exec_sql_on_tables(sql, tables, listing_tables)] if b
-            ]
-            expected = prettify(answer_batches)
+            answer_batches = [b for b in exec_sqls_on_tables(
+                statements, tables, listing_tables) if b]
 
-            results["validated"][qnum] = calculated == expected
-        print(f"done with query {qnum}")
+            validated = True
+            if len(answer_batches) == len(calculated):
+                expected = [prettify([answer_batch])
+                            for answer_batch in answer_batches]
+                validated = all(x[0] == x[1]
+                                for x in zip(calculated, expected))
+                for x in zip(calculated, expected):
+                    if x[0] != x[1]:
+                        print(f"Expected:\n{x[1]}")
+                        print(f"Got:\n{x[0]}")
+            else:
+                print(
+                    f"Expected {len(answer_batches)} batches, got {len(calculated)}")
+                validated = False
+
+            results["validated"][qid] = validated
+        print(f"done with query {qid}")
 
         # write the results as we go, so you can peek at them
         results_dump = json.dumps(results, indent=4)
@@ -151,7 +159,10 @@ if __name__ == "__main__":
     parser.add_argument(
         "--concurrency", required=True, help="Number of concurrent tasks"
     )
-    parser.add_argument("--qnum", type=int, default=-1, help="TPCH query number, 1-22")
+    parser.add_argument("--qnum", type=int, default=-1,
+                        help="TPCH query number, 1-22")
+    parser.add_argument("--query", required=False, type=str,
+                        help="Custom query to run with tpch tables")
     parser.add_argument("--listing-tables", action="store_true")
     parser.add_argument("--validate", action="store_true")
     parser.add_argument(
@@ -183,8 +194,27 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
+    if (args.qnum != -1 and args.query is not None):
+        print("Please specify either --qnum or --query, but not both")
+
+    queries = []
+    if (args.qnum != -1):
+        if args.qnum < 1 or args.qnum > 22:
+            print("Invalid query number. Please specify a number between 1 and 22.")
+            exit(1)
+        else:
+            queries.append((str(args.qnum), tpch_query(args.qnum)))
+            print("Executing tpch query ", args.qnum)
+
+    elif (args.query is not None):
+        queries.append(("custom query", args.query))
+        print("Executing custom query ", args.query)
+    else:
+        print("Executing all tpch queries")
+        queries = [(str(i), tpch_query(i)) for i in range(1, 23)]
+
     main(
-        args.qnum,
+        queries,
         args.data,
         int(args.concurrency),
         int(args.batch_size),

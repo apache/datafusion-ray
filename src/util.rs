@@ -14,7 +14,7 @@ use arrow::error::ArrowError;
 use arrow::ipc::convert::fb_to_schema;
 use arrow::ipc::reader::StreamReader;
 use arrow::ipc::writer::{IpcWriteOptions, StreamWriter};
-use arrow::ipc::{root_as_message, MetadataVersion};
+use arrow::ipc::{MetadataVersion, root_as_message};
 use arrow::pyarrow::*;
 use arrow::util::pretty;
 use arrow_flight::{FlightClient, FlightData, Ticket};
@@ -30,16 +30,16 @@ use datafusion::error::DataFusionError;
 use datafusion::execution::object_store::ObjectStoreUrl;
 use datafusion::execution::{RecordBatchStream, SendableRecordBatchStream, SessionStateBuilder};
 use datafusion::physical_plan::stream::RecordBatchStreamAdapter;
-use datafusion::physical_plan::{displayable, ExecutionPlan, ExecutionPlanProperties};
+use datafusion::physical_plan::{ExecutionPlan, ExecutionPlanProperties, displayable};
 use datafusion::prelude::{SessionConfig, SessionContext};
 use datafusion_proto::physical_plan::AsExecutionPlan;
 use datafusion_python::utils::wait_for_future;
 use futures::{Stream, StreamExt};
 use log::debug;
+use object_store::ObjectStore;
 use object_store::aws::AmazonS3Builder;
 use object_store::gcp::GoogleCloudStorageBuilder;
 use object_store::http::HttpBuilder;
-use object_store::ObjectStore;
 use parking_lot::Mutex;
 use pyo3::prelude::*;
 use pyo3::types::{PyBytes, PyList};
@@ -412,9 +412,9 @@ fn print_node(plan: &Arc<dyn ExecutionPlan>, indent: usize, output: &mut String)
 }
 
 async fn exec_sql(
-    query: String,
+    queries: Vec<String>,
     tables: Vec<(String, String)>,
-) -> Result<RecordBatch, DataFusionError> {
+) -> Result<Vec<RecordBatch>, DataFusionError> {
     let ctx = SessionContext::new();
     for (name, path) in tables {
         let opt =
@@ -428,34 +428,39 @@ async fn exec_sql(
         ctx.register_listing_table(&name, &path, opt, None, None)
             .await?;
     }
-    let df = ctx.sql(&query).await?;
-    let schema = df.schema().inner().clone();
-    let batches = df.collect().await?;
-    concat_batches(&schema, batches.iter()).map_err(|e| DataFusionError::ArrowError(e, None))
+    let mut results = vec![];
+    for query in queries {
+        let df = ctx.sql(&query).await?;
+        let schema = df.schema().inner().clone();
+        let batches = df.collect().await?;
+        let result = concat_batches(&schema, &batches)?;
+        results.push(result);
+    }
+    Ok(results)
 }
 
-/// Executes a query on the specified tables using DataFusion without Ray.
+/// Executes queries on the specified tables using DataFusion without Ray.
 ///
-/// Returns the query results as a RecordBatch that can be used to verify the
-/// correctness of DataFusion-Ray execution of the same query.
+/// Returns the query results as a Vec of RecordBatch that can be used to verify the
+/// correctness of DataFusion-Ray execution of the same queries.
 ///
 /// # Arguments
 ///
 /// * `py`: the Python token
-/// * `query`: the SQL query string to execute
+/// * `queries`: the SQL query strings to execute
 /// * `tables`: a list of `(name, url)` tuples specifying the tables to query;
 ///   the `url` identifies the parquet files for each listing table and see
 ///   [`datafusion::datasource::listing::ListingTableUrl::parse`] for details
 ///   of supported URL formats
 ///  * `listing`: boolean indicating whether this is a listing table path or not
 #[pyfunction]
-#[pyo3(signature = (query, tables, listing=false))]
-pub fn exec_sql_on_tables(
+#[pyo3(signature = (queries, tables, listing=false))]
+pub fn exec_sqls_on_tables(
     py: Python,
-    query: String,
+    queries: Vec<String>,
     tables: Bound<'_, PyList>,
     listing: bool,
-) -> PyResult<PyObject> {
+) -> PyResult<Vec<PyObject>> {
     let table_vec = {
         let mut v = Vec::with_capacity(tables.len());
         for entry in tables.iter() {
@@ -465,8 +470,8 @@ pub fn exec_sql_on_tables(
         }
         v
     };
-    let batch = wait_for_future(py, exec_sql(query, table_vec))?;
-    batch.to_pyarrow(py)
+    let batches = wait_for_future(py, exec_sql(queries, table_vec))?;
+    batches.iter().map(|b| b.to_pyarrow(py)).collect()
 }
 
 pub(crate) fn register_object_store_for_paths_in_plan(
