@@ -50,10 +50,10 @@ use crate::max_rows::MaxRowsExec;
 use crate::pre_fetch::PrefetchExec;
 use crate::stage::DFRayStageExec;
 use crate::stage_reader::DFRayStageReaderExec;
+use crate::util::ResultExt;
 use crate::util::collect_from_stage;
 use crate::util::display_plan_with_partition_counts;
 use crate::util::physical_plan_to_bytes;
-use crate::util::ResultExt;
 
 /// Internal rust class beyind the DFRayDataFrame python object
 ///

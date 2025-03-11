@@ -18,7 +18,7 @@
 import argparse
 import ray
 from datafusion_ray import DFRayContext, df_ray_runtime_env
-from datafusion_ray.util import exec_sql_on_tables, prettify
+from datafusion_ray.util import LocalValidator, prettify
 from datetime import datetime
 import json
 import os
@@ -63,6 +63,8 @@ def main(
         worker_pool_min=worker_pool_min,
     )
 
+    local = LocalValidator()
+
     ctx.set("datafusion.execution.target_partitions", f"{concurrency}")
     # ctx.set("datafusion.execution.parquet.pushdown_filters", "true")
     ctx.set("datafusion.optimizer.enable_round_robin_repartition", "false")
@@ -73,8 +75,10 @@ def main(
         print(f"Registering table {table} using path {path}")
         if listing_tables:
             ctx.register_listing_table(table, path)
+            local.register_listing_table(table, path)
         else:
             ctx.register_parquet(table, path)
+            local.register_parquet(table, path)
 
     current_time_millis = int(datetime.now().timestamp() * 1000)
     results_path = f"datafusion-ray-tpch-{current_time_millis}.json"
@@ -99,28 +103,27 @@ def main(
     for qnum in queries:
         sql = tpch_query(qnum)
 
-        statements = sql.split(";")
-        sql = statements[0]
-
-        print("executing ", sql)
+        statements = list(
+            filter(lambda x: len(x) > 0, map(lambda x: x.strip(), sql.split(";")))
+        )
+        print(f"statements = {statements}")
 
         start_time = time.time()
-        df = ctx.sql(sql)
-        batches = df.collect()
+        all_batches = []
+        for sql in statements:
+            print("executing ", sql)
+            df = ctx.sql(sql)
+            all_batches.append(df.collect())
         end_time = time.time()
         results["queries"][qnum] = end_time - start_time
 
-        calculated = prettify(batches)
+        calculated = "\n".join([prettify(b) for b in all_batches])
         print(calculated)
         if validate:
-            tables = [
-                (name, os.path.join(data_path, f"{name}.parquet"))
-                for name in table_names
-            ]
-            answer_batches = [
-                b for b in [exec_sql_on_tables(sql, tables, listing_tables)] if b
-            ]
-            expected = prettify(answer_batches)
+            all_batches = []
+            for sql in statements:
+                all_batches.append(local.collect_sql(sql))
+            expected = "\n".join([prettify(b) for b in all_batches])
 
             results["validated"][qnum] = calculated == expected
         print(f"done with query {qnum}")
