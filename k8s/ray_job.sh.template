@@ -1,0 +1,9 @@
+ray job submit --address='http://localhost:8265' \
+  --runtime-env-json='{"pip":"requirements.txt", "working_dir":"./", "env_vars":{"DATAFUSION_RAY_LOG_LEVEL":"WARN", "RAY_OVERRIDE_JOB_RUNTIME_ENV":"1", "RAY_DEDUP_LOGS":"O", "RAY_COLOR_PREFIX":"1"}}' -- \
+  python tpcbench.py \
+  --data {{ data_path }}/sf{{ scale_factor }} \
+  --concurrency {{ concurrency }} \
+  --partitions-per-processor {{ partitions_per_processor }} \
+  --processor-pool-min {{ processor_pool_min }} \
+  --listing-tables \
+  --output-path /data

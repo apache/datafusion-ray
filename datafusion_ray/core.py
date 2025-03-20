@@ -108,9 +108,9 @@ class DFRayProcessorPool:
     #
     # This is simple though and will suffice for now
 
-    def __init__(self, min_workers: int, max_workers: int):
-        self.min_workers = min_workers
-        self.max_workers = max_workers
+    def __init__(self, min_processors: int, max_processors: int):
+        self.min_processors = min_processors
+        self.max_processors = max_processors
 
         # a map of processor_key (a random identifier) to stage actor reference
         self.pool = {}
@@ -137,11 +137,11 @@ class DFRayProcessorPool:
         # processors available
         self.available = set()
 
-        for _ in range(min_workers):
+        for _ in range(min_processors):
             self._new_processor()
 
         log.info(
-            f"created ray processor pool (min_workers: {min_workers}, max_workers: {max_workers})"
+            f"created ray processor pool (min_processors: {min_processors}, max_processors: {max_processors})"
         )
 
     async def start(self):
@@ -159,12 +159,12 @@ class DFRayProcessorPool:
 
         have = len(self.available)
         total = len(self.available) + len(self.acquired)
-        can_make = self.max_workers - total
+        can_make = self.max_processors - total
 
         need_to_make = need - have
 
         if need_to_make > can_make:
-            raise Exception(f"Cannot allocate workers above {self.max_workers}")
+            raise Exception(f"Cannot allocate processors above {self.max_processors}")
 
         if need_to_make > 0:
             log.debug(f"creating {need_to_make} additional processors")
@@ -321,11 +321,13 @@ class InternalStageData:
 class DFRayContextSupervisor:
     def __init__(
         self,
-        worker_pool_min: int,
-        worker_pool_max: int,
+        processor_pool_min: int,
+        processor_pool_max: int,
     ) -> None:
-        log.info(f"Creating DFRayContextSupervisor worker_pool_min: {worker_pool_min}")
-        self.pool = DFRayProcessorPool(worker_pool_min, worker_pool_max)
+        log.info(
+            f"Creating DFRayContextSupervisor processor_pool_min: {processor_pool_min}"
+        )
+        self.pool = DFRayProcessorPool(processor_pool_min, processor_pool_max)
         self.stages: dict[str, InternalStageData] = {}
         log.info("Created DFRayContextSupervisor")
 
@@ -452,7 +454,7 @@ class DFRayDataFrame:
         internal_df: DFRayDataFrameInternal,
         supervisor,  # ray.actor.ActorHandle[DFRayContextSupervisor],
         batch_size=8192,
-        partitions_per_worker: int | None = None,
+        partitions_per_processor: int | None = None,
         prefetch_buffer_size=0,
     ):
         self.df = internal_df
@@ -460,7 +462,7 @@ class DFRayDataFrame:
         self._stages = None
         self._batches = None
         self.batch_size = batch_size
-        self.partitions_per_worker = partitions_per_worker
+        self.partitions_per_processor = partitions_per_processor
         self.prefetch_buffer_size = prefetch_buffer_size
 
     def stages(self):
@@ -469,7 +471,7 @@ class DFRayDataFrame:
             self._stages = self.df.stages(
                 self.batch_size,
                 self.prefetch_buffer_size,
-                self.partitions_per_worker,
+                self.partitions_per_processor,
             )
 
         return self._stages
@@ -541,20 +543,20 @@ class DFRayContext:
         self,
         batch_size: int = 8192,
         prefetch_buffer_size: int = 0,
-        partitions_per_worker: int | None = None,
-        worker_pool_min: int = 1,
-        worker_pool_max: int = 100,
+        partitions_per_processor: int | None = None,
+        processor_pool_min: int = 1,
+        processor_pool_max: int = 100,
     ) -> None:
         self.ctx = DFRayContextInternal()
         self.batch_size = batch_size
-        self.partitions_per_worker = partitions_per_worker
+        self.partitions_per_processor = partitions_per_processor
         self.prefetch_buffer_size = prefetch_buffer_size
 
         self.supervisor = DFRayContextSupervisor.options(
             name="RayContextSupersisor",
         ).remote(
-            worker_pool_min,
-            worker_pool_max,
+            processor_pool_min,
+            processor_pool_max,
         )
 
         # start up our super visor and don't check in on it until its
@@ -629,7 +631,7 @@ class DFRayContext:
             df,
             self.supervisor,
             self.batch_size,
-            self.partitions_per_worker,
+            self.partitions_per_processor,
             self.prefetch_buffer_size,
         )
 

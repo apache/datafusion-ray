@@ -1,0 +1,56 @@
+apiVersion: sparkoperator.k8s.io/v1beta2
+kind: SparkApplication
+metadata:
+  name: spark-tpch-bench
+  namespace: default
+spec:
+  type: Python
+  pythonVersion: "3"
+  mode: cluster
+  image: spark:3.5.3
+  imagePullPolicy: IfNotPresent
+  # see https://github.com/kubeflow/spark-operator/issues/1132#issuecomment-2688276488
+  deps:
+    packages:
+      - org.apache.hadoop:hadoop-aws:3.3.4
+      - com.amazonaws:aws-java-sdk-bundle:1.12.782
+    repositories:
+      - https://repo1.maven.org/maven2/
+  mainApplicationFile: {{ data_path }}/spark_tpcbench.py
+  arguments:
+    - --name
+    - spark
+    - --benchmark
+    - tpch
+    - --data
+    - {{ data_path }}/sf{{ scale_factor }}
+    - --queries
+    - /data/queries
+    - --output
+    - /data/
+  sparkVersion: 3.5.3
+  volumes:
+    - name: spark-local-dir-spark-vol
+      hostPath:
+        path: /data
+        type: DirectoryOrCreate
+  driver:
+    javaOptions: "-Divy.cache.dir=/tmp/ivy2/cache -Divy.home=/tmp/ivy2"
+    cores: {{ driver_cpus }}
+    memory: "{{ driver_mem }}g"
+    serviceAccount: spark-operator-spark
+    volumeMounts:
+      - name: spark-local-dir-spark-vol
+        mountPath: /data
+    nodeSelector:
+      node-role.kubernetes.io/master: "true" 
+  executor:
+    javaOptions: "-Divy.cache.dir=/tmp/ivy2/cache -Divy.home=/tmp/ivy2"
+    instances: {{ executor_num }}
+    cores: {{ executor_cpus }}
+    memory: "{{ executor_mem - executor_overhead_mem }}g"
+    memoryOverhead: "{{ executor_overhead_mem }}g"
+    volumeMounts:
+      - name: spark-local-dir-spark-vol
+        mountPath: /data
+
