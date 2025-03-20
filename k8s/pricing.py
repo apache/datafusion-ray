@@ -33,11 +33,27 @@ def get_on_demand_price(region, instance_type):
         response = pricing_client.get_products(
             ServiceCode="AmazonEC2",
             Filters=[
-                {"Type": "TERM_MATCH", "Field": "instanceType", "Value": instance_type},
-                {"Type": "TERM_MATCH", "Field": "operatingSystem", "Value": "Linux"},
-                {"Type": "TERM_MATCH", "Field": "preInstalledSw", "Value": "NA"},
+                {
+                    "Type": "TERM_MATCH",
+                    "Field": "instanceType",
+                    "Value": instance_type,
+                },
+                {
+                    "Type": "TERM_MATCH",
+                    "Field": "operatingSystem",
+                    "Value": "Linux",
+                },
+                {
+                    "Type": "TERM_MATCH",
+                    "Field": "preInstalledSw",
+                    "Value": "NA",
+                },
                 {"Type": "TERM_MATCH", "Field": "tenancy", "Value": "Shared"},
-                {"Type": "TERM_MATCH", "Field": "capacitystatus", "Value": "Used"},
+                {
+                    "Type": "TERM_MATCH",
+                    "Field": "capacitystatus",
+                    "Value": "Used",
+                },
                 {
                     "Type": "TERM_MATCH",
                     "Field": "location",
@@ -50,7 +66,9 @@ def get_on_demand_price(region, instance_type):
             price_data = eval(response["PriceList"][0])
             terms = price_data["terms"]["OnDemand"]
             price_dimensions = next(iter(terms.values()))["priceDimensions"]
-            price = next(iter(price_dimensions.values()))["pricePerUnit"]["USD"]
+            price = next(iter(price_dimensions.values()))["pricePerUnit"][
+                "USD"
+            ]
             return float(price)
     except Exception as e:
         print(
@@ -79,8 +97,10 @@ def get_reserved(region, instance_type):
             if nt:
                 kwargs["nextToken"] = nt
 
-            response = savingsplans_client.describe_savings_plans_offering_rates(
-                **kwargs
+            response = (
+                savingsplans_client.describe_savings_plans_offering_rates(
+                    **kwargs
+                )
             )
             results.extend(response["searchResults"])
             if len(response["nextToken"]) > 0:
@@ -106,7 +126,9 @@ def get_reserved(region, instance_type):
             key = f"{duration_years:.1f}y"
 
             payment_option = (
-                result["savingsPlanOffering"]["paymentOption"].lower().split()[0]
+                result["savingsPlanOffering"]["paymentOption"]
+                .lower()
+                .split()[0]
             )  # 'no', 'partial', or 'all'
             rate = float(result["rate"])
 
@@ -115,9 +137,14 @@ def get_reserved(region, instance_type):
 
         return (
             rates
-            if any(any(v is not None for v in year.values()) for year in rates.values())
+            if any(
+                any(v is not None for v in year.values())
+                for year in rates.values()
+            )
             else None
         )
     except Exception as e:
-        print(f"Error getting reserved cost for {instance_type} in {region}: {str(e)}")
+        print(
+            f"Error getting reserved cost for {instance_type} in {region}: {str(e)}"
+        )
     return None

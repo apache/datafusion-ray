@@ -1,11 +1,11 @@
 ==========================================================================================
-Spark and DataFusionRay TPCH 100 Benchmarks
+Spark and DataFusion for Ray TPCH 100 Benchmarks
 Machine:                      r8g.8xlarge
 CPU(s):                        32x
 MEM:                          252G
 HD Throughput:                167.50 (from hdparm)
 
-DataFusionRay Settings:
+DataFusion for Ray Settings:
 concurrency:                          16
 batch_size :                        8192
 partitions_per_processor:              8
@@ -53,13 +53,13 @@ DataFrame()
 +------------+--------------------+--------------------+---------------------+---------------+
 
 ==========================================================================================
-Spark and DataFusionRay TPCH 100 Benchmarks
+Spark and DataFusion for Ray TPCH 100 Benchmarks
 Machine:                      r8g.8xlarge
 CPU(s):                        32x
 MEM:                          252G
 HD Throughput:                169.07 (from hdparm)
 
-DataFusionRay Settings:
+DataFusion for Ray Settings:
 concurrency:                          16
 batch_size :                        8192
 partitions_per_processor:              8

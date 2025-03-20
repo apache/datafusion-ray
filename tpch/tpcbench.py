@@ -108,7 +108,9 @@ def main(
         sql = tpch_query(qnum)
 
         statements = list(
-            filter(lambda x: len(x) > 0, map(lambda x: x.strip(), sql.split(";")))
+            filter(
+                lambda x: len(x) > 0, map(lambda x: x.strip(), sql.split(";"))
+            )
         )
 
         start_time = time.time()
@@ -122,7 +124,9 @@ def main(
 
         calculated = "\n".join([prettify(b) for b in all_batches])
         print(calculated)
-        out_path = os.path.join(output_path, f"datafusion_ray_tpch_q{qnum}_result.txt")
+        out_path = os.path.join(
+            output_path, f"datafusion_ray_tpch_q{qnum}_result.txt"
+        )
         with open(out_path, "w") as f:
             f.write(calculated)
 
@@ -161,7 +165,9 @@ if __name__ == "__main__":
     parser.add_argument(
         "--concurrency", required=True, help="Number of concurrent tasks"
     )
-    parser.add_argument("--qnum", type=int, default=-1, help="TPCH query number, 1-22")
+    parser.add_argument(
+        "--qnum", type=int, default=-1, help="TPCH query number, 1-22"
+    )
     parser.add_argument("--listing-tables", action="store_true")
     parser.add_argument("--validate", action="store_true")
     parser.add_argument(

@@ -17,15 +17,15 @@
   under the License.
 -->
 
-# DataFusion Ray Design Documentation
+# DataFusion for Ray Design Documentation
 
-DataFusion Ray is a distributed SQL query engine that is powered by DataFusion and Ray.
+DataFusion for Ray is a distributed SQL query engine that is powered by DataFusion and Ray.
 
 DataFusion provides a high-performance query engine that is already partition-aware, with partitions being executed
-in parallel in separate threads. DataFusion Ray provides a distributed query planner that translates a DataFusion physical
+in parallel in separate threads. DataFusion for Ray provides a distributed query planner that translates a DataFusion physical
 plan into a distributed plan.
 
-Note that this document is dated from an early implementation of DataFusion Ray. The details around shuffle differ in the current ArrowFlight Streaming based implementation.
+Note that this document is dated from an early implementation of DataFusion for Ray. The details around shuffle differ in the current ArrowFlight Streaming based implementation.
 However the general discussion around how to break a physical plan into discrete stages remains useful, and we retain this document here.
 
 Let's walk through an example to see how that works. We'll use [SQLBench-H](https://github.com/sql-benchmarks/sqlbench-h)
@@ -123,7 +123,7 @@ GlobalLimitExec: skip=0, fetch=10
 ## Partitioning & Distribution
 
 The partitioning scheme changes throughout the plan and this is the most important concept to
-understand in order to understand DataFusion Ray's design. Changes in partitioning are implemented by the `RepartitionExec`
+understand in order to understand DataFusion for Ray's design. Changes in partitioning are implemented by the `RepartitionExec`
 operator in DataFusion and are happen in the following scenarios.
 
 ### Joins
@@ -155,7 +155,7 @@ Sort also has multiple approaches.
 - The input partitions can be collapsed down to a single partition and then sorted
 - Partitions can be sorted in parallel and then merged using a sort-preserving merge
 
-DataFusion and DataFusion Ray currently choose the first approach, but there is a DataFusion PR open for implementing the second.
+DataFusion and DataFusion for Ray currently choose the first approach, but there is a DataFusion PR open for implementing the second.
 
 ### Limit
 
@@ -262,10 +262,10 @@ child plans, building up a DAG of futures.
 
 The output of each query stage needs to be persisted somewhere so that the next query stage can read it.
 
-DataFusion Ray uses the Ray object store as a shared file system, which was proposed [here](https://github.com/datafusion-contrib/ray-sql/issues/22) and implemented [here](https://github.com/datafusion-contrib/ray-sql/pull/33).
+DataFusion for Ray uses the Ray object store as a shared file system, which was proposed [here](https://github.com/datafusion-contrib/ray-sql/issues/22) and implemented [here](https://github.com/datafusion-contrib/ray-sql/pull/33).
 
 DataFusion's `RepartitionExec` uses threads and channels within a single process and is not suitable for a
-distributed query engine, so DataFusion Ray rewrites the physical plan and replaces the `RepartionExec` with a pair of
+distributed query engine, so DataFusion for Ray rewrites the physical plan and replaces the `RepartionExec` with a pair of
 operators to perform a "shuffle". These are the `ShuffleWriterExec` and `ShuffleReaderExec`.
 
 ### Shuffle Writes

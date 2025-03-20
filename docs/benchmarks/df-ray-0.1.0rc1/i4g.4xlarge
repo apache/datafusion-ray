@@ -1,5 +1,5 @@
 =================================================================================================
-Spark and DataFusionRay TPCH 100 Benchmarks
+Spark and DataFusion for Ray TPCH 100 Benchmarks
 Machine:                      i4g.4xlarge
 Machine On Demand Cost:       1.23552 $/hr
 CPU(s):                       Neoverse-N1 16x
@@ -13,7 +13,7 @@ df-ray cost:                     $0.2989 +1.04x cheaper
 spark duration:                  906.69s
 spark cost:                      $0.3112
 
-DataFusionRay Settings:
+DataFusion for Ray Settings:
 concurrency:                          16
 batch_size :                        8192
 partitions_per_processor:              4

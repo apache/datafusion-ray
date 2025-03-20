@@ -30,7 +30,6 @@
 #
 # Based in part on post-01-upload.sh from apache/arrow
 
-
 set -e
 set -u
 
@@ -65,7 +64,7 @@ cp -r ${tmp_dir}/dev/* ${tmp_dir}/release/${release_version}/
 svn add ${tmp_dir}/release/${release_version}
 
 echo "Commit release"
-svn ci -m "Apache DataFusion Ray ${version}" ${tmp_dir}/release
+svn ci -m "Apache DataFusion for Ray ${version}" ${tmp_dir}/release
 
 echo "Clean up"
 rm -rf ${tmp_dir}

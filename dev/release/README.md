@@ -17,7 +17,7 @@
   under the License.
 -->
 
-# DataFusion Ray Release Process
+# DataFusion for Ray Release Process
 
 Development happens on the `main` branch, and most of the time, we depend on DataFusion using GitHub dependencies
 rather than using an official release from crates.io. This allows us to pick up new features and bug fixes frequently
@@ -43,7 +43,7 @@ You will need a GitHub Personal Access Token. Follow
 [these instructions](https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/creating-a-personal-access-token)
 to generate one if you do not already have one.
 
-You will need a PyPI API token. Create one at https://test.pypi.org/manage/account/#api-tokens, setting the “Scope” to
+You will need a PyPI API token. Create one at <https://test.pypi.org/manage/account/#api-tokens>, setting the “Scope” to
 “Entire account”.
 
 You will also need access to the [datafusion-ray](https://test.pypi.org/project/datafusion-ray/) project on testpypi.
@@ -63,7 +63,7 @@ We maintain a `CHANGELOG.md` so our users know what has been changed between rel
 The changelog is generated using a Python script:
 
 ```bash
-$ GITHUB_TOKEN=<TOKEN> ./dev/release/generate-changelog.py 0.1.0 HEAD 0.2.0 > dev/changelog/0.2.0.md
+GITHUB_TOKEN=<TOKEN> ./dev/release/generate-changelog.py 0.1.0 HEAD 0.2.0 > dev/changelog/0.2.0.md
 ```
 
 This script creates a changelog from GitHub PRs based on the labels associated with them as well as looking for
@@ -91,7 +91,7 @@ git push apache 0.2.0-rc1
 ./dev/release/create-tarball.sh 0.2.0 1
 ```
 
-This will also create the email template to send to the mailing list. 
+This will also create the email template to send to the mailing list.
 
 Create a draft email using this content, but do not send until after completing the next step.
 
@@ -104,7 +104,7 @@ This section assumes some familiarity with publishing Python packages to PyPi. F
 
 Pushing an `rc` tag to the release branch will cause a GitHub Workflow to run that will build the Python wheels.
 
-Go to https://github.com/apache/datafusion-ray/actions and look for an action named "Python Release Build"
+Go to <https://github.com/apache/datafusion-ray/actions> and look for an action named "Python Release Build"
 that has run against the pushed tag.
 
 Click on the action and scroll down to the bottom of the page titled "Artifacts". Download `dist.zip`. It should
@@ -207,10 +207,10 @@ git push apache 0.2.0
 
 ### Add the release to Apache Reporter
 
-Add the release to https://reporter.apache.org/addrelease.html?datafusion with a version name prefixed with `DATAFUSION-RAY`,
+Add the release to <https://reporter.apache.org/addrelease.html?datafusion> with a version name prefixed with `DATAFUSION-RAY`,
 for example `DATAFUSION-RAY-0.2.0`.
 
-The release information is used to generate a template for a board report (see example from Apache Arrow 
+The release information is used to generate a template for a board report (see example from Apache Arrow
 [here](https://github.com/apache/arrow/pull/14357)).
 
 ### Delete old RCs and Releases
@@ -222,7 +222,7 @@ for more information.
 
 Release candidates should be deleted once the release is published.
 
-Get a list of DataFusion release candidates:
+Get a list of DataFusion for Ray release candidates:
 
 ```bash
 svn ls https://dist.apache.org/repos/dist/dev/datafusion | grep datafusion-ray

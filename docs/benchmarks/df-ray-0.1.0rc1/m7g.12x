@@ -1,11 +1,11 @@
 ==========================================================================================
-Spark and DataFusionRay TPCH 100 Benchmarks
+Spark and DataFusion for Ray TPCH 100 Benchmarks
 Machine:                      m7g.12xlarge
 CPU(s):                        48x
 MEM:                          189G
 HD Throughput:                167.53 MB/s (from hdparm)
 
-DataFusionRay Settings:
+DataFusion for Ray Settings:
 concurrency:                          16
 batch_size :                        8192
 partitions_per_processor:              2

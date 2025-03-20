@@ -25,17 +25,28 @@ import sys
 import boto3
 
 
-def main(benchmark: str, data_path: str, query_path: str, output_path: str, name: str):
+def main(
+    benchmark: str,
+    data_path: str,
+    query_path: str,
+    output_path: str,
+    name: str,
+):
 
     # Initialize a SparkSession
-    spark = SparkSession.builder \
-        .appName( f"{name} benchmark derived from {benchmark}") \
-        .getOrCreate()
+    spark = SparkSession.builder.appName(
+        f"{name} benchmark derived from {benchmark}"
+    ).getOrCreate()
 
-    spark.conf.set("spark.hadoop.fs.s3a.aws.credentials.provider", "org.apache.hadoop.fs.s3a.SimpleAWSCredentialsProvider")
-    spark.conf.set("spark.hadoop.fs.s3a.impl", "org.apache.hadoop.fs.s3a.S3AFileSystem")
+    spark.conf.set(
+        "spark.hadoop.fs.s3a.aws.credentials.provider",
+        "org.apache.hadoop.fs.s3a.SimpleAWSCredentialsProvider",
+    )
+    spark.conf.set(
+        "spark.hadoop.fs.s3a.impl", "org.apache.hadoop.fs.s3a.S3AFileSystem"
+    )
 
-        # Register the tables
+    # Register the tables
     num_queries = 22
     table_names = [
         "customer",
@@ -85,7 +96,10 @@ def main(benchmark: str, data_path: str, query_path: str, output_path: str, name
             text = f.read()
             # each file can contain multiple queries
             queries = list(
-                filter(lambda x: len(x) > 0, map(lambda x: x.strip(), text.split(";")))
+                filter(
+                    lambda x: len(x) > 0,
+                    map(lambda x: x.strip(), text.split(";")),
+                )
             )
 
             start_time = time.time()
@@ -113,7 +127,9 @@ def main(benchmark: str, data_path: str, query_path: str, output_path: str, name
 
     out = json.dumps(results, indent=4)
     current_time_millis = int(datetime.now().timestamp() * 1000)
-    results_path = f"{output_path}/{name}-{benchmark}-{current_time_millis}.json"
+    results_path = (
+        f"{output_path}/{name}-{benchmark}-{current_time_millis}.json"
+    )
     print(f"Writing results to {results_path}")
     with open(results_path, "w") as f:
         f.write(out)
@@ -137,7 +153,9 @@ if __name__ == "__main__":
     parser.add_argument("--queries", required=True, help="Path to query files")
     parser.add_argument("--output", required=True, help="Path to write output")
     parser.add_argument(
-        "--name", required=True, help="Prefix for result file e.g. spark/comet/gluten"
+        "--name",
+        required=True,
+        help="Prefix for result file e.g. spark/comet/gluten",
     )
     args = parser.parse_args()
     print(f"parsed is {args}")

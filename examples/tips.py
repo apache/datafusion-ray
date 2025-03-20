@@ -36,7 +36,9 @@ def go(data_dir: str):
 if __name__ == "__main__":
     ray.init(namespace="tips", runtime_env=df_ray_runtime_env)
     parser = argparse.ArgumentParser()
-    parser.add_argument("--data-dir", required=True, help="path to tips.parquet files")
+    parser.add_argument(
+        "--data-dir", required=True, help="path to tips.parquet files"
+    )
     args = parser.parse_args()
 
     go(args.data_dir)
