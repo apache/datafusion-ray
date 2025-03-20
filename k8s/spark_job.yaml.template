@@ -11,12 +11,14 @@ spec:
   imagePullPolicy: IfNotPresent
   # see https://github.com/kubeflow/spark-operator/issues/1132#issuecomment-2688276488
   deps:
+{% if data_path.startswith("s3") %}
     packages:
       - org.apache.hadoop:hadoop-aws:3.3.4
       - com.amazonaws:aws-java-sdk-bundle:1.12.782
     repositories:
       - https://repo1.maven.org/maven2/
-  mainApplicationFile: {{ data_path }}/spark_tpcbench.py
+{% endif %}
+  mainApplicationFile: {{ "local://" if data_path.startswith("/") else "" }}{{ data_path }}/spark_tpcbench.py
   arguments:
     - --name
     - spark
@@ -27,7 +29,7 @@ spec:
     - --queries
     - /data/queries
     - --output
-    - /data/
+    - {{ output_path }}
   sparkVersion: 3.5.3
   volumes:
     - name: spark-local-dir-spark-vol

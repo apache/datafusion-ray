@@ -80,6 +80,7 @@ def cli(dry_run: bool, verbose: bool):
     help="path to the local directory exposed via PVC",
     required=True,
 )
+
 @click.option(
     "--concurrency",
     type=int,
@@ -99,10 +100,7 @@ def cli(dry_run: bool, verbose: bool):
     required=True,
 )
 @click.option(
-    "--df-ray-version",
-    type=str,
-    help="version number of DFRay to use",
-    required=True,
+    "--df-ray-version", type=str, help="version number of DFRay to use", required=True
 )
 @click.option(
     "--test-pypi",
@@ -158,17 +156,11 @@ def bench(system, **kwargs):
 def results(data_path, data_device, scale_factor, output_path):
     df_result = json.loads(
         open(
-            newest_file(
-                glob.glob(os.path.join(output_path, "datafusion-ray*json"))
-            )
+            newest_file(glob.glob(os.path.join(output_path, "datafusion-ray*json")))
         ).read()
     )
     spark_result = json.loads(
-        open(
-            newest_file(
-                glob.glob(os.path.join(output_path, "spark-tpch*json"))
-            )
-        ).read()
+        open(newest_file(glob.glob(os.path.join(output_path, "spark-tpch*json")))).read()
     )
     print(df_result)
     print(spark_result)
@@ -189,20 +181,21 @@ def results(data_path, data_device, scale_factor, output_path):
 
     df["change_text"] = df["change"].apply(
         lambda change: (
-            f"+{(1 / change):.2f}x faster"
-            if change < 1.0
-            else f" {change:.2f}x slower"
+            f"+{(1 / change):.2f}x faster" if change < 1.0 else f" {change:.2f}x slower"
         )
     )
     df["tpch_query"] = [f"{i}" for i in range(1, 23)] + ["total"]
     df["sort_index"] = list(range(1, 24))
 
+    df["spark"] = df["spark"].apply(lambda s: f"{s:>10.4f}")
+    df["df_ray"] = df["df_ray"].apply(lambda s: f"{s:>10.4f}")
+    df["change"] = df["change"].apply(lambda s: f"{s:>21.4f}")
+    df["change_text"] = df["change_text"].apply(lambda s: f"{s:>14}")
+
     ts = time.time()
     df.to_parquet(f"datafusion-ray-spark-comparison-{ts}.parquet")
     ctx = datafusion.SessionContext()
-    ctx.register_parquet(
-        "results", f"datafusion-ray-spark-comparison-{ts}.parquet"
-    )
+    ctx.register_parquet("results", f"datafusion-ray-spark-comparison-{ts}.parquet")
 
     cpu = subprocess.run(
         "lscpu | grep 'Model name' |awk '{print $3}'",
@@ -253,10 +246,10 @@ def results(data_path, data_device, scale_factor, output_path):
     spark_cost = f"${spark_cost:.4f}"
     spark_duration = f"{spark[-1]:.2f}s"
 
-    print("=" * 97)
+    print("=" * 81)
     # the formatting code is terrible here, but it works for now
     header = [
-        "Spark and DataFusion for Ray TPCH 100 Benchmarks",
+        "Spark and DataFusionRay TPCH 100 Benchmarks",
         f"{'Machine:':<30}{machine}",
         f"{'Machine On Demand Cost:':<30}{hourly_cost} $/hr",
         f"{'CPU(s):':<30}{cpu} {quantity}x",
@@ -270,7 +263,7 @@ def results(data_path, data_device, scale_factor, output_path):
         f"{'spark duration:':<30}{spark_duration:>10}",
         f"{'spark cost:':<30}{spark_cost:>10}",
         "",
-        "DataFusion for Ray Settings:",
+        "DataFusionRay Settings:",
         f"{'concurrency:':<30}{df_result['settings']['concurrency']:>10}",
         f"{'batch_size :':<30}{df_result['settings']['batch_size']:>10}",
         f"{'partitions_per_processor:':<30}{df_result['settings']['partitions_per_processor']:>10}",
@@ -291,7 +284,7 @@ def results(data_path, data_device, scale_factor, output_path):
     for h in header:
         print(h)
 
-    print("=" * 97)
+    print("=" * 81)
     ctx.sql(
         'select tpch_query, spark, df_ray, change as "change(=df_ray/spark)", change_text from results order by sort_index asc'
     ).show(num=100)

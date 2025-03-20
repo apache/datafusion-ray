@@ -1,3 +1,66 @@
+=================================================================================
+Spark and DataFusionRay TPCH 100 Benchmarks
+Machine:                      m7g.12xlarge
+Machine On Demand Cost:       1.9584 $/hr
+CPU(s):                       Neoverse-V1 48x
+MEM:                          189G
+HD Throughput:                166.46 MB/s (from hdparm)
+Data Location:                /data/sf100
+
+df-ray duration:                 204.97s  +4.75x faster
+df-ray cost:                     $0.1115 +4.75x cheaper
+
+spark duration:                  974.60s
+spark cost:                      $0.5302
+
+DataFusionRay Settings:
+concurrency:                          16
+batch_size :                        8192
+partitions_per_processor:              1
+Ray Workers:                           4
+Ray Worker Mem (GB):                  40
+Ray Worker CPU:                       10
+Ray Head Mem (GB):                    10
+Ray Head CPU:                          4
+
+Spark Settings:
+Executors:                             4
+Executor Mem (GB):                    32
+Executor Overhead Mem (GB):            8
+Executor CPU:                         10
+Driver Mem(GB):                       10
+Driver CPU:                            4
+=================================================================================
+DataFrame()
++------------+------------+------------+-----------------------+----------------+
+| tpch_query | spark      | df_ray     | change(=df_ray/spark) | change_text    |
++------------+------------+------------+-----------------------+----------------+
+| 1          |    41.0527 |     7.3332 |                0.1786 |  +5.60x faster |
+| 2          |     5.2886 |     3.3632 |                0.6359 |  +1.57x faster |
+| 3          |     8.8360 |     5.8260 |                0.6593 |  +1.52x faster |
+| 4          |     6.7364 |     2.8624 |                0.4249 |  +2.35x faster |
+| 5          |   113.1327 |     9.7685 |                0.0863 | +11.58x faster |
+| 6          |     4.0279 |     5.0924 |                1.2643 |   1.26x slower |
+| 7          |    10.3482 |    15.0313 |                1.4526 |   1.45x slower |
+| 8          |   197.1830 |    10.5564 |                0.0535 | +18.68x faster |
+| 9          |   244.0854 |    17.0069 |                0.0697 | +14.35x faster |
+| 10         |    25.6980 |    10.1537 |                0.3951 |  +2.53x faster |
+| 11         |     2.0117 |     3.2634 |                1.6222 |   1.62x slower |
+| 12         |    20.2309 |     4.5518 |                0.2250 |  +4.44x faster |
+| 13         |     8.1399 |     3.5019 |                0.4302 |  +2.32x faster |
+| 14         |     2.5995 |     3.3954 |                1.3062 |   1.31x slower |
+| 15         |     6.7179 |     6.2090 |                0.9243 |  +1.08x faster |
+| 16         |     4.2510 |     3.1190 |                0.7337 |  +1.36x faster |
+| 17         |   119.6635 |    21.6696 |                0.1811 |  +5.52x faster |
+| 18         |    61.9433 |    32.2979 |                0.5214 |  +1.92x faster |
+| 19         |     4.1546 |     5.9170 |                1.4242 |   1.42x slower |
+| 20         |     5.0565 |     5.5918 |                1.1059 |   1.11x slower |
+| 21         |    78.7263 |    26.4413 |                0.3359 |  +2.98x faster |
+| 22         |     4.7114 |     2.0223 |                0.4292 |  +2.33x faster |
+| total      |   974.5953 |   204.9744 |                0.2103 |  +4.75x faster |
++------------+------------+------------+-----------------------+----------------+
+
+
 ==========================================================================================
 Spark and DataFusion for Ray TPCH 100 Benchmarks
 Machine:                      m7g.12xlarge

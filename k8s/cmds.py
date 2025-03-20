@@ -25,7 +25,7 @@ cmds = {
     ],
     "k3s_setup": [
         Shell(
-            """sudo curl -sfL https://get.k3s.io | {{ k3s_url if k3s_url else "" }} {{ k3s_token if k3s_token else ""}} sh - --write-kubeconfig-mode 644""",
+            """sudo curl -sfL https://get.k3s.io | {{ k3s_url if k3s_url else "" }} {{ k3s_token if k3s_token else ""}} sh -s -""",
             "Installing K3s",
         ),
         Shell(
@@ -41,11 +41,11 @@ cmds = {
             "Installing Helm",
         ),
         Shell(
-            "helm repo add kuberay https://ray-project.github.io/kuberay-helm/",
+            "helm --kubeconfig /etc/rancher/k3s/k3s.yaml repo add kuberay https://ray-project.github.io/kuberay-helm/",
             "Adding kube ray helm repo",
         ),
         Shell(
-            "helm repo add spark-operator https://kubeflow.github.io/spark-operator",
+            "helm --kubeconfig /etc/rancher/k3s/k3s.yaml repo add spark-operator https://kubeflow.github.io/spark-operator",
             "Adding spark operator helm repo",
         ),
         Shell("helm repo update", "Updating helm repos"),
@@ -54,7 +54,7 @@ cmds = {
             "Installing kuberay-operator",
         ),
         Shell(
-            """helm install --set-json='controller.env=[{"name":"SPARK_SUBMIT_OPTS","value":"-Divy.cache.dir=/tmp/ivy2/cache -Divy.home=/tmp/ivy2"}]' spark-operator spark-operator/spark-operator""",
+            """helm --kubeconfig /etc/rancher/k3s/k3s.yaml install --set-json='controller.env=[{"name":"SPARK_SUBMIT_OPTS","value":"-Divy.cache.dir=/tmp/ivy2/cache -Divy.home=/tmp/ivy2"}]' spark-operator spark-operator/spark-operator""",
             "Installing spark-operator",
         ),
         Template("pvcs.yaml.template", "rewrite pvcs.yaml.template"),
@@ -82,12 +82,20 @@ cmds = {
         ),
         Shell(
             """
+            {% if data_path.startswith("s3") %}
             wget https://repo1.maven.org/maven2/com/amazonaws/aws-java-sdk-bundle/1.12.262/aws-java-sdk-bundle-1.12.262.jar && \
-            aws s3 cp aws-java-sdk-bundle-1.12.262.jar {{ data_path.replace('s3a','s3') }}/aws-java-sdk-bundle-1.12.262.jar && \
             wget https://repo1.maven.org/maven2/org/apache/hadoop/hadoop-aws/3.3.4/hadoop-aws-3.3.4.jar && \
+            aws s3 cp aws-java-sdk-bundle-1.12.262.jar {{ data_path.replace('s3a','s3') }}/aws-java-sdk-bundle-1.12.262.jar && \
             aws s3 cp hadoop-aws-3.3.4.jar {{ data_path.replace('s3a','s3') }}/hadoop-aws-3.3.4.jar
+            {% else %}
+            wget https://repo1.maven.org/maven2/com/amazonaws/aws-java-sdk-bundle/1.12.262/aws-java-sdk-bundle-1.12.262.jar && \
+            wget https://repo1.maven.org/maven2/org/apache/hadoop/hadoop-aws/3.3.4/hadoop-aws-3.3.4.jar && \
+            mv aws-java-sdk-bundle-1.12.262.jar {{ data_path }}/aws-java-sdk-bundle-1.12.262.jar && \
+            mv hadoop-aws-3.3.4.jar {{ data_path }}/hadoop-aws-3.3.4.jar
+
+            {% endif %}
             """,
-            "getting additional spark jars",
+            "getting additional spark jars"
         ),
         Shell(
             "kubectl apply -f spark_job.yaml",
@@ -106,15 +114,13 @@ cmds = {
             """,
             "checking on job status",
         ),
-        # Shell(
+        #Shell(
         #    "kubectl delete -f spark_job.yaml",
         #    "tear down job",
-        # ),
+        #),
     ],
     "bench_df_ray": [
-        Template(
-            "ray_cluster.yaml.template", "rewrite ray_cluster.yaml.template"
-        ),
+        Template("ray_cluster.yaml.template", "rewrite ray_cluster.yaml.template"),
         Shell(
             "kubectl apply -f ray_cluster.yaml",
             "deploying ray cluster",
@@ -123,9 +129,7 @@ cmds = {
             "kubectl wait raycluster/datafusion-ray-cluster --for='jsonpath={.status.state}'=ready --timeout=300s",
             "wait for ray cluster to be ready",
         ),
-        Template(
-            "requirements.txt.template", "rewrite requirements.txt.template"
-        ),
+        Template("requirements.txt.template", "rewrite requirements.txt.template"),
         Template("ray_job.sh.template", "rewrite ray_job.sh.template"),
         BackgroundShell(
             "kubectl port-forward svc/datafusion-ray-cluster-head-svc 8265:8265",
@@ -181,9 +185,7 @@ class Runner:
         for command in commands:
             match (self.dry_run, command):
                 case (False, Shell(cmd, desc)):
-                    self.run_shell_command(
-                        textwrap.dedent(cmd), desc, substitutions
-                    )
+                    self.run_shell_command(textwrap.dedent(cmd), desc, substitutions)
 
                 case (True, Shell(cmd, desc)):
                     click.secho(f"[dry run] {desc} ...")
@@ -191,10 +193,7 @@ class Runner:
 
                 case (False, BackgroundShell(cmd, desc)):
                     self.run_shell_command(
-                        textwrap.dedent(cmd),
-                        desc,
-                        substitutions,
-                        background=True,
+                        textwrap.dedent(cmd), desc, substitutions, background=True
                     )
 
                 case (True, BackgroundShell(cmd, desc)):
@@ -207,9 +206,7 @@ class Runner:
 
                 case (True, Template(path, desc)):
                     click.secho(f"[dry run] {desc} ...")
-                    click.secho(
-                        f"    {path} subs:{substitutions}", fg="yellow"
-                    )
+                    click.secho(f"    {path} subs:{substitutions}", fg="yellow")
 
                 case (False, ChangeDir(path, desc)):
                     click.secho(f"{desc} ...")
@@ -226,9 +223,7 @@ class Runner:
                     click.secho(f"[dry run] {desc} ...")
 
                 case _:
-                    raise Exception(
-                        "Unhandled case in match.  Shouldn't happen"
-                    )
+                    raise Exception("Unhandled case in match.  Shouldn't happen")
 
     def run_shell_command(
         self,
@@ -274,10 +269,7 @@ class Runner:
             exit(1)
 
     def process_template(
-        self,
-        template_name: str,
-        output_path: str,
-        substitutions: dict[str, str] | None,
+        self, template_name: str, output_path: str, substitutions: dict[str, str] | None
     ):
         template_out = template_name[: template_name.index(".template")]
         output_path = os.path.join(output_path, template_out)
