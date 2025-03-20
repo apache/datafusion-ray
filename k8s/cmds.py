@@ -95,7 +95,7 @@ cmds = {
 
             {% endif %}
             """,
-            "getting additional spark jars"
+            "getting additional spark jars",
         ),
         Shell(
             "kubectl apply -f spark_job.yaml",
@@ -114,10 +114,10 @@ cmds = {
             """,
             "checking on job status",
         ),
-        #Shell(
-        #    "kubectl delete -f spark_job.yaml",
-        #    "tear down job",
-        #),
+        Shell(
+            "kubectl delete -f spark_job.yaml",
+            "tear down job",
+        ),
     ],
     "bench_df_ray": [
         Template("ray_cluster.yaml.template", "rewrite ray_cluster.yaml.template"),
