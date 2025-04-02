@@ -17,8 +17,8 @@ use datafusion::{
     physical_plan::ExecutionPlan,
 };
 use datafusion_proto::physical_plan::{
-    from_proto::parse_protobuf_partitioning, to_proto::serialize_partitioning,
-    DefaultPhysicalExtensionCodec, PhysicalExtensionCodec,
+    DefaultPhysicalExtensionCodec, PhysicalExtensionCodec, from_proto::parse_protobuf_partitioning,
+    to_proto::serialize_partitioning,
 };
 use datafusion_proto::protobuf;
 
@@ -27,7 +27,7 @@ use prost::Message;
 use crate::stage_reader::DFRayStageReaderExec;
 
 #[derive(Debug)]
-/// Physical Extension Codec for for DataFusion Ray plans
+/// Physical Extension Codec for for DataFusion for Ray plans
 pub struct RayCodec {}
 
 impl PhysicalExtensionCodec for RayCodec {
@@ -154,7 +154,7 @@ mod test {
     use crate::stage_reader::DFRayStageReaderExec;
     use arrow::datatypes::DataType;
     use datafusion::{
-        physical_plan::{display::DisplayableExecutionPlan, displayable, Partitioning},
+        physical_plan::{Partitioning, display::DisplayableExecutionPlan, displayable},
         prelude::SessionContext,
     };
     use datafusion_proto::physical_plan::AsExecutionPlan;

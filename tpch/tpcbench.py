@@ -35,10 +35,11 @@ def main(
     data_path: str,
     concurrency: int,
     batch_size: int,
-    partitions_per_worker: int | None,
-    worker_pool_min: int,
+    partitions_per_processor: int | None,
+    processor_pool_min: int,
     listing_tables: bool,
     validate: bool,
+    output_path: str,
     prefetch_buffer_size: int,
 ):
     # Register the tables
@@ -58,9 +59,10 @@ def main(
 
     ctx = DFRayContext(
         batch_size=batch_size,
-        partitions_per_worker=partitions_per_worker,
+        partitions_per_processor=partitions_per_processor,
         prefetch_buffer_size=prefetch_buffer_size,
-        worker_pool_min=worker_pool_min,
+        processor_pool_min=processor_pool_min,
+        processor_pool_max=1000,
     )
 
     local = LocalValidator()
@@ -81,7 +83,9 @@ def main(
             local.register_parquet(table, path)
 
     current_time_millis = int(datetime.now().timestamp() * 1000)
-    results_path = f"datafusion-ray-tpch-{current_time_millis}.json"
+    results_path = os.path.join(
+        output_path, f"datafusion-ray-tpch-{current_time_millis}.json"
+    )
     print(f"Writing results to {results_path}")
 
     results = {
@@ -91,7 +95,7 @@ def main(
             "concurrency": concurrency,
             "batch_size": batch_size,
             "prefetch_buffer_size": prefetch_buffer_size,
-            "partitions_per_worker": partitions_per_worker,
+            "partitions_per_processor": partitions_per_processor,
         },
         "data_path": data_path,
         "queries": {},
@@ -104,9 +108,10 @@ def main(
         sql = tpch_query(qnum)
 
         statements = list(
-            filter(lambda x: len(x) > 0, map(lambda x: x.strip(), sql.split(";")))
+            filter(
+                lambda x: len(x) > 0, map(lambda x: x.strip(), sql.split(";"))
+            )
         )
-        print(f"statements = {statements}")
 
         start_time = time.time()
         all_batches = []
@@ -119,6 +124,12 @@ def main(
 
         calculated = "\n".join([prettify(b) for b in all_batches])
         print(calculated)
+        out_path = os.path.join(
+            output_path, f"datafusion_ray_tpch_q{qnum}_result.txt"
+        )
+        with open(out_path, "w") as f:
+            f.write(calculated)
+
         if validate:
             all_batches = []
             for sql in statements:
@@ -154,7 +165,9 @@ if __name__ == "__main__":
     parser.add_argument(
         "--concurrency", required=True, help="Number of concurrent tasks"
     )
-    parser.add_argument("--qnum", type=int, default=-1, help="TPCH query number, 1-22")
+    parser.add_argument(
+        "--qnum", type=int, default=-1, help="TPCH query number, 1-22"
+    )
     parser.add_argument("--listing-tables", action="store_true")
     parser.add_argument("--validate", action="store_true")
     parser.add_argument(
@@ -169,8 +182,15 @@ if __name__ == "__main__":
     parser.add_argument(
         "--partitions-per-processor",
         type=int,
-        help="Max partitions per Stage Service Worker",
+        help="partitions per DFRayProcessor",
     )
+    parser.add_argument(
+        "--output-path",
+        type=str,
+        default=".",
+        help="directory to write output json",
+    )
+
     parser.add_argument(
         "--prefetch-buffer-size",
         required=False,
@@ -179,9 +199,9 @@ if __name__ == "__main__":
         help="How many batches each stage should eagerly buffer",
     )
     parser.add_argument(
-        "--worker-pool-min",
+        "--processor-pool-min",
         type=int,
-        help="Minimum number of RayStages to keep in pool",
+        help="Minimum number of DFRayProcessors to keep in pool",
     )
 
     args = parser.parse_args()
@@ -192,8 +212,9 @@ if __name__ == "__main__":
         int(args.concurrency),
         int(args.batch_size),
         args.partitions_per_processor,
-        args.worker_pool_min,
+        args.processor_pool_min,
         args.listing_tables,
         args.validate,
+        args.output_path,
         args.prefetch_buffer_size,
     )

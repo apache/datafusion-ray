@@ -1,0 +1,61 @@
+================================================================================
+Spark and DataFusionRay TPCH 100 Benchmarks
+Machine:                      1x i4g.4xlarge
+Per Machine On Demand Cost:   1.23552 $/hr
+CPU TOTAL:                    16x Neoverse-N1x
+MEM TOTAL:                    126.8GB
+HD Throughput:                921.58 MB/s (from hdparm)
+Data Location:                s3://rob-tandy-tmp//sf100
+
+df-ray duration:                1424.35s +2.44x faster
+df-ray cost:                     $0.4888 +2.44x cheaper
+
+spark duration:                 3473.58s
+spark cost:                      $1.1921
+
+DataFusionRay Settings:
+concurrency:                          16
+batch_size :                        8192
+partitions_per_processor:              4
+Ray Workers:                           4
+Ray Worker Mem (GB):                  24
+Ray Worker CPU:                        3
+Ray Head Mem (GB):                     4
+Ray Head CPU:                          2
+
+Spark Settings:
+Executors:                             4
+Executor Mem (GB):                    20
+Executor Overhead Mem (GB):            4
+Executor CPU:                          3
+Driver Mem(GB):                        4
+Driver CPU:                            2
+================================================================================
+DataFrame()
++------------+------------+------------+-----------------------+---------------+
+| tpch_query | spark      | df_ray     | change(=df_ray/spark) | change_text   |
++------------+------------+------------+-----------------------+---------------+
+| 1          |   223.7065 |    53.2348 |                0.2380 | +4.20x faster |
+| 2          |    39.5393 |    25.1823 |                0.6369 | +1.57x faster |
+| 3          |   186.6593 |    58.9956 |                0.3161 | +3.16x faster |
+| 4          |   126.7456 |    27.6134 |                0.2179 | +4.59x faster |
+| 5          |   218.8699 |   102.4856 |                0.4682 | +2.14x faster |
+| 6          |    96.1340 |    33.1685 |                0.3450 | +2.90x faster |
+| 7          |   210.9092 |    98.8647 |                0.4688 | +2.13x faster |
+| 8          |   187.0856 |    70.3633 |                0.3761 | +2.66x faster |
+| 9          |   203.7582 |   105.3517 |                0.5170 | +1.93x faster |
+| 10         |   110.8606 |    72.4830 |                0.6538 | +1.53x faster |
+| 11         |    20.4039 |    19.8943 |                0.9750 | +1.03x faster |
+| 12         |    96.4592 |    49.0558 |                0.5086 | +1.97x faster |
+| 13         |    61.5240 |    20.0987 |                0.3267 | +3.06x faster |
+| 14         |   143.0664 |    26.4152 |                0.1846 | +5.42x faster |
+| 15         |   307.8785 |    71.2565 |                0.2314 | +4.32x faster |
+| 16         |    20.2879 |    14.6983 |                0.7245 | +1.38x faster |
+| 17         |   301.2155 |   148.0474 |                0.4915 | +2.03x faster |
+| 18         |   242.4097 |   144.3459 |                0.5955 | +1.68x faster |
+| 19         |    89.4152 |    92.0230 |                1.0292 |  1.03x slower |
+| 20         |   123.9332 |    39.6039 |                0.3196 | +3.13x faster |
+| 21         |   428.6912 |   140.1514 |                0.3269 | +3.06x faster |
+| 22         |    34.0295 |    11.0184 |                0.3238 | +3.09x faster |
+| total      |  3473.5824 |  1424.3519 |                0.4101 | +2.44x faster |
++------------+------------+------------+-----------------------+---------------+

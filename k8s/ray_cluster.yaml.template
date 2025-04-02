@@ -1,0 +1,57 @@
+apiVersion: ray.io/v1alpha1
+kind: RayCluster
+metadata:
+  name: datafusion-ray-cluster
+spec:
+  headGroupSpec:
+    rayStartParams:
+      num-cpus: "0"
+    template:
+      spec:
+        containers:
+          - name: ray-head
+            image: rayproject/ray:2.43.0-py312-cpu{{ "-aarch64" if arm else "" }}
+            imagePullPolicy: IfNotPresent
+            resources:
+              limits:
+                cpu: {{ driver_cpus }}
+                memory: {{ driver_mem }}Gi
+              requests:
+                cpu: {{ driver_cpus }}
+                memory: {{ driver_mem }}Gi
+            volumeMounts:
+              - mountPath: /data
+                name: ray-storage
+        volumes:
+          - name: ray-storage
+            hostPath:
+              path: /data
+              type: DirectoryOrCreate
+        nodeSelector:
+          node-role.kubernetes.io/master: "true" 
+  workerGroupSpecs:
+    - replicas: {{ executor_num }}
+      groupName: "datafusion-ray"
+      rayStartParams:
+        num-cpus: "{{ executor_cpus }}"
+      template:
+        spec:
+          containers:
+            - name: ray-worker
+              image: rayproject/ray:2.43.0-py312-cpu{{ "-aarch64" if arm else "" }}
+              imagePullPolicy: IfNotPresent
+              resources:
+                limits:
+                  cpu: {{ executor_cpus }}
+                  memory: {{ executor_mem }}Gi
+                requests:
+                  cpu: {{ executor_cpus }}
+                  memory: {{ executor_mem }}Gi
+              volumeMounts:
+                - mountPath: /data/
+                  name: ray-storage
+          volumes:
+            - name: ray-storage
+              hostPath:
+                path: /data
+                type: DirectoryOrCreate

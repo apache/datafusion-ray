@@ -1,0 +1,31 @@
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: ray-pv
+spec:
+  storageClassName: local-path
+  capacity:
+    storage: 300Gi
+  volumeMode: Filesystem
+  hostPath:
+    path: "{{ data_path }}"
+  accessModes:
+    - ReadWriteOnce
+  claimRef:
+    name: ray-pvc
+    namespace: default
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: ray-pvc
+  namespace: default
+spec:
+  storageClassName: local-path
+  accessModes:
+    - ReadWriteOnce
+  volumeName: ray-pv
+  resources:
+    requests:
+      storage: 300Gi
+

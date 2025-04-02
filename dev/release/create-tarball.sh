@@ -48,9 +48,9 @@ SOURCE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SOURCE_TOP_DIR="$(cd "${SOURCE_DIR}/../../" && pwd)"
 
 if [ "$#" -ne 2 ]; then
-    echo "Usage: $0 <version> <rc>"
-    echo "ex. $0 4.1.0 2"
-    exit
+  echo "Usage: $0 <version> <rc>"
+  echo "ex. $0 4.1.0 2"
+  exit
 fi
 
 version=$1
@@ -67,7 +67,7 @@ tarball=${distdir}/${tarname}
 url="https://dist.apache.org/repos/dist/dev/datafusion/${release}-rc${rc}"
 
 if [ -z "$release_hash" ]; then
-    echo "Cannot continue: unknown git tag: ${tag}"
+  echo "Cannot continue: unknown git tag: ${tag}"
 fi
 
 echo "Draft email for dev@datafusion.apache.org mailing list"
@@ -75,10 +75,10 @@ echo ""
 echo "---------------------------------------------------------"
 cat <<MAIL
 To: dev@datafusion.apache.org
-Subject: [VOTE] Release DataFusion Ray ${version} RC${rc}
+Subject: [VOTE] Release DataFusion for Ray ${version} RC${rc}
 Hi,
 
-I would like to propose a release of the Apache DataFusion Ray subproject,
+I would like to propose a release of the Apache DataFusion for Ray subproject,
 version ${version}.
 
 This release candidate is based on commit: ${release_hash} [1]
@@ -94,9 +94,9 @@ encouraged to test the release and vote with "(non-binding)".
 
 The standard verification procedure is documented at https://github.com/apache/datafusion-ray/blob/main/dev/release/README.md#verifying-release-candidates.
 
-[ ] +1 Release this as Apache DataFusion Ray ${version}
+[ ] +1 Release this as Apache DataFusion for Ray ${version}
 [ ] +0
-[ ] -1 Do not release this as Apache DataFusion Ray ${version} because...
+[ ] -1 Do not release this as Apache DataFusion for Ray ${version} because...
 
 Here is my vote:
 
@@ -109,11 +109,10 @@ Here is my vote:
 MAIL
 echo "---------------------------------------------------------"
 
-
 # create <tarball> containing the files in git at $release_hash
 # the files in the tarball are prefixed with {version} (e.g. 4.0.1)
 mkdir -p ${distdir}
-(cd "${SOURCE_TOP_DIR}" && git archive ${release_hash} --prefix ${release}/ | gzip > ${tarball})
+(cd "${SOURCE_TOP_DIR}" && git archive ${release_hash} --prefix ${release}/ | gzip >${tarball})
 
 echo "Running rat license checker on ${tarball}"
 ${SOURCE_DIR}/run-rat.sh ${tarball}
@@ -123,11 +122,10 @@ gpg --armor --output ${tarball}.asc --detach-sig ${tarball}
 # create signing with relative path of tarball
 # so that they can be verified with a command such as
 #  shasum --check apache-datafusion-ray-4.1.0-rc2.tar.gz.sha512
-(cd ${distdir} && shasum -a 256 ${tarname}) > ${tarball}.sha256
-(cd ${distdir} && shasum -a 512 ${tarname}) > ${tarball}.sha512
-
+(cd ${distdir} && shasum -a 256 ${tarname}) >${tarball}.sha256
+(cd ${distdir} && shasum -a 512 ${tarname}) >${tarball}.sha512
 
 echo "Uploading to datafusion dist/dev to ${url}"
 svn co --depth=empty https://dist.apache.org/repos/dist/dev/datafusion ${SOURCE_TOP_DIR}/dev/dist
 svn add ${distdir}
-svn ci -m "Apache DataFusion Ray ${version} ${rc}" ${distdir}
+svn ci -m "Apache DataFusion for Ray ${version} ${rc}" ${distdir}

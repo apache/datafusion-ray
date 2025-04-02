@@ -17,7 +17,7 @@
   under the License.
 -->
 
-# DataFusion Ray
+# DataFusion for Ray
 
 [![Apache licensed][license-badge]][license-url]
 [![Python Tests][actions-badge]][actions-url]
@@ -32,13 +32,13 @@
 
 ## Overview
 
-DataFusion Ray is a distributed execution framework that enables DataFusion DataFrame and SQL queries to run on a
+DataFusion for Ray is a distributed execution framework that enables DataFusion DataFrame and SQL queries to run on a
 Ray cluster. This integration allows users to leverage Ray's dynamic scheduling capabilities while executing
 queries in a distributed fashion.
 
 ## Execution Modes
 
-DataFusion Ray supports two execution modes:
+DataFusion for Ray supports two execution modes:
 
 ### Streaming Execution
 
@@ -54,7 +54,7 @@ intermediate shuffle files that are persisted and used as input for the next sta
 
 ## Getting Started
 
-See the [contributor guide] for instructions on building DataFusion Ray.
+See the [contributor guide] for instructions on building DataFusion for Ray.
 
 Once installed, you can run queries using DataFusion's familiar API while leveraging the distributed execution
 capabilities of Ray.
@@ -84,6 +84,6 @@ Contributions are welcome! Please open an issue or submit a pull request if you 
 
 ## License
 
-DataFusion Ray is licensed under Apache 2.0.
+DataFusion for Ray is licensed under Apache 2.0.
 
 [contributor guide]: docs/contributing.md
