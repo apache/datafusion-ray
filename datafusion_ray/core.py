@@ -565,9 +565,10 @@ class DFRayContext:
         processor_pool_max: int = 100,
     ) -> None:
         self.ctx = DFRayContextInternal()
-        self.batch_size = batch_size
-        self.partitions_per_processor = partitions_per_processor
-        self.prefetch_buffer_size = prefetch_buffer_size
+        self.set("datafusion.ray.execution.batch_size",f"{batch_size}")
+        self.set("datafusion.ray.execution.partitions_per_processor",f"{partitions_per_processor}")
+        self.set("datafusion.ray.execution.prefetch_buffer_size",f"{prefetch_buffer_size}")
+        self.set("datafusion.ray.execution.processor_pool_min",f"{processor_pool_min}")
 
         self.supervisor = DFRayContextSupervisor.options(
             name="RayContextSupersisor",
