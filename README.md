@@ -30,6 +30,8 @@
 [discord-badge]: https://img.shields.io/badge/Chat-Discord-purple
 [discord-url]: https://discord.com/invite/Qw5gKqHxUM
 
+> ⚠️ **WARNING:** This project is no longer maintained.
+
 ## Overview
 
 DataFusion for Ray is a distributed execution framework that enables DataFusion DataFrame and SQL queries to run on a
