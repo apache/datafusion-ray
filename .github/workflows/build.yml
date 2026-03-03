@@ -179,13 +179,13 @@ jobs:
         env:
           RUST_BACKTRACE: 1
         with:
-          rust-toolchain: nightly
+          rust-toolchain: stable
           target: x86_64
           manylinux: auto
           rustup-components: rust-std rustfmt # Keep them in one line due to https://github.com/PyO3/maturin-action/issues/153
           args: --release --manylinux 2014
           before-script-linux: |
-            yum install -y wget
+            yum install -y wget unzip
             cd /
             wget https://github.com/protocolbuffers/protobuf/releases/download/v29.3/protoc-29.3-linux-x86_64.zip
             unzip -o proto*zip
@@ -202,7 +202,7 @@ jobs:
   build-manylinux-aarch64:
     needs: [generate-license]
     name: Manylinux arm64
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04-arm
     steps:
       - uses: actions/checkout@v4
       - run: rm LICENSE.txt
@@ -217,16 +217,16 @@ jobs:
         env:
           RUST_BACKTRACE: 1
         with:
-          rust-toolchain: nightly
-          target: aarch64
+          rust-toolchain: stable
+          target: aarch64-unknown-linux-gnu
           # Use manylinux_2_28-cross because the manylinux2014-cross has GCC 4.8.5, which causes the build to fail
           manylinux: 2_28
           rustup-components: rust-std rustfmt # Keep them in one line due to https://github.com/PyO3/maturin-action/issues/153
           args: --release
           before-script-linux: |
-            apt-get install -y unzip
+            yum install -y wget unzip
             cd /
-            wget https://github.com/protocolbuffers/protobuf/releases/download/v29.3/protoc-29.3-linux-x86_64.zip
+            wget https://github.com/protocolbuffers/protobuf/releases/download/v29.3/protoc-29.3-linux-aarch_64.zip
             unzip -o proto*zip
             cd -
             which protoc
@@ -259,7 +259,7 @@ jobs:
           rustup-components: rust-std rustfmt
           args: --release --sdist --out dist
           before-script-linux: |
-            yum install -y wget
+            yum install -y wget unzip
             cd /
             wget https://github.com/protocolbuffers/protobuf/releases/download/v29.3/protoc-29.3-linux-x86_64.zip
             unzip -o proto*zip
