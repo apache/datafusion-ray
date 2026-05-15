@@ -16,8 +16,8 @@
 # under the License.
 
 notifications:
-  commits:      commits@datafusion.apache.org
-  issues:       github@datafusion.apache.org
+  commits: commits@datafusion.apache.org
+  issues: github@datafusion.apache.org
   pullrequests: github@datafusion.apache.org
   jira_options: link label worklog
 github:
@@ -30,10 +30,23 @@ github:
   features:
     issues: true
 
+  rulesets:
+    - name: "Default Branch Protection"
+      type: branch
+      branches:
+        includes:
+          - "~DEFAULT_BRANCH"
+          - "release/*"
+          - "rel/*"
+        excludes: []
+      bypass_teams:
+        - root
+      restrict_deletion: true
+      restrict_force_push: true
 staging:
   whoami: asf-staging
   subdir: ray
-  
+
 publish:
   whoami: asf-site
   subdir: ray
